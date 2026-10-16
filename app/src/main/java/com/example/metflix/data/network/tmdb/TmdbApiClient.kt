@@ -128,8 +128,14 @@ class TmdbApiClient @Inject constructor() {
 
     private suspend fun <T> fetchJson(urlWithoutKey: String, parser: (String) -> T): Result<T> = withContext(Dispatchers.IO) {
         runCatching {
+            val key = TmdbConfig.API_KEY.trim()
+            val isJwt = key.startsWith("eyJ")
             val separator = if (urlWithoutKey.contains("?")) "&" else "?"
-            val finalUrl = "$urlWithoutKey${separator}api_key=${TmdbConfig.API_KEY}&language=en-US"
+            val finalUrl = if (isJwt) {
+                "$urlWithoutKey${separator}language=en-US"
+            } else {
+                "$urlWithoutKey${separator}api_key=$key&language=en-US"
+            }
 
             val url = URL(finalUrl)
             val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -138,6 +144,9 @@ class TmdbApiClient @Inject constructor() {
                 readTimeout = 8000
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("User-Agent", "MetFlix-AndroidTV/1.0")
+                if (isJwt) {
+                    setRequestProperty("Authorization", "Bearer $key")
+                }
             }
 
             try {

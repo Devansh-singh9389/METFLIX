@@ -36,7 +36,7 @@ object TmdbConfig {
     /**
      * Paste your TMDB v3 API Key here.
      */
-    var API_KEY: String = ""
+    var API_KEY: String = "6eba1b274252e8a563ebdaf9abacbf36"
 
     /**
      * TMDB Base URL
