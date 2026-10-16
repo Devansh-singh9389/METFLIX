@@ -64,23 +64,20 @@ fun MoviesScreenMovieList(
     endPadding: Dp = rememberChildPadding().end,
     onMovieClick: (movie: Movie) -> Unit
 ) {
-    AnimatedContent(
-        modifier = modifier,
-        targetState = movieList,
-        label = "",
-    ) { movieListTarget ->
-        // ToDo: specify the pivot offset to 0.07f
-        LazyRow(
-            modifier = Modifier.focusRestorer(),
-            contentPadding = PaddingValues(start = startPadding, end = endPadding)
+    LazyRow(
+        modifier = modifier.focusRestorer(),
+        contentPadding = PaddingValues(start = startPadding, end = endPadding)
+    ) {
+        items(
+            movieList,
+            key = { it.id },
+            contentType = { "movie_list_item" }
         ) {
-            items(movieListTarget) {
-                MovieListItem(
-                    itemWidth = 432.dp,
-                    onMovieClick = onMovieClick,
-                    movie = it,
-                )
-            }
+            MovieListItem(
+                itemWidth = 432.dp,
+                onMovieClick = onMovieClick,
+                movie = it,
+            )
         }
     }
 }

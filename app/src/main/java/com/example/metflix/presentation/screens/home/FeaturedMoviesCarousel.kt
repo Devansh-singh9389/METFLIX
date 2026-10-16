@@ -221,6 +221,13 @@ private fun CarouselItemForeground(
     }
 }
 
+private val carouselBackgroundGradient = Brush.verticalGradient(
+    colors = listOf(
+        Color.Transparent,
+        Color.Black.copy(alpha = 0.5f)
+    )
+)
+
 @Composable
 private fun CarouselItemBackground(movie: Movie, modifier: Modifier = Modifier) {
     AsyncImage(
@@ -232,14 +239,7 @@ private fun CarouselItemBackground(movie: Movie, modifier: Modifier = Modifier) 
         modifier = modifier
             .drawWithContent {
                 drawContent()
-                drawRect(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.5f)
-                        )
-                    )
-                )
+                drawRect(carouselBackgroundGradient)
             },
         contentScale = ContentScale.Crop
     )

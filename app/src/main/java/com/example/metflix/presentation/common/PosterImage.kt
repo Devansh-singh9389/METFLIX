@@ -17,11 +17,13 @@
 package com.example.metflix.presentation.common
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.util.StringConstants
 
@@ -30,12 +32,18 @@ fun PosterImage(
     movie: Movie,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val imageRequest = remember(movie.posterUri) {
+        ImageRequest.Builder(context)
+            .data(movie.posterUri)
+            .precision(Precision.INEXACT)
+            .crossfade(100)
+            .build()
+    }
+
     AsyncImage(
         modifier = modifier,
-        model = ImageRequest.Builder(LocalContext.current)
-            .crossfade(true)
-            .data(movie.posterUri)
-            .build(),
+        model = imageRequest,
         contentDescription = StringConstants.Composable.ContentDescription.moviePoster(movie.name),
         contentScale = ContentScale.Crop
     )

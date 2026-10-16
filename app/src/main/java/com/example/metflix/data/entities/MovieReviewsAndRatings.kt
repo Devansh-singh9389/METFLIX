@@ -16,6 +16,9 @@
 
 package com.example.metflix.data.entities
 
+import androidx.compose.runtime.Immutable
+
+@Immutable
 data class MovieReviewsAndRatings(
     val reviewerName: String,
     val reviewerIconUri: String,

@@ -51,7 +51,9 @@ class SearchScreenViewModel @Inject constructor(
     )
 }
 
+@androidx.compose.runtime.Immutable
 sealed interface SearchState {
     data object Searching : SearchState
+    @androidx.compose.runtime.Immutable
     data class Done(val movieList: MovieList) : SearchState
 }

@@ -90,7 +90,6 @@ fun DashboardScreen(
     resetIsComingBackFromDifferentScreen: () -> Unit,
     onBackPressed: () -> Unit
 ) {
-    val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
     val navController = rememberNavController()
 
@@ -151,8 +150,8 @@ fun DashboardScreen(
         )
 
         // Used to push down/pull up NavHost when DashboardTopBar is shown/hidden
-        val navHostTopPaddingDp by animateDpAsState(
-            targetValue = if (isTopBarVisible) with(density) { topBarHeightPx.toDp() } else 0.dp,
+        val navHostTopPaddingPx by animateIntAsState(
+            targetValue = if (isTopBarVisible) topBarHeightPx else 0,
             animationSpec = tween(),
             label = "",
         )
@@ -196,7 +195,7 @@ fun DashboardScreen(
             updateTopBarVisibility = { isTopBarVisible = it },
             isTopBarVisible = isTopBarVisible,
             navController = navController,
-            modifier = Modifier.offset(y = navHostTopPaddingDp),
+            modifier = Modifier.offset { IntOffset(x = 0, y = navHostTopPaddingPx) },
         )
     }
 }

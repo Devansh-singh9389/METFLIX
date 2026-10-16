@@ -16,6 +16,7 @@
 
 package com.example.metflix.presentation.screens.shows
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.entities.MovieList
@@ -43,8 +44,10 @@ class ShowScreenViewModel @Inject constructor(
     )
 }
 
+@Immutable
 sealed interface ShowScreenUiState {
     data object Loading : ShowScreenUiState
+    @Immutable
     data class Ready(
         val bingeWatchDramaList: MovieList,
         val tvShowList: MovieList

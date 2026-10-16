@@ -46,7 +46,11 @@ fun FilteredMoviesGrid(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = MetFlixBottomListPadding),
     ) {
-        items(movieList, key = { it.id }) { movie ->
+        items(
+            movieList,
+            key = { it.id },
+            contentType = { "movie_card" }
+        ) { movie ->
             MovieCard(
                 onClick = { onMovieClick(movie.id) },
                 modifier = Modifier.aspectRatio(1 / 1.5f),

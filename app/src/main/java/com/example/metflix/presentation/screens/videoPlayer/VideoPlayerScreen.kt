@@ -37,7 +37,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.compose.PlayerSurface
-import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.media3.ui.compose.modifiers.resizeWithContentScale
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieDetails
@@ -46,7 +46,7 @@ import com.example.metflix.presentation.common.Loading
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerControls
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse
-import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.BACK
+import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.BACK   
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.FORWARD
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulseState
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerState
@@ -123,7 +123,7 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
     ) {
         PlayerSurface(
             player = exoPlayer,
-            surfaceType = SURFACE_TYPE_TEXTURE_VIEW,
+            surfaceType = SURFACE_TYPE_SURFACE_VIEW,
             modifier = Modifier.resizeWithContentScale(
                 contentScale = ContentScale.Fit,
                 sourceSizeDp = null

@@ -46,6 +46,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,41 +96,40 @@ fun MoviesRow(
                     .padding(start = startPadding, top = 16.dp, bottom = 16.dp)
             )
         }
-        AnimatedContent(
-            targetState = movieList,
-            label = "",
-        ) { movieState ->
-            LazyRow(
-                contentPadding = PaddingValues(
-                    start = startPadding,
-                    end = endPadding,
-                ),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-                modifier = Modifier
-                    .focusRequester(lazyRow)
-                    .focusRestorer {
-                        firstItem
-                    }
-            ) {
-                itemsIndexed(movieState, key = { _, movie -> movie.id }) { index, movie ->
-                    val itemModifier = if (index == 0) {
-                        Modifier.focusRequester(firstItem)
-                    } else {
-                        Modifier
-                    }
-                    MoviesRowItem(
-                        modifier = itemModifier.weight(1f),
-                        index = index,
-                        itemDirection = itemDirection,
-                        onMovieSelected = {
-                            lazyRow.saveFocusedChild()
-                            onMovieSelected(it)
-                        },
-                        movie = movie,
-                        showItemTitle = showItemTitle,
-                        showIndexOverImage = showIndexOverImage
-                    )
+        LazyRow(
+            contentPadding = PaddingValues(
+                start = startPadding,
+                end = endPadding,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier
+                .focusRequester(lazyRow)
+                .focusRestorer {
+                    firstItem
                 }
+        ) {
+            itemsIndexed(
+                movieList,
+                key = { _, movie -> movie.id },
+                contentType = { _, _ -> "movie_item" }
+            ) { index, movie ->
+                val itemModifier = if (index == 0) {
+                    Modifier.focusRequester(firstItem)
+                } else {
+                    Modifier
+                }
+                MoviesRowItem(
+                    modifier = itemModifier.weight(1f),
+                    index = index,
+                    itemDirection = itemDirection,
+                    onMovieSelected = {
+                        lazyRow.saveFocusedChild()
+                        onMovieSelected(it)
+                    },
+                    movie = movie,
+                    showItemTitle = showItemTitle,
+                    showIndexOverImage = showIndexOverImage
+                )
             }
         }
     }
@@ -168,44 +168,40 @@ fun ImmersiveListMoviesRow(
                     .padding(vertical = 16.dp)
             )
         }
-        AnimatedContent(
-            targetState = movieList,
-            label = "",
-        ) { movieState ->
-            LazyRow(
-                contentPadding = PaddingValues(start = startPadding, end = endPadding),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-                modifier = Modifier
-                    .focusRequester(lazyRow)
-                    .focusRestorer {
-                        firstItem
-                    }
-            ) {
-                itemsIndexed(
-                    movieState,
-                    key = { _, movie ->
-                        movie.id
-                    }
-                ) { index, movie ->
-                    val itemModifier = if (index == 0) {
-                        Modifier.focusRequester(firstItem)
-                    } else {
-                        Modifier
-                    }
-                    MoviesRowItem(
-                        modifier = itemModifier.weight(1f),
-                        index = index,
-                        itemDirection = itemDirection,
-                        onMovieSelected = {
-                            lazyRow.saveFocusedChild()
-                            onMovieSelected(it)
-                        },
-                        onMovieFocused = onMovieFocused,
-                        movie = movie,
-                        showItemTitle = showItemTitle,
-                        showIndexOverImage = showIndexOverImage
-                    )
+        LazyRow(
+            contentPadding = PaddingValues(start = startPadding, end = endPadding),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier
+                .focusRequester(lazyRow)
+                .focusRestorer {
+                    firstItem
                 }
+        ) {
+            itemsIndexed(
+                movieList,
+                key = { _, movie ->
+                    movie.id
+                },
+                contentType = { _, _ -> "movie_item" }
+            ) { index, movie ->
+                val itemModifier = if (index == 0) {
+                    Modifier.focusRequester(firstItem)
+                } else {
+                    Modifier
+                }
+                MoviesRowItem(
+                    modifier = itemModifier.weight(1f),
+                    index = index,
+                    itemDirection = itemDirection,
+                    onMovieSelected = {
+                        lazyRow.saveFocusedChild()
+                        onMovieSelected(it)
+                    },
+                    onMovieFocused = onMovieFocused,
+                    movie = movie,
+                    showItemTitle = showItemTitle,
+                    showIndexOverImage = showIndexOverImage
+                )
             }
         }
     }
@@ -319,7 +315,7 @@ private fun MoviesRowItemText(
             ),
             textAlign = TextAlign.Center,
             modifier = modifier
-                .alpha(movieNameAlpha)
+                .graphicsLayer { alpha = movieNameAlpha }
                 .fillMaxWidth()
                 .padding(top = 4.dp),
             maxLines = 1,

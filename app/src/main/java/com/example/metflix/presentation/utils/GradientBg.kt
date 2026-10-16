@@ -39,11 +39,14 @@ val pairs = listOf(
     Green300 to Coral,
 )
 
+val gradientBrushes: List<Brush> = pairs.map { Brush.radialGradient(it.toList()) }
+
 @Composable
-fun GradientBg() {
+fun GradientBg(index: Int = 0) {
+    val brush = gradientBrushes[index.mod(gradientBrushes.size)]
     Box(
         modifier = Modifier
-            .background(Brush.radialGradient(pairs.random().toList()))
+            .background(brush)
             .fillMaxWidth()
             .height(200.dp)
     )

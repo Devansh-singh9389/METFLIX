@@ -69,8 +69,10 @@ class FavouriteScreenViewModel @Inject constructor(
     }
 }
 
+@Immutable
 sealed interface FavouriteScreenUiState {
     data object Loading : FavouriteScreenUiState
+    @Immutable
     data class Ready(val favouriteMovieList: MovieList, val selectedFilterList: FilterList) :
         FavouriteScreenUiState
 }

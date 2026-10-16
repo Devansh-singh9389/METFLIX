@@ -112,7 +112,8 @@ private fun CategoryDetails(
                 categoryDetails.movies,
                 key = { _, movie ->
                     movie.id
-                }
+                },
+                contentType = { _, _ -> "movie_card" }
             ) { index, movie ->
                 MovieCard(
                     onClick = { onMovieSelected(movie) },

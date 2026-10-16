@@ -26,19 +26,29 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 
+import androidx.compose.runtime.DisposableEffect
+
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun rememberPlayer(context: Context) = remember {
-    ExoPlayer.Builder(context)
-        .setSeekForwardIncrementMs(10)
-        .setSeekBackIncrementMs(10)
-        .setMediaSourceFactory(
-            ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))
-        )
-        .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
-        .build()
-        .apply {
-            playWhenReady = true
-            repeatMode = Player.REPEAT_MODE_OFF
+fun rememberPlayer(context: Context): ExoPlayer {
+    val player = remember {
+        ExoPlayer.Builder(context)
+            .setSeekForwardIncrementMs(10)
+            .setSeekBackIncrementMs(10)
+            .setMediaSourceFactory(
+                ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))
+            )
+            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+            .build()
+            .apply {
+                playWhenReady = true
+                repeatMode = Player.REPEAT_MODE_OFF
+            }
+    }
+    DisposableEffect(player) {
+        onDispose {
+            player.release()
         }
+    }
+    return player
 }

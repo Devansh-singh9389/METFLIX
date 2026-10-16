@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -100,53 +101,50 @@ private fun Catalog(
         onScroll(shouldShowTopBar)
     }
 
-    AnimatedContent(
-        targetState = movieCategories,
-        modifier = Modifier
+    LazyVerticalGrid(
+        state = lazyGridState,
+        modifier = modifier
             .padding(horizontal = childPadding.start)
             .padding(top = childPadding.top),
-        label = "",
-    ) { it ->
-        LazyVerticalGrid(
-            state = lazyGridState,
-            modifier = modifier,
-            columns = GridCells.Fixed(gridColumns),
-        ) {
-            itemsIndexed(it) { index, movieCategory ->
-                var isFocused by remember { mutableStateOf(false) }
-                MovieCard(
-                    onClick = {
-                        onCategoryClick(movieCategory.id)
-                    },
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .aspectRatio(16 / 9f)
-                        .onFocusChanged {
-                            isFocused = it.isFocused || it.hasFocus
-                        }
-                        .focusProperties {
-                            if (index % gridColumns == 0) {
-                                left = FocusRequester.Cancel
-                            }
-                        }
-                ) {
-                    val itemAlpha by animateFloatAsState(
-                        targetValue = if (isFocused) .6f else 0.2f,
-                        label = ""
-                    )
-                    val textColor = if (isFocused) Color.White else Color.White
-
-                    Box(contentAlignment = Alignment.Center) {
-                        Box(modifier = Modifier.alpha(itemAlpha)) {
-                            GradientBg()
-                        }
-                        Text(
-                            text = movieCategory.name,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                color = textColor,
-                            )
-                        )
+        columns = GridCells.Fixed(gridColumns),
+    ) {
+        itemsIndexed(
+            movieCategories,
+            key = { _, movieCategory -> movieCategory.id },
+            contentType = { _, _ -> "category_card" }
+        ) { index, movieCategory ->
+            var isFocused by remember { mutableStateOf(false) }
+            MovieCard(
+                onClick = {
+                    onCategoryClick(movieCategory.id)
+                },
+                modifier = Modifier
+                    .padding(8.dp)
+                    .aspectRatio(16 / 9f)
+                    .onFocusChanged {
+                        isFocused = it.isFocused || it.hasFocus
                     }
+                    .focusProperties {
+                        if (index % gridColumns == 0) {
+                            left = FocusRequester.Cancel
+                        }
+                    }
+            ) {
+                val itemAlpha by animateFloatAsState(
+                    targetValue = if (isFocused) .6f else 0.2f,
+                    label = ""
+                )
+
+                Box(contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.graphicsLayer { alpha = itemAlpha }) {
+                        GradientBg(index)
+                    }
+                    Text(
+                        text = movieCategory.name,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            color = Color.White,
+                        )
+                    )
                 }
             }
         }

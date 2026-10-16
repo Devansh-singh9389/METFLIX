@@ -16,8 +16,10 @@
 
 package com.example.metflix.data.entities
 
+import androidx.compose.runtime.Immutable
 import com.example.metflix.data.models.MovieCategoriesResponseItem
 
+@Immutable
 data class MovieCategory(
     val id: String,
     val name: String,
