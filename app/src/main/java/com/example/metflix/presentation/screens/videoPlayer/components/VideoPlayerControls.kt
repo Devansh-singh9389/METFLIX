@@ -24,9 +24,12 @@ import androidx.compose.material.icons.filled.AutoAwesomeMotion
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.example.metflix.data.entities.MovieDetails
@@ -37,9 +40,14 @@ fun VideoPlayerControls(
     player: Player,
     movieDetails: MovieDetails,
     focusRequester: FocusRequester,
+    isSubtitlesEnabled: Boolean = false,
+    onShowSettings: () -> Unit = {},
+    onShowPlaylist: () -> Unit = {},
+    onToggleSubtitles: () -> Unit = {},
     onShowControls: () -> Unit = {},
 ) {
     val isPlaying = player.isPlaying
+    val actionButtonsFocusRequester = remember { FocusRequester() }
 
     VideoPlayerMainFrame(
         mediaTitle = {
@@ -52,17 +60,23 @@ fun VideoPlayerControls(
         },
         mediaActions = {
             Row(
-                modifier = Modifier.padding(bottom = 16.dp),
+                modifier = Modifier
+                    .padding(bottom = 16.dp)
+                    .focusProperties {
+                        down = focusRequester
+                    },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 PreviousButton(
                     player = player,
-                    onShowControls = onShowControls
+                    onShowControls = onShowControls,
+                    modifier = Modifier.focusRequester(actionButtonsFocusRequester)
                 )
                 NextButton(
                     player = player,
-                    onShowControls = onShowControls
+                    onShowControls = onShowControls,
+                    onClick = onShowPlaylist
                 )
                 RepeatButton(
                     player = player,
@@ -73,21 +87,25 @@ fun VideoPlayerControls(
                     isPlaying = isPlaying,
                     contentDescription =
                     StringConstants.Composable.VideoPlayerControlPlaylistButton,
-                    onShowControls = onShowControls
+                    onShowControls = onShowControls,
+                    onClick = onShowPlaylist
                 )
                 VideoPlayerControlsIcon(
                     icon = Icons.Default.ClosedCaption,
                     isPlaying = isPlaying,
+                    isActive = isSubtitlesEnabled,
                     contentDescription =
                     StringConstants.Composable.VideoPlayerControlClosedCaptionsButton,
-                    onShowControls = onShowControls
+                    onShowControls = onShowControls,
+                    onClick = onToggleSubtitles
                 )
                 VideoPlayerControlsIcon(
                     icon = Icons.Default.Settings,
                     isPlaying = isPlaying,
                     contentDescription =
                     StringConstants.Composable.VideoPlayerControlSettingsButton,
-                    onShowControls = onShowControls
+                    onShowControls = onShowControls,
+                    onClick = onShowSettings
                 )
             }
         },
@@ -95,6 +113,7 @@ fun VideoPlayerControls(
             VideoPlayerSeeker(
                 player = player,
                 focusRequester = focusRequester,
+                actionButtonsFocusRequester = actionButtonsFocusRequester,
                 onShowControls = onShowControls,
             )
         },

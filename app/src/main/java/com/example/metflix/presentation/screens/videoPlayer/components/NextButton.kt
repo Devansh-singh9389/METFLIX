@@ -32,8 +32,8 @@ import com.example.metflix.data.util.StringConstants
 fun NextButton(
     player: Player,
     modifier: Modifier = Modifier,
-    state: NextButtonState = rememberNextButtonState(player),
     onShowControls: () -> Unit = {},
+    onClick: (() -> Unit)? = null,
 ) {
     VideoPlayerControlsIcon(
         icon = Icons.Default.SkipNext,
@@ -41,7 +41,15 @@ fun NextButton(
         contentDescription =
         StringConstants.Composable.VideoPlayerControlSkipNextButton,
         onShowControls = onShowControls,
-        onClick = state::onClick,
+        onClick = {
+            if (onClick != null) {
+                onClick()
+            } else if (player.hasNextMediaItem()) {
+                player.seekToNextMediaItem()
+            } else {
+                player.seekTo(player.duration.coerceAtLeast(0))
+            }
+        },
         modifier = modifier
     )
 }

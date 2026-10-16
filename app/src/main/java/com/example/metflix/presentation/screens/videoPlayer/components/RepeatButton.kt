@@ -51,6 +51,7 @@ fun RepeatButton(
             else -> Icons.Default.Repeat
         },
         isPlaying = player.isPlaying,
+        isActive = isRepeating,
         contentDescription = contentDescription,
         onShowControls = onShowControls,
         onClick = state::onClick,

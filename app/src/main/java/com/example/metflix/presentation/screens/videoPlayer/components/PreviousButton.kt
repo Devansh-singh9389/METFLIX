@@ -41,7 +41,13 @@ fun PreviousButton(
         contentDescription =
         StringConstants.Composable.VideoPlayerControlSkipPreviousButton,
         onShowControls = onShowControls,
-        onClick = state::onClick,
+        onClick = {
+            if (player.hasPreviousMediaItem()) {
+                player.seekToPreviousMediaItem()
+            } else {
+                player.seekTo(0)
+            }
+        },
         modifier = modifier,
     )
 }

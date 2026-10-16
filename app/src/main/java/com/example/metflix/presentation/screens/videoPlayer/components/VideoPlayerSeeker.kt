@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -45,6 +46,7 @@ fun VideoPlayerSeeker(
     player: Player,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
+    actionButtonsFocusRequester: FocusRequester? = null,
     state: PlayPauseButtonState = rememberPlayPauseButtonState(player),
     onSeek: (Float) -> Unit = {
         player.seekTo(player.duration.times(it).toLong())
@@ -56,11 +58,15 @@ fun VideoPlayerSeeker(
     var currentPositionMs by remember(player) { mutableLongStateOf(0L) }
     val currentPosition = currentPositionMs.milliseconds
 
-    // TODO: Update in a more thoughtful manner
-    LaunchedEffect(Unit) {
+    LaunchedEffect(player) {
         while (true) {
-            delay(300)
-            currentPositionMs = player.currentPosition
+            if (player.isPlaying) {
+                currentPositionMs = player.currentPosition
+                delay(1000)
+            } else {
+                currentPositionMs = player.currentPosition
+                delay(500)
+            }
         }
     }
 
@@ -86,7 +92,15 @@ fun VideoPlayerSeeker(
         verticalAlignment = Alignment.CenterVertically
     ) {
         VideoPlayerControlsIcon(
-            modifier = Modifier.focusRequester(focusRequester),
+            modifier = Modifier
+                .focusRequester(focusRequester)
+                .then(
+                    if (actionButtonsFocusRequester != null) {
+                        Modifier.focusProperties {
+                            up = actionButtonsFocusRequester
+                        }
+                    } else Modifier
+                ),
             icon = if (state.showPlay) Icons.Default.PlayArrow else Icons.Default.Pause,
             onClick = state::onClick,
             isPlaying = player.isPlaying,
@@ -96,9 +110,16 @@ fun VideoPlayerSeeker(
         )
         VideoPlayerControllerText(text = contentProgressString)
         VideoPlayerControllerIndicator(
-            progress = (currentPosition / contentDuration).toFloat(),
+            progress = if (contentDuration.inWholeMilliseconds > 0) {
+                (currentPositionMs.toFloat() / contentDuration.inWholeMilliseconds.toFloat()).coerceIn(0f, 1f)
+            } else 0f,
             onSeek = onSeek,
-            onShowControls = onShowControls
+            onShowControls = onShowControls,
+            modifier = if (actionButtonsFocusRequester != null) {
+                Modifier.focusProperties {
+                    up = actionButtonsFocusRequester
+                }
+            } else Modifier
         )
         VideoPlayerControllerText(text = contentDurationString)
     }

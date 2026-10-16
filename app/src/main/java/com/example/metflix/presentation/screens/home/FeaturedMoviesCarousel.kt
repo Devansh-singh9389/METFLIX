@@ -57,6 +57,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
+import android.graphics.Bitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.tv.material3.Carousel
 import androidx.tv.material3.CarouselDefaults
 import androidx.tv.material3.CarouselState
@@ -66,6 +68,8 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.ShapeDefaults
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.metflix.R
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.util.StringConstants
@@ -118,16 +122,17 @@ fun FeaturedMoviesCarousel(
             }),
         itemCount = movies.size,
         carouselState = carouselState,
+        autoScrollDurationMillis = if (isCarouselFocused) 8000L else Long.MAX_VALUE,
         carouselIndicator = {
             CarouselIndicator(
                 itemCount = movies.size,
                 activeItemIndex = carouselState.activeItemIndex
             )
         },
-        contentTransformStartToEnd = fadeIn(tween(durationMillis = 1000))
-            .togetherWith(fadeOut(tween(durationMillis = 1000))),
-        contentTransformEndToStart = fadeIn(tween(durationMillis = 1000))
-            .togetherWith(fadeOut(tween(durationMillis = 1000))),
+        contentTransformStartToEnd = fadeIn(tween(durationMillis = 350))
+            .togetherWith(fadeOut(tween(durationMillis = 350))),
+        contentTransformEndToStart = fadeIn(tween(durationMillis = 350))
+            .togetherWith(fadeOut(tween(durationMillis = 350))),
         content = { index ->
             val movie = movies[index]
             // background
@@ -230,8 +235,19 @@ private val carouselBackgroundGradient = Brush.verticalGradient(
 
 @Composable
 private fun CarouselItemBackground(movie: Movie, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val imageRequest = remember(movie.posterUri) {
+        ImageRequest.Builder(context)
+            .data(movie.posterUri)
+            .bitmapConfig(Bitmap.Config.RGB_565)
+            .allowRgb565(true)
+            .size(960, 540)
+            .precision(Precision.INEXACT)
+            .crossfade(false)
+            .build()
+    }
     AsyncImage(
-        model = movie.posterUri,
+        model = imageRequest,
         contentDescription = StringConstants
             .Composable
             .ContentDescription

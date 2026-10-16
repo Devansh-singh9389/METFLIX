@@ -16,6 +16,7 @@
 
 package com.example.metflix.presentation.screens.videoPlayer.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.LocalContentColor
@@ -40,6 +42,7 @@ fun VideoPlayerControlsIcon(
     isPlaying: Boolean,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    isActive: Boolean = false,
     contentDescription: String? = null,
     onShowControls: () -> Unit = {},
     onClick: () -> Unit = {}
@@ -53,14 +56,38 @@ fun VideoPlayerControlsIcon(
         }
     }
 
+    val containerColor = if (isActive) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+    }
+
+    val contentColor = if (isActive) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
     Surface(
-        modifier = modifier.size(40.dp),
-        onClick = onClick,
+        modifier = modifier.size(42.dp),
+        onClick = {
+            onShowControls()
+            onClick()
+        },
         shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+            containerColor = containerColor,
+            contentColor = contentColor,
+            focusedContainerColor = MaterialTheme.colorScheme.primary,
+            focusedContentColor = MaterialTheme.colorScheme.onPrimary
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.15f),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.onPrimary),
+                shape = CircleShape
+            )
+        ),
         interactionSource = interactionSource
     ) {
         Icon(

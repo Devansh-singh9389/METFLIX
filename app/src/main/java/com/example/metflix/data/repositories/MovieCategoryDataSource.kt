@@ -17,15 +17,22 @@
 package com.example.metflix.data.repositories
 
 import com.example.metflix.data.entities.toMovieCategory
+import com.example.metflix.data.network.MetFlixApiClient
+import com.example.metflix.data.network.NetworkConfig
 import com.example.metflix.data.util.AssetsReader
 import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
 
 class MovieCategoryDataSource @Inject constructor(
-    assetsReader: AssetsReader
+    assetsReader: AssetsReader,
+    private val apiClient: MetFlixApiClient
 ) {
 
     private val movieCategoryDataReader = CachedDataReader {
+        if (NetworkConfig.USE_REMOTE_BACKEND) {
+            val remote = apiClient.getCategories(NetworkConfig.CATEGORIES_ENDPOINT).getOrNull()
+            if (!remote.isNullOrEmpty()) return@CachedDataReader remote.map { it.toMovieCategory() }
+        }
         readMovieCategoryData(assetsReader, StringConstants.Assets.MovieCategories).map {
             it.toMovieCategory()
         }

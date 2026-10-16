@@ -37,17 +37,18 @@ class MetFlixApplication : Hilt_MetFlixApplication(), ImageLoaderFactory {
         return ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
-                    .strongReferencesEnabled(true)
+                    .maxSizePercent(0.15)
+                    .strongReferencesEnabled(false)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(100L * 1024 * 1024)
+                    .maxSizeBytes(60L * 1024 * 1024)
                     .build()
             }
             .respectCacheHeaders(false)
+            .crossfade(false)
             .allowHardware(true)
             .allowRgb565(true)
             .networkCachePolicy(CachePolicy.ENABLED)

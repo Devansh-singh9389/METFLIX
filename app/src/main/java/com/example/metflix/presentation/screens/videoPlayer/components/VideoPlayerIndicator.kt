@@ -44,6 +44,7 @@ import com.example.metflix.presentation.utils.ifElse
 fun RowScope.VideoPlayerControllerIndicator(
     progress: Float,
     onSeek: (seekProgress: Float) -> Unit,
+    modifier: Modifier = Modifier,
     onShowControls: () -> Unit = {},
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -83,7 +84,7 @@ fun RowScope.VideoPlayerControllerIndicator(
     )
 
     Canvas(
-        modifier = Modifier
+        modifier = modifier
             .weight(1f)
             .height(animatedIndicatorHeight)
             .padding(horizontal = 4.dp)

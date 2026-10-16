@@ -121,9 +121,7 @@ class MovieRepositoryImpl @Inject constructor(
     }
 
     override suspend fun searchMovies(query: String): MovieList {
-        return movieDataSource.getMovieList().filter {
-            it.name.contains(other = query, ignoreCase = true)
-        }
+        return movieDataSource.searchMovies(query)
     }
 
     override fun getMoviesWithLongThumbnail() = flow {

@@ -16,6 +16,7 @@
 
 package com.example.metflix.presentation.common
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -36,8 +37,11 @@ fun PosterImage(
     val imageRequest = remember(movie.posterUri) {
         ImageRequest.Builder(context)
             .data(movie.posterUri)
+            .bitmapConfig(Bitmap.Config.RGB_565)
+            .allowRgb565(true)
+            .size(300, 450)
             .precision(Precision.INEXACT)
-            .crossfade(100)
+            .crossfade(false)
             .build()
     }
 

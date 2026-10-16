@@ -152,13 +152,7 @@ private fun Background(
         exit = fadeOut() + shrinkVertically(),
         modifier = modifier
     ) {
-        Crossfade(
-            targetState = movie,
-            label = "posterUriCrossfade",
-
-        ) {
-            PosterImage(movie = it, modifier = Modifier.fillMaxSize())
-        }
+        PosterImage(movie = movie, modifier = Modifier.fillMaxSize())
     }
 }
 

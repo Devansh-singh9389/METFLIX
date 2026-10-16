@@ -18,37 +18,58 @@ package com.example.metflix.presentation.screens.videoPlayer
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.media3.ui.compose.modifiers.resizeWithContentScale
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.presentation.common.Error
 import com.example.metflix.presentation.common.Loading
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerControls
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerOverlay
+import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPlaylistOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse
-import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.BACK   
+import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.BACK
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.FORWARD
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulseState
+import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerSettingsOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerState
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberPlayer
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberVideoPlayerPulseState
@@ -59,12 +80,6 @@ object VideoPlayerScreen {
     const val MovieIdBundleKey = "movieId"
 }
 
-/**
- * [Work in progress] A composable screen for playing a video.
- *
- * @param onBackPressed The callback to invoke when the user presses the back button.
- * @param videoPlayerScreenViewModel The view model for the video player screen.
- */
 @Composable
 fun VideoPlayerScreen(
     onBackPressed: () -> Unit,
@@ -100,32 +115,76 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
         hideSeconds = 4,
     )
 
+    var currentContentScale by remember { mutableStateOf(ContentScale.Fit) }
+    var currentSpeed by remember { mutableFloatStateOf(1.0f) }
+    var isSubtitlesEnabled by remember { mutableStateOf(false) }
+    var currentCues by remember { mutableStateOf<List<Cue>>(emptyList()) }
+    var isSettingsOpen by remember { mutableStateOf(false) }
+    var isPlaylistOpen by remember { mutableStateOf(false) }
+
+    DisposableEffect(exoPlayer) {
+        val listener = object : Player.Listener {
+            override fun onCues(cueGroup: CueGroup) {
+                currentCues = cueGroup.cues
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+        }
+    }
+
     LaunchedEffect(exoPlayer, movieDetails) {
         exoPlayer.addMediaItem(movieDetails.intoMediaItem())
         movieDetails.similarMovies.forEach {
             exoPlayer.addMediaItem(it.intoMediaItem())
         }
         exoPlayer.prepare()
+        exoPlayer.playWhenReady = true
     }
 
-    BackHandler(onBack = onBackPressed)
+    BackHandler(onBack = {
+        if (isSettingsOpen) {
+            isSettingsOpen = false
+        } else if (isPlaylistOpen) {
+            isPlaylistOpen = false
+        } else {
+            onBackPressed()
+        }
+    })
 
     val pulseState = rememberVideoPlayerPulseState()
+    val rootFocusRequester = remember { FocusRequester() }
 
-    Box(
+    LaunchedEffect(videoPlayerState.isControlsVisible) {
+        if (!videoPlayerState.isControlsVisible && !isSettingsOpen && !isPlaylistOpen) {
+            rootFocusRequester.requestFocus()
+        }
+    }
+
+    val rootModifier = if (!videoPlayerState.isControlsVisible && !isSettingsOpen && !isPlaylistOpen) {
         Modifier
+            .focusRequester(rootFocusRequester)
             .dPadEvents(
                 exoPlayer,
                 videoPlayerState,
                 pulseState
             )
             .focusable()
+    } else {
+        Modifier
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(rootModifier)
     ) {
         PlayerSurface(
             player = exoPlayer,
             surfaceType = SURFACE_TYPE_SURFACE_VIEW,
             modifier = Modifier.resizeWithContentScale(
-                contentScale = ContentScale.Fit,
+                contentScale = currentContentScale,
                 sourceSizeDp = null
             )
         )
@@ -135,17 +194,95 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             modifier = Modifier.align(Alignment.BottomCenter),
             focusRequester = focusRequester,
             isPlaying = exoPlayer.isPlaying,
-            isControlsVisible = videoPlayerState.isControlsVisible,
+            isControlsVisible = videoPlayerState.isControlsVisible && !isSettingsOpen && !isPlaylistOpen,
             centerButton = { VideoPlayerPulse(pulseState) },
-            subtitles = { /* TODO Implement subtitles */ },
+            subtitles = {
+                if (isSubtitlesEnabled && currentCues.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        currentCues.forEach { cue ->
+                            cue.text?.let { text ->
+                                Text(
+                                    text = text.toString(),
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        color = Color.White,
+                                        shadow = Shadow(color = Color.Black, blurRadius = 4f)
+                                    ),
+                                    modifier = Modifier
+                                        .background(
+                                            color = Color.Black.copy(alpha = 0.75f),
+                                            shape = RoundedCornerShape(6.dp)
+                                        )
+                                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
             showControls = videoPlayerState::showControls,
             controls = {
                 VideoPlayerControls(
                     player = exoPlayer,
                     movieDetails = movieDetails,
                     focusRequester = focusRequester,
+                    isSubtitlesEnabled = isSubtitlesEnabled,
+                    onShowSettings = {
+                        isSettingsOpen = true
+                        isPlaylistOpen = false
+                    },
+                    onShowPlaylist = {
+                        isPlaylistOpen = true
+                        isSettingsOpen = false
+                    },
+                    onToggleSubtitles = {
+                        isSubtitlesEnabled = !isSubtitlesEnabled
+                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !isSubtitlesEnabled)
+                            .setPreferredTextLanguage(if (isSubtitlesEnabled) "en" else null)
+                            .build()
+                    },
                     onShowControls = { videoPlayerState.showControls(exoPlayer.isPlaying) },
                 )
+            }
+        )
+
+        // Settings Dialog Overlay
+        VideoPlayerSettingsOverlay(
+            isPresented = isSettingsOpen,
+            currentSpeed = currentSpeed,
+            currentContentScale = currentContentScale,
+            onSelectSpeed = { speed ->
+                currentSpeed = speed
+                exoPlayer.playbackParameters = PlaybackParameters(speed)
+            },
+            onSelectContentScale = { scale ->
+                currentContentScale = scale
+            },
+            onDismiss = {
+                isSettingsOpen = false
+                videoPlayerState.showControls(exoPlayer.isPlaying)
+            }
+        )
+
+        // Playlist Dialog Overlay
+        VideoPlayerPlaylistOverlay(
+            isPresented = isPlaylistOpen,
+            movies = movieDetails.similarMovies,
+            onSelectMovieIndex = { index ->
+                // index 0 in player playlist is current movieDetails, 1..N are similarMovies
+                exoPlayer.seekToDefaultPosition(index + 1)
+                exoPlayer.play()
+                isPlaylistOpen = false
+            },
+            onDismiss = {
+                isPlaylistOpen = false
+                videoPlayerState.showControls(exoPlayer.isPlaying)
             }
         )
     }
@@ -168,11 +305,16 @@ private fun Modifier.dPadEvents(
             pulseState.setType(FORWARD)
         }
     },
-    onUp = { videoPlayerState.showControls() },
-    onDown = { videoPlayerState.showControls() },
+    onUp = { videoPlayerState.showControls(exoPlayer.isPlaying) },
+    onDown = { videoPlayerState.showControls(exoPlayer.isPlaying) },
     onEnter = {
-        exoPlayer.pause()
-        videoPlayerState.showControls()
+        if (exoPlayer.isPlaying) {
+            exoPlayer.pause()
+            videoPlayerState.showControls(isPlaying = false)
+        } else {
+            exoPlayer.play()
+            videoPlayerState.showControls(isPlaying = true)
+        }
     }
 )
 
