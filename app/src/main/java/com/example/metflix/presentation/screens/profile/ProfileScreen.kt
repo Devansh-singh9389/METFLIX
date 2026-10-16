@@ -182,7 +182,16 @@ fun ProfileScreen(
             startDestination = ProfileScreens.Accounts(),
             builder = {
                 composable(ProfileScreens.Accounts()) {
-                    AccountsSection()
+                    AccountsSection(
+                        onOpenPerformanceSettings = {
+                            profileNavController.navigate(ProfileScreens.Performance()) {
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                }
+                composable(ProfileScreens.Performance()) {
+                    PerformanceSection()
                 }
                 composable(ProfileScreens.About()) {
                     AboutSection()

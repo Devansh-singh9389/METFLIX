@@ -32,7 +32,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -79,6 +83,8 @@ fun DashboardTopBar(
     onScreenSelection: (screen: Screens) -> Unit
 ) {
     val focusManager = LocalFocusManager.current
+    val coroutineScope = rememberCoroutineScope()
+    var pendingTabSwitchJob by remember { mutableStateOf<Job?>(null) }
     Box(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -131,8 +137,22 @@ fun DashboardTopBar(
                                     .height(32.dp)
                                     .focusRequester(focusRequesters[index + 1]),
                                 selected = index == selectedTabIndex,
-                                onFocus = { onScreenSelection(screen) },
-                                onClick = { focusManager.moveFocus(FocusDirection.Down) },
+                                onFocus = {
+                                    if (index != selectedTabIndex) {
+                                        pendingTabSwitchJob?.cancel()
+                                        pendingTabSwitchJob = coroutineScope.launch {
+                                            delay(200)
+                                            onScreenSelection(screen)
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    pendingTabSwitchJob?.cancel()
+                                    if (index != selectedTabIndex) {
+                                        onScreenSelection(screen)
+                                    }
+                                    focusManager.moveFocus(FocusDirection.Down)
+                                },
                             ) {
                                 if (screen.tabIcon != null) {
                                     Icon(
@@ -147,7 +167,7 @@ fun DashboardTopBar(
                                         modifier = Modifier
                                             .occupyScreenSize()
                                             .padding(horizontal = 16.dp),
-                                        text = screen(),
+                                        text = screen.tabTitle ?: screen(),
                                         style = MaterialTheme.typography.titleSmall.copy(
                                             color = LocalContentColor.current
                                         )

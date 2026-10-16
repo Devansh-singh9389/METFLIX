@@ -17,36 +17,77 @@
 package com.example.metflix.presentation.screens.videoPlayer.components
 
 import android.content.Context
+import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
-import androidx.compose.runtime.DisposableEffect
-
-@androidx.annotation.OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class)
 @Composable
 fun rememberPlayer(context: Context): ExoPlayer {
     val player = remember {
-        ExoPlayer.Builder(context)
-            .setSeekForwardIncrementMs(10)
-            .setSeekBackIncrementMs(10)
-            .setMediaSourceFactory(
-                ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(15_000)
+            .setAllowCrossProtocolRedirects(true)
+            .setUserAgent("MetFlix-Player/1.0")
+
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 1_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_500
             )
-            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+            .setBackBuffer(
+                /* backBufferDurationMs = */ 10_000,
+                /* retainBackBufferFromKeyframe = */ true
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        val renderersFactory = DefaultRenderersFactory(context)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            .setEnableDecoderFallback(true)
+
+        val audioAttributes = AudioAttributes.Builder()
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .setUsage(C.USAGE_MEDIA)
+            .build()
+
+        ExoPlayer.Builder(context, renderersFactory)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setLoadControl(loadControl)
+            .setSeekForwardIncrementMs(10_000)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekParameters(SeekParameters.CLOSEST_SYNC)
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+            .setWakeMode(C.WAKE_MODE_NONE)
+            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
             .build()
             .apply {
                 playWhenReady = true
                 repeatMode = Player.REPEAT_MODE_OFF
             }
     }
+
     DisposableEffect(player) {
         onDispose {
+            player.stop()
+            player.clearMediaItems()
             player.release()
         }
     }

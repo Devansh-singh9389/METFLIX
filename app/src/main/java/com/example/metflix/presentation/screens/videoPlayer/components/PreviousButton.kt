@@ -34,6 +34,7 @@ fun PreviousButton(
     modifier: Modifier = Modifier,
     state: PreviousButtonState = rememberPreviousButtonState(player),
     onShowControls: () -> Unit = {},
+    onClick: (() -> Unit)? = null,
 ) {
     VideoPlayerControlsIcon(
         icon = Icons.Default.SkipPrevious,
@@ -42,8 +43,13 @@ fun PreviousButton(
         StringConstants.Composable.VideoPlayerControlSkipPreviousButton,
         onShowControls = onShowControls,
         onClick = {
-            if (player.hasPreviousMediaItem()) {
+            if (onClick != null) {
+                onClick()
+            } else if (player.currentPosition > 3000) {
+                player.seekTo(0)
+            } else if (player.hasPreviousMediaItem()) {
                 player.seekToPreviousMediaItem()
+                player.play()
             } else {
                 player.seekTo(0)
             }

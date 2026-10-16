@@ -42,11 +42,28 @@ class TmdbApiClient @Inject constructor() {
         encodeDefaults = true
     }
 
+    @Volatile
+    private var circuitTrippedUntil: Long = 0L
+
+    fun resetCircuit() {
+        circuitTrippedUntil = 0L
+    }
+
+    private fun isCircuitOpen(): Boolean {
+        return System.currentTimeMillis() < circuitTrippedUntil
+    }
+
+    private fun tripCircuit() {
+        // Cooldown for 3 minutes if connection times out or fails
+        circuitTrippedUntil = System.currentTimeMillis() + 180_000L
+        Log.w("TmdbApiClient", "TMDB network failure. Circuit breaker tripped for 180s.")
+    }
+
     private val isConfigured: Boolean
-        get() = TmdbConfig.USE_TMDB && TmdbConfig.API_KEY.isNotBlank()
+        get() = TmdbConfig.USE_TMDB && TmdbConfig.API_KEY.isNotBlank() && !isCircuitOpen()
 
     suspend fun getTrendingMovies(): Result<List<Movie>> {
-        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API disabled or circuit breaker active"))
         return fetchJson("${TmdbConfig.BASE_URL}/trending/movie/week") { raw ->
             val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
             page.results.map { it.toMovie(ThumbnailType.Standard) }
@@ -127,6 +144,9 @@ class TmdbApiClient @Inject constructor() {
     }
 
     private suspend fun <T> fetchJson(urlWithoutKey: String, parser: (String) -> T): Result<T> = withContext(Dispatchers.IO) {
+        if (!isConfigured) {
+            return@withContext Result.failure(IllegalStateException("TMDB is disabled or circuit breaker active"))
+        }
         runCatching {
             val key = TmdbConfig.API_KEY.trim()
             val isJwt = key.startsWith("eyJ")
@@ -140,8 +160,8 @@ class TmdbApiClient @Inject constructor() {
             val url = URL(finalUrl)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 8000
-                readTimeout = 8000
+                connectTimeout = 2000
+                readTimeout = 2500
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("User-Agent", "MetFlix-AndroidTV/1.0")
                 if (isJwt) {
@@ -165,6 +185,9 @@ class TmdbApiClient @Inject constructor() {
             } finally {
                 connection.disconnect()
             }
+        }.onFailure { err ->
+            tripCircuit()
+            Log.w("TmdbApiClient", "TMDB request failed ($urlWithoutKey): ${err.message}")
         }
     }
 }

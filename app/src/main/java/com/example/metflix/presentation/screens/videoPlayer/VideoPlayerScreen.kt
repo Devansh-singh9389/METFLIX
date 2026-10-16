@@ -18,14 +18,23 @@ package com.example.metflix.presentation.screens.videoPlayer
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -40,15 +49,25 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
@@ -56,18 +75,23 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.media3.ui.compose.modifiers.resizeWithContentScale
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.presentation.common.Error
 import com.example.metflix.presentation.common.Loading
+import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerBufferingSpinner
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerControls
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPlaylistOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.BACK
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.FORWARD
+import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.NONE
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulseState
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerSettingsOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerState
@@ -122,8 +146,58 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isPlaylistOpen by remember { mutableStateOf(false) }
 
+    var isPlaying by remember { mutableStateOf(exoPlayer.isPlaying) }
+    var isBuffering by remember { mutableStateOf(true) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
+
+    var currentQualityMaxHeight by remember { mutableIntStateOf(0) }
+    var availableQualityHeights by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var sourceResolutionLabel by remember { mutableStateOf("") }
+
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                isBuffering = playbackState == Player.STATE_BUFFERING
+                if (playbackState == Player.STATE_READY) {
+                    playbackError = null
+                } else if (playbackState == Player.STATE_ENDED) {
+                    videoPlayerState.showControls(isPlaying = false)
+                }
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                val heights = mutableSetOf<Int>()
+                var highestFormat: Format? = null
+                for (group in tracks.groups) {
+                    if (group.type == C.TRACK_TYPE_VIDEO) {
+                        for (i in 0 until group.length) {
+                            val format = group.getTrackFormat(i)
+                            if (format.height > 0) {
+                                heights.add(format.height)
+                            }
+                            if (highestFormat == null || format.height > (highestFormat?.height ?: 0)) {
+                                highestFormat = format
+                            }
+                        }
+                    }
+                }
+                availableQualityHeights = heights.sortedDescending()
+                sourceResolutionLabel = highestFormat?.let { fmt ->
+                    val p = if (fmt.height > 0) "${fmt.height}p" else ""
+                    val fps = if (fmt.frameRate > 0) " @ ${fmt.frameRate.toInt()}fps" else ""
+                    "$p$fps".trim()
+                } ?: ""
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                playbackError = error.localizedMessage ?: "Unable to stream video. Please check your internet connection."
+                isBuffering = false
+            }
+
             override fun onCues(cueGroup: CueGroup) {
                 currentCues = cueGroup.cues
             }
@@ -135,10 +209,18 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
     }
 
     LaunchedEffect(exoPlayer, movieDetails) {
-        exoPlayer.addMediaItem(movieDetails.intoMediaItem())
-        movieDetails.similarMovies.forEach {
-            exoPlayer.addMediaItem(it.intoMediaItem())
+        playbackError = null
+        isBuffering = true
+        exoPlayer.stop()
+        exoPlayer.clearMediaItems()
+
+        val items = buildList {
+            add(movieDetails.intoMediaItem())
+            movieDetails.similarMovies.forEach {
+                add(it.intoMediaItem())
+            }
         }
+        exoPlayer.setMediaItems(items)
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
     }
@@ -166,9 +248,15 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
         Modifier
             .focusRequester(rootFocusRequester)
             .dPadEvents(
-                exoPlayer,
-                videoPlayerState,
-                pulseState
+                exoPlayer = exoPlayer,
+                videoPlayerState = videoPlayerState,
+                pulseState = pulseState,
+                isPlaying = isPlaying
+            )
+            .mediaKeyEvents(
+                exoPlayer = exoPlayer,
+                videoPlayerState = videoPlayerState,
+                pulseState = pulseState
             )
             .focusable()
     } else {
@@ -193,15 +281,21 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
         VideoPlayerOverlay(
             modifier = Modifier.align(Alignment.BottomCenter),
             focusRequester = focusRequester,
-            isPlaying = exoPlayer.isPlaying,
+            isPlaying = isPlaying,
             isControlsVisible = videoPlayerState.isControlsVisible && !isSettingsOpen && !isPlaylistOpen,
-            centerButton = { VideoPlayerPulse(pulseState) },
+            centerButton = {
+                if (pulseState.type != NONE) {
+                    VideoPlayerPulse(pulseState)
+                } else if (isBuffering && playbackError == null) {
+                    VideoPlayerBufferingSpinner(label = "Loading stream...")
+                }
+            },
             subtitles = {
                 if (isSubtitlesEnabled && currentCues.isNotEmpty()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 24.dp),
+                            .padding(bottom = 28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         currentCues.forEach { cue ->
@@ -224,7 +318,7 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
                     }
                 }
             },
-            showControls = videoPlayerState::showControls,
+            showControls = { videoPlayerState.showControls(isPlaying) },
             controls = {
                 VideoPlayerControls(
                     player = exoPlayer,
@@ -247,26 +341,101 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
                             .setPreferredTextLanguage(if (isSubtitlesEnabled) "en" else null)
                             .build()
                     },
-                    onShowControls = { videoPlayerState.showControls(exoPlayer.isPlaying) },
+                    onShowControls = { videoPlayerState.showControls(isPlaying) },
                 )
             }
         )
+
+        // Error Prompt Overlay
+        AnimatedVisibility(
+            visible = playbackError != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(52.dp)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "Playback Error",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = playbackError ?: "Unable to load stream",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.LightGray
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Button(
+                        onClick = {
+                            playbackError = null
+                            isBuffering = true
+                            exoPlayer.prepare()
+                            exoPlayer.play()
+                        },
+                        colors = ButtonDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(text = "Retry Playback")
+                    }
+                }
+            }
+        }
 
         // Settings Dialog Overlay
         VideoPlayerSettingsOverlay(
             isPresented = isSettingsOpen,
             currentSpeed = currentSpeed,
             currentContentScale = currentContentScale,
+            currentQualityMaxHeight = currentQualityMaxHeight,
+            availableQualityHeights = availableQualityHeights,
+            sourceResolutionLabel = sourceResolutionLabel,
             onSelectSpeed = { speed ->
                 currentSpeed = speed
                 exoPlayer.playbackParameters = PlaybackParameters(speed)
             },
             onSelectContentScale = { scale ->
                 currentContentScale = scale
+                exoPlayer.videoScalingMode = if (scale == ContentScale.Crop) {
+                    C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+                } else {
+                    C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+                }
+            },
+            onSelectQuality = { height ->
+                currentQualityMaxHeight = height
+                val builder = exoPlayer.trackSelectionParameters.buildUpon()
+                if (height > 0) {
+                    builder.setMaxVideoSize(Int.MAX_VALUE, height)
+                } else {
+                    builder.clearVideoSizeConstraints()
+                }
+                exoPlayer.trackSelectionParameters = builder.build()
             },
             onDismiss = {
                 isSettingsOpen = false
-                videoPlayerState.showControls(exoPlayer.isPlaying)
+                videoPlayerState.showControls(isPlaying)
             }
         )
 
@@ -282,7 +451,7 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             },
             onDismiss = {
                 isPlaylistOpen = false
-                videoPlayerState.showControls(exoPlayer.isPlaying)
+                videoPlayerState.showControls(isPlaying)
             }
         )
     }
@@ -291,7 +460,8 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
 private fun Modifier.dPadEvents(
     exoPlayer: ExoPlayer,
     videoPlayerState: VideoPlayerState,
-    pulseState: VideoPlayerPulseState
+    pulseState: VideoPlayerPulseState,
+    isPlaying: Boolean
 ): Modifier = this.handleDPadKeyEvents(
     onLeft = {
         if (!videoPlayerState.isControlsVisible) {
@@ -305,10 +475,10 @@ private fun Modifier.dPadEvents(
             pulseState.setType(FORWARD)
         }
     },
-    onUp = { videoPlayerState.showControls(exoPlayer.isPlaying) },
-    onDown = { videoPlayerState.showControls(exoPlayer.isPlaying) },
+    onUp = { videoPlayerState.showControls(isPlaying) },
+    onDown = { videoPlayerState.showControls(isPlaying) },
     onEnter = {
-        if (exoPlayer.isPlaying) {
+        if (isPlaying) {
             exoPlayer.pause()
             videoPlayerState.showControls(isPlaying = false)
         } else {
@@ -318,9 +488,58 @@ private fun Modifier.dPadEvents(
     }
 )
 
+private fun Modifier.mediaKeyEvents(
+    exoPlayer: ExoPlayer,
+    videoPlayerState: VideoPlayerState,
+    pulseState: VideoPlayerPulseState
+): Modifier = this.onPreviewKeyEvent { event ->
+    if (event.type == KeyEventType.KeyUp) {
+        when (event.key) {
+            Key.MediaPlay -> {
+                exoPlayer.play()
+                videoPlayerState.showControls(isPlaying = true)
+                true
+            }
+            Key.MediaPause -> {
+                exoPlayer.pause()
+                videoPlayerState.showControls(isPlaying = false)
+                true
+            }
+            Key.MediaPlayPause -> {
+                if (exoPlayer.isPlaying) {
+                    exoPlayer.pause()
+                    videoPlayerState.showControls(isPlaying = false)
+                } else {
+                    exoPlayer.play()
+                    videoPlayerState.showControls(isPlaying = true)
+                }
+                true
+            }
+            Key.MediaFastForward -> {
+                exoPlayer.seekForward()
+                pulseState.setType(FORWARD)
+                true
+            }
+            Key.MediaRewind -> {
+                exoPlayer.seekBack()
+                pulseState.setType(BACK)
+                true
+            }
+            else -> false
+        }
+    } else false
+}
+
 private fun MovieDetails.intoMediaItem(): MediaItem {
     return MediaItem.Builder()
         .setUri(videoUri)
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(name)
+                .setArtist(director)
+                .setDescription(description)
+                .build()
+        )
         .setSubtitleConfigurations(
             if (subtitleUri == null) {
                 emptyList()
@@ -340,6 +559,12 @@ private fun MovieDetails.intoMediaItem(): MediaItem {
 private fun Movie.intoMediaItem(): MediaItem {
     return MediaItem.Builder()
         .setUri(videoUri)
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(name)
+                .setDescription(description)
+                .build()
+        )
         .setSubtitleConfigurations(
             if (subtitleUri == null) {
                 emptyList()

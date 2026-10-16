@@ -24,7 +24,9 @@ import com.example.metflix.data.network.tmdb.TmdbConfig
 import com.example.metflix.data.util.AssetsReader
 import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 class MovieCategoryDataSource @Inject constructor(
     assetsReader: AssetsReader,
     private val apiClient: MetFlixApiClient,

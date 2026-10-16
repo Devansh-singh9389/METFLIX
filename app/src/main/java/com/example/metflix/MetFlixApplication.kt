@@ -22,6 +22,8 @@ import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
+import com.example.metflix.data.repositories.LiveTvRepository
+import com.example.metflix.data.repositories.LiveTvRepositoryImpl
 import com.example.metflix.data.repositories.MovieRepository
 import com.example.metflix.data.repositories.MovieRepositoryImpl
 import dagger.Binds
@@ -30,21 +32,32 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.components.SingletonComponent
 
+import com.example.metflix.data.settings.PerformancePreferences
+import javax.inject.Inject
+
 @HiltAndroidApp(Application::class)
 class MetFlixApplication : Hilt_MetFlixApplication(), ImageLoaderFactory {
+
+    @Inject
+    lateinit var performancePreferences: PerformancePreferences
+
+    override fun onCreate() {
+        super.onCreate()
+        // Initialize and apply performance preferences on app launch
+    }
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.15)
-                    .strongReferencesEnabled(false)
+                    .maxSizePercent(0.25)
+                    .strongReferencesEnabled(true)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(60L * 1024 * 1024)
+                    .maxSizeBytes(80L * 1024 * 1024)
                     .build()
             }
             .respectCacheHeaders(false)
@@ -66,4 +79,9 @@ abstract class MovieRepositoryModule {
     abstract fun bindMovieRepository(
         movieRepositoryImpl: MovieRepositoryImpl
     ): MovieRepository
+
+    @Binds
+    abstract fun bindLiveTvRepository(
+        liveTvRepositoryImpl: LiveTvRepositoryImpl
+    ): LiveTvRepository
 }

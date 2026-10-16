@@ -22,9 +22,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,43 +51,74 @@ fun VideoPlayerSeeker(
     actionButtonsFocusRequester: FocusRequester? = null,
     state: PlayPauseButtonState = rememberPlayPauseButtonState(player),
     onSeek: (Float) -> Unit = {
-        player.seekTo(player.duration.times(it).toLong())
+        val targetMs = (player.duration.coerceAtLeast(0L) * it).toLong()
+        player.seekTo(targetMs)
     },
     onShowControls: () -> Unit = {},
 ) {
-    val contentDuration = player.contentDuration.milliseconds
+    var isPlaying by remember(player) { mutableStateOf(player.isPlaying) }
+    var currentPositionMs by remember(player) { mutableLongStateOf(player.currentPosition.coerceAtLeast(0L)) }
+    var bufferedPositionMs by remember(player) { mutableLongStateOf(player.bufferedPosition.coerceAtLeast(0L)) }
+    var durationMs by remember(player) { mutableLongStateOf(player.duration.coerceAtLeast(0L)) }
 
-    var currentPositionMs by remember(player) { mutableLongStateOf(0L) }
-    val currentPosition = currentPositionMs.milliseconds
+    var isScrubbing by remember { mutableStateOf(false) }
+    var scrubProgress by remember { mutableStateOf(0f) }
 
-    LaunchedEffect(player) {
-        while (true) {
-            if (player.isPlaying) {
-                currentPositionMs = player.currentPosition
-                delay(1000)
-            } else {
-                currentPositionMs = player.currentPosition
-                delay(500)
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
             }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                durationMs = player.duration.coerceAtLeast(0L)
+                bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L)
+                currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
         }
     }
 
-    val contentProgressString =
-        currentPosition.toComponents { h, m, s, _ ->
-            if (h > 0) {
-                "$h:${m.padStartWith0()}:${s.padStartWith0()}"
-            } else {
-                "${m.padStartWith0()}:${s.padStartWith0()}"
-            }
+    LaunchedEffect(player, isPlaying) {
+        while (true) {
+            currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+            bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L)
+            durationMs = player.duration.coerceAtLeast(0L)
+            delay(if (isPlaying) 500L else 1000L)
         }
-    val contentDurationString =
-        contentDuration.toComponents { h, m, s, _ ->
-            if (h > 0) {
-                "$h:${m.padStartWith0()}:${s.padStartWith0()}"
-            } else {
-                "${m.padStartWith0()}:${s.padStartWith0()}"
-            }
+    }
+
+    val displayPositionMs = if (isScrubbing) {
+        (durationMs * scrubProgress).toLong()
+    } else {
+        currentPositionMs
+    }
+
+    val currentPosition = displayPositionMs.milliseconds
+    val totalDuration = durationMs.milliseconds
+
+    val contentProgressString = currentPosition.toComponents { h, m, s, _ ->
+        if (h > 0) {
+            "$h:${m.padStartWith0()}:${s.padStartWith0()}"
+        } else {
+            "${m.padStartWith0()}:${s.padStartWith0()}"
         }
+    }
+
+    val contentDurationString = totalDuration.toComponents { h, m, s, _ ->
+        if (h > 0) {
+            "$h:${m.padStartWith0()}:${s.padStartWith0()}"
+        } else {
+            "${m.padStartWith0()}:${s.padStartWith0()}"
+        }
+    }
+
+    val safeDuration = durationMs.coerceAtLeast(1L).toFloat()
+    val playProgress = (currentPositionMs.toFloat() / safeDuration).coerceIn(0f, 1f)
+    val streamBufferedProgress = (bufferedPositionMs.toFloat() / safeDuration).coerceIn(0f, 1f)
 
     Row(
         modifier = modifier,
@@ -103,17 +136,25 @@ fun VideoPlayerSeeker(
                 ),
             icon = if (state.showPlay) Icons.Default.PlayArrow else Icons.Default.Pause,
             onClick = state::onClick,
-            isPlaying = player.isPlaying,
+            isPlaying = isPlaying,
             contentDescription = StringConstants
                 .Composable
                 .VideoPlayerControlPlayPauseButton
         )
         VideoPlayerControllerText(text = contentProgressString)
         VideoPlayerControllerIndicator(
-            progress = if (contentDuration.inWholeMilliseconds > 0) {
-                (currentPositionMs.toFloat() / contentDuration.inWholeMilliseconds.toFloat()).coerceIn(0f, 1f)
-            } else 0f,
-            onSeek = onSeek,
+            progress = playProgress,
+            bufferedProgress = streamBufferedProgress,
+            onSeek = { seekTarget ->
+                val targetMs = (durationMs * seekTarget).toLong()
+                player.seekTo(targetMs)
+                currentPositionMs = targetMs
+                onSeek(seekTarget)
+            },
+            onSeekingChanged = { seeking, targetProgress ->
+                isScrubbing = seeking
+                scrubProgress = targetProgress
+            },
             onShowControls = onShowControls,
             modifier = if (actionButtonsFocusRequester != null) {
                 Modifier.focusProperties {

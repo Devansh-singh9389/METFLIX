@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Support
 import androidx.compose.material.icons.filled.Translate
@@ -30,6 +31,7 @@ enum class ProfileScreens(
     private val title: String? = null,
 ) {
     Accounts(Icons.Default.Person),
+    Performance(title = "Performance", icon = Icons.Default.Speed),
     About(Icons.Default.Info),
     Subtitles(Icons.Default.Subtitles),
     Language(Icons.Default.Translate),

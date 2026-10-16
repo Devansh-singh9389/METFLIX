@@ -44,13 +44,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import android.graphics.Bitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.tv.material3.Border
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.CompactCard
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.metflix.data.entities.Movie
+import com.example.metflix.data.settings.PerformancePreferences
 import com.example.metflix.data.util.StringConstants
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import com.example.metflix.presentation.theme.MetFlixBorderWidth
@@ -116,8 +121,20 @@ private fun MovieListItem(
                     targetValue = if (isFocused) 1f else 0.5f,
                     label = "",
                 )
+                val context = LocalContext.current
+                val isHighQuality = PerformancePreferences.isHighQualityImagesActive
+                val imageRequest = remember(movie.posterUri, isHighQuality) {
+                    ImageRequest.Builder(context)
+                        .data(movie.posterUri)
+                        .size(if (isHighQuality) 864 else 432, if (isHighQuality) 432 else 216)
+                        .bitmapConfig(if (isHighQuality) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565)
+                        .allowRgb565(!isHighQuality)
+                        .precision(Precision.INEXACT)
+                        .crossfade(false)
+                        .build()
+                }
                 AsyncImage(
-                    model = movie.posterUri,
+                    model = imageRequest,
                     contentDescription = StringConstants
                         .Composable
                         .ContentDescription

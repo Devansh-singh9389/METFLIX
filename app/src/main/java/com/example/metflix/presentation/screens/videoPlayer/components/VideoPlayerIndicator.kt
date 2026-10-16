@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Google LLC
+ * Copyright 2024 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,89 +30,146 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import com.example.metflix.presentation.utils.handleDPadKeyEvents
-import com.example.metflix.presentation.utils.ifElse
 
 @Composable
 fun RowScope.VideoPlayerControllerIndicator(
     progress: Float,
+    bufferedProgress: Float = 0f,
     onSeek: (seekProgress: Float) -> Unit,
     modifier: Modifier = Modifier,
+    onSeekingChanged: (isSeeking: Boolean, seekProgress: Float) -> Unit = { _, _ -> },
     onShowControls: () -> Unit = {},
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    var isSelected by remember { mutableStateOf(false) }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val color by rememberUpdatedState(
-        newValue = if (isSelected) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurface
-    )
-    val animatedIndicatorHeight by animateDpAsState(
-        targetValue = 4.dp.times((if (isFocused) 2.5f else 1f))
-    )
-    var seekProgress by remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(isSelected) {
-        onShowControls()
+    var isScrubbing by remember { mutableStateOf(false) }
+    var scrubProgress by remember { mutableFloatStateOf(progress) }
+
+    // Keep scrubProgress in sync with playback when not actively scrubbing
+    LaunchedEffect(progress, isScrubbing) {
+        if (!isScrubbing) {
+            scrubProgress = progress
+        }
     }
 
-    val handleSeekEventModifier = Modifier.handleDPadKeyEvents(
-        onEnter = {
-            isSelected = !isSelected
-            onSeek(seekProgress)
-        },
-        onLeft = {
-            seekProgress = (seekProgress - 0.1f).coerceAtLeast(0f)
-        },
-        onRight = {
-            seekProgress = (seekProgress + 0.1f).coerceAtMost(1f)
+    // Cancel scrubbing if user navigates away from seeker
+    LaunchedEffect(isFocused) {
+        if (!isFocused && isScrubbing) {
+            isScrubbing = false
+            onSeekingChanged(false, progress)
         }
+    }
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val activeTrackColor = if (isFocused) primaryColor else MaterialTheme.colorScheme.onSurface
+    val bufferedColor = Color.White.copy(alpha = 0.35f)
+    val backgroundTrackColor = Color.White.copy(alpha = 0.18f)
+
+    val animatedIndicatorHeight by animateDpAsState(
+        targetValue = if (isFocused) 8.dp else 4.dp,
+        label = "indicatorHeight"
     )
 
-    val handleDpadCenterClickModifier = Modifier.handleDPadKeyEvents(
+    val thumbRadius by animateDpAsState(
+        targetValue = if (isFocused) 7.dp else 0.dp,
+        label = "thumbRadius"
+    )
+
+    val handleKeyEvents = Modifier.handleDPadKeyEvents(
+        onLeft = {
+            onShowControls()
+            isScrubbing = true
+            scrubProgress = (scrubProgress - 0.015f).coerceIn(0f, 1f)
+            onSeekingChanged(true, scrubProgress)
+        },
+        onRight = {
+            onShowControls()
+            isScrubbing = true
+            scrubProgress = (scrubProgress + 0.015f).coerceIn(0f, 1f)
+            onSeekingChanged(true, scrubProgress)
+        },
         onEnter = {
-            seekProgress = progress
-            isSelected = !isSelected
+            onShowControls()
+            if (isScrubbing) {
+                onSeek(scrubProgress)
+                isScrubbing = false
+                onSeekingChanged(false, scrubProgress)
+            } else {
+                isScrubbing = true
+                scrubProgress = progress
+                onSeekingChanged(true, scrubProgress)
+            }
         }
     )
 
     Canvas(
         modifier = modifier
             .weight(1f)
-            .height(animatedIndicatorHeight)
-            .padding(horizontal = 4.dp)
-            .ifElse(
-                condition = isSelected,
-                ifTrueModifier = handleSeekEventModifier,
-                ifFalseModifier = handleDpadCenterClickModifier
-            )
+            .height(24.dp)
+            .padding(horizontal = 6.dp)
+            .then(handleKeyEvents)
             .focusable(interactionSource = interactionSource),
         onDraw = {
-            val yOffset = size.height.div(2)
+            val yOffset = size.height / 2f
+            val trackHeight = animatedIndicatorHeight.toPx()
+            val currentProgressValue = if (isScrubbing) scrubProgress else progress.coerceIn(0f, 1f)
+            val currentBufferedValue = bufferedProgress.coerceIn(0f, 1f)
+
+            // 1. Background track
             drawLine(
-                color = color.copy(alpha = 0.24f),
+                color = backgroundTrackColor,
                 start = Offset(x = 0f, y = yOffset),
                 end = Offset(x = size.width, y = yOffset),
-                strokeWidth = size.height,
+                strokeWidth = trackHeight,
                 cap = StrokeCap.Round
             )
-            drawLine(
-                color = color,
-                start = Offset(x = 0f, y = yOffset),
-                end = Offset(
-                    x = size.width.times(if (isSelected) seekProgress else progress),
-                    y = yOffset
-                ),
-                strokeWidth = size.height,
-                cap = StrokeCap.Round
-            )
+
+            // 2. Buffered streaming progress track
+            if (currentBufferedValue > 0f) {
+                drawLine(
+                    color = bufferedColor,
+                    start = Offset(x = 0f, y = yOffset),
+                    end = Offset(x = size.width * currentBufferedValue, y = yOffset),
+                    strokeWidth = trackHeight,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            // 3. Active playback / scrubbed track
+            val playedEndX = size.width * currentProgressValue
+            if (playedEndX > 0f) {
+                drawLine(
+                    color = activeTrackColor,
+                    start = Offset(x = 0f, y = yOffset),
+                    end = Offset(x = playedEndX, y = yOffset),
+                    strokeWidth = trackHeight,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            // 4. Scrubber glowing thumb head when focused
+            if (thumbRadius.toPx() > 0f) {
+                val thumbCenter = Offset(x = playedEndX.coerceIn(0f, size.width), y = yOffset)
+                drawCircle(
+                    color = primaryColor.copy(alpha = 0.35f),
+                    radius = thumbRadius.toPx() + 3.dp.toPx(),
+                    center = thumbCenter
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = thumbRadius.toPx(),
+                    center = thumbCenter
+                )
+            }
         }
     )
 }

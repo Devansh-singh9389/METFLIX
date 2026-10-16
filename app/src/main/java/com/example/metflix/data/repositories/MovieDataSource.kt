@@ -26,7 +26,9 @@ import com.example.metflix.data.network.tmdb.TmdbConfig
 import com.example.metflix.data.util.AssetsReader
 import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 class MovieDataSource @Inject constructor(
     assetsReader: AssetsReader,
     private val apiClient: MetFlixApiClient,
@@ -41,7 +43,7 @@ class MovieDataSource @Inject constructor(
         readMovieData(assetsReader, StringConstants.Assets.Top250Movies)
     }
 
-    private val mostPopularMovieDataReader = MovieDataReader {
+    private val trendingMovieDataReader = MovieDataReader {
         if (TmdbConfig.USE_TMDB) {
             val tmdb = tmdbApiClient.getTrendingMovies().getOrNull()
             if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
@@ -55,7 +57,7 @@ class MovieDataSource @Inject constructor(
         }
     }
 
-    private val movieDataReader = MovieDataReader {
+    private val popularMovieDataReader = MovieDataReader {
         if (TmdbConfig.USE_TMDB) {
             val tmdb = tmdbApiClient.getPopularMovies().getOrNull()
             if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
@@ -66,20 +68,6 @@ class MovieDataSource @Inject constructor(
         }
         top250MovieDataReader.read().map {
             it.toMovie()
-        }
-    }
-
-    private var movieWithLongThumbnailDataReader: MovieDataReader = CachedDataReader {
-        if (TmdbConfig.USE_TMDB) {
-            val tmdb = tmdbApiClient.getNowPlayingMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return@CachedDataReader tmdb
-        }
-        if (NetworkConfig.USE_REMOTE_BACKEND) {
-            val remote = remoteMovieCache.read()
-            if (remote.isNotEmpty()) return@CachedDataReader remote.map { it.copy() }
-        }
-        top250MovieDataReader.read().map {
-            it.toMovie(ThumbnailType.Long)
         }
     }
 
@@ -97,66 +85,63 @@ class MovieDataSource @Inject constructor(
         }
     }
 
+    private val topRatedMovieDataReader = MovieDataReader {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getTopRatedMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
+        }
+        if (NetworkConfig.USE_REMOTE_BACKEND) {
+            val remote = apiClient.getMovies(NetworkConfig.TOP10_MOVIES_ENDPOINT).getOrNull()
+            if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie(ThumbnailType.Long) }
+        }
+        val list = top250MovieDataReader.read()
+        if (list.size >= 30) list.subList(20, 30).map { it.toMovie(ThumbnailType.Long) }
+        else list.take(10).map { it.toMovie(ThumbnailType.Long) }
+    }
+
+    private val movieWithLongThumbnailDataReader: MovieDataReader = CachedDataReader {
+        val nowPlaying = nowPlayingMovieDataReader.read()
+        if (nowPlaying.isNotEmpty()) {
+            return@CachedDataReader nowPlaying
+        }
+        top250MovieDataReader.read().map {
+            it.toMovie(ThumbnailType.Long)
+        }
+    }
+
     suspend fun getMovieList(thumbnailType: ThumbnailType = ThumbnailType.Standard) =
         when (thumbnailType) {
-            ThumbnailType.Standard -> movieDataReader.read()
+            ThumbnailType.Standard -> popularMovieDataReader.read()
             ThumbnailType.Long -> movieWithLongThumbnailDataReader.read()
         }
 
     suspend fun getFeaturedMovieList(): List<Movie> {
-        if (TmdbConfig.USE_TMDB) {
-            val tmdb = tmdbApiClient.getNowPlayingMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return tmdb.take(5)
-        }
-        if (NetworkConfig.USE_REMOTE_BACKEND) {
-            val remote = apiClient.getMovies(NetworkConfig.FEATURED_MOVIES_ENDPOINT).getOrNull()
-            if (!remote.isNullOrEmpty()) return remote.map { it.toMovie(ThumbnailType.Long) }
-        }
-        val list = movieWithLongThumbnailDataReader.read()
-        return list.filterIndexed { index, _ -> listOf(1, 3, 5, 7, 9).contains(index) }
+        val list = nowPlayingMovieDataReader.read()
+        return if (list.isNotEmpty()) list.take(5) else emptyList()
     }
 
     suspend fun getTrendingMovieList(): List<Movie> {
-        if (TmdbConfig.USE_TMDB) {
-            val tmdb = tmdbApiClient.getTrendingMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return tmdb.take(10)
-        }
-        val list = mostPopularMovieDataReader.read()
+        val list = trendingMovieDataReader.read()
         return if (list.size >= 10) list.subList(0, 10) else list
     }
 
     suspend fun getTop10MovieList(): List<Movie> {
-        if (TmdbConfig.USE_TMDB) {
-            val tmdb = tmdbApiClient.getTopRatedMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return tmdb.take(10)
-        }
-        if (NetworkConfig.USE_REMOTE_BACKEND) {
-            val remote = apiClient.getMovies(NetworkConfig.TOP10_MOVIES_ENDPOINT).getOrNull()
-            if (!remote.isNullOrEmpty()) return remote.map { it.toMovie(ThumbnailType.Long) }
-        }
-        val list = movieWithLongThumbnailDataReader.read()
-        return if (list.size >= 30) list.subList(20, 30) else list.take(10)
+        val list = topRatedMovieDataReader.read()
+        return if (list.size >= 10) list.take(10) else list
     }
 
     suspend fun getNowPlayingMovieList(): List<Movie> {
-        if (TmdbConfig.USE_TMDB) {
-            val tmdb = tmdbApiClient.getNowPlayingMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return tmdb.take(10)
-        }
-        return nowPlayingMovieDataReader.read()
+        val list = nowPlayingMovieDataReader.read()
+        return if (list.size >= 10) list.take(10) else list
     }
 
     suspend fun getPopularFilmThisWeek(): List<Movie> {
-        if (TmdbConfig.USE_TMDB) {
-            val tmdb = tmdbApiClient.getPopularMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return tmdb.take(10)
-        }
-        val list = mostPopularMovieDataReader.read()
-        return if (list.size >= 20) list.subList(11, 20) else list.take(10)
+        val list = popularMovieDataReader.read()
+        return if (list.size >= 20) list.subList(10, 20) else list.take(10)
     }
 
     suspend fun getFavoriteMovieList(): List<Movie> {
-        val list = movieDataReader.read()
+        val list = popularMovieDataReader.read()
         return if (list.size >= 28) list.subList(0, 28) else list
     }
 
@@ -169,7 +154,7 @@ class MovieDataSource @Inject constructor(
             val remote = apiClient.searchMovies(query).getOrNull()
             if (!remote.isNullOrEmpty()) return remote.map { it.toMovie() }
         }
-        val all = movieDataReader.read()
+        val all = popularMovieDataReader.read()
         return all.filter { it.name.contains(query, ignoreCase = true) }
     }
 }

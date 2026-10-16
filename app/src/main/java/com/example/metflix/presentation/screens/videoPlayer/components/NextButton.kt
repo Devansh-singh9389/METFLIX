@@ -46,6 +46,7 @@ fun NextButton(
                 onClick()
             } else if (player.hasNextMediaItem()) {
                 player.seekToNextMediaItem()
+                player.play()
             } else {
                 player.seekTo(player.duration.coerceAtLeast(0))
             }

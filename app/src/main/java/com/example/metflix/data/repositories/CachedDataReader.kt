@@ -30,15 +30,21 @@ import kotlinx.serialization.json.Json
 
 internal class CachedDataReader<T>(private val reader: suspend () -> List<T>) {
     private val mutex = Mutex()
-    private lateinit var cache: List<T>
+    private var cache: List<T>? = null
 
-    suspend fun read(): List<T> {
+    suspend fun read(forceRefresh: Boolean = false): List<T> {
         mutex.withLock {
-            if (!::cache.isInitialized) {
+            if (cache == null || forceRefresh) {
                 cache = reader()
             }
         }
-        return cache
+        return cache ?: emptyList()
+    }
+
+    suspend fun clear() {
+        mutex.withLock {
+            cache = null
+        }
     }
 }
 

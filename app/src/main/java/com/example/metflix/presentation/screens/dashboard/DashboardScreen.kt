@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -86,6 +87,7 @@ fun DashboardScreen(
     openCategoryMovieList: (categoryId: String) -> Unit,
     openMovieDetailsScreen: (movieId: String) -> Unit,
     openVideoPlayer: (Movie) -> Unit,
+    openLiveTvPlayer: (channelId: String) -> Unit,
     isComingBackFromDifferentScreen: Boolean,
     resetIsComingBackFromDifferentScreen: () -> Unit,
     onBackPressed: () -> Unit
@@ -182,8 +184,11 @@ fun DashboardScreen(
             val targetRoute = screen()
             if (currentDestination != targetRoute) {
                 navController.navigate(targetRoute) {
-                    if (screen == TopBarTabs[0]) popUpTo(TopBarTabs[0].invoke())
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        saveState = true
+                    }
                     launchSingleTop = true
+                    restoreState = true
                 }
             }
         }
@@ -192,6 +197,7 @@ fun DashboardScreen(
             openCategoryMovieList = openCategoryMovieList,
             openMovieDetailsScreen = openMovieDetailsScreen,
             openVideoPlayer = openVideoPlayer,
+            openLiveTvPlayer = openLiveTvPlayer,
             updateTopBarVisibility = { isTopBarVisible = it },
             isTopBarVisible = isTopBarVisible,
             navController = navController,
@@ -225,6 +231,7 @@ private fun Body(
     openCategoryMovieList: (categoryId: String) -> Unit,
     openMovieDetailsScreen: (movieId: String) -> Unit,
     openVideoPlayer: (Movie) -> Unit,
+    openLiveTvPlayer: (channelId: String) -> Unit,
     updateTopBarVisibility: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
@@ -264,6 +271,13 @@ private fun Body(
         composable(Screens.Shows()) {
             ShowsScreen(
                 onTVShowClick = { movie -> openMovieDetailsScreen(movie.id) },
+                onScroll = updateTopBarVisibility,
+                isTopBarVisible = isTopBarVisible
+            )
+        }
+        composable(Screens.LiveTv()) {
+            com.example.metflix.presentation.screens.livetv.LiveTvScreen(
+                onChannelClick = { channel -> openLiveTvPlayer(channel.id) },
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )

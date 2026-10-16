@@ -24,13 +24,19 @@ import androidx.compose.material.icons.filled.AutoAwesomeMotion
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.util.StringConstants
@@ -46,15 +52,47 @@ fun VideoPlayerControls(
     onToggleSubtitles: () -> Unit = {},
     onShowControls: () -> Unit = {},
 ) {
-    val isPlaying = player.isPlaying
+    var isPlaying by remember(player) { mutableStateOf(player.isPlaying) }
+    var currentMediaIndex by remember(player) { mutableIntStateOf(player.currentMediaItemIndex) }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                currentMediaIndex = player.currentMediaItemIndex
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+        }
+    }
+
     val actionButtonsFocusRequester = remember { FocusRequester() }
+
+    // Dynamic title and metadata based on playlist index
+    val (displayTitle, displaySecondary, displayTertiary) = remember(currentMediaIndex, movieDetails) {
+        if (currentMediaIndex == 0 || movieDetails.similarMovies.isEmpty()) {
+            Triple(movieDetails.name, movieDetails.releaseDate, movieDetails.director)
+        } else {
+            val similar = movieDetails.similarMovies.getOrNull(currentMediaIndex - 1)
+            Triple(
+                similar?.name ?: movieDetails.name,
+                movieDetails.releaseDate,
+                "More Like This"
+            )
+        }
+    }
 
     VideoPlayerMainFrame(
         mediaTitle = {
             VideoPlayerMediaTitle(
-                title = movieDetails.name,
-                secondaryText = movieDetails.releaseDate,
-                tertiaryText = movieDetails.director,
+                title = displayTitle,
+                secondaryText = displaySecondary,
+                tertiaryText = displayTertiary,
                 type = VideoPlayerMediaTitleType.DEFAULT
             )
         },
@@ -76,7 +114,14 @@ fun VideoPlayerControls(
                 NextButton(
                     player = player,
                     onShowControls = onShowControls,
-                    onClick = onShowPlaylist
+                    onClick = {
+                        if (player.hasNextMediaItem()) {
+                            player.seekToNextMediaItem()
+                            player.play()
+                        } else {
+                            onShowPlaylist()
+                        }
+                    }
                 )
                 RepeatButton(
                     player = player,

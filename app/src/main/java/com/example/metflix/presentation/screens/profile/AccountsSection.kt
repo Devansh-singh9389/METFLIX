@@ -34,6 +34,9 @@ import androidx.compose.ui.unit.dp
 import com.example.metflix.data.util.StringConstants
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.metflix.data.settings.PerformancePreferences
+
 @Immutable
 data class AccountsSectionData(
     val title: String,
@@ -42,39 +45,45 @@ data class AccountsSectionData(
 )
 
 @Composable
-fun AccountsSection() {
+fun AccountsSection(
+    onOpenPerformanceSettings: () -> Unit = {}
+) {
     val childPadding = rememberChildPadding()
     var showDeleteDialog by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
-    val accountsSectionListItems = remember {
-        listOf(
-            AccountsSectionData(
-                title = StringConstants.Composable.Placeholders
-                    .AccountsSelectionSwitchAccountsTitle,
-                value = StringConstants.Composable.Placeholders.AccountsSelectionSwitchAccountsEmail
-            ),
-            AccountsSectionData(
-                title = StringConstants.Composable.Placeholders.AccountsSelectionLogOut,
-                value = StringConstants.Composable.Placeholders.AccountsSelectionSwitchAccountsEmail
-            ),
-            AccountsSectionData(
-                title = StringConstants.Composable.Placeholders
-                    .AccountsSelectionChangePasswordTitle,
-                value = StringConstants.Composable.Placeholders.AccountsSelectionChangePasswordValue
-            ),
-            AccountsSectionData(
-                title = StringConstants.Composable.Placeholders.AccountsSelectionAddNewAccountTitle,
-            ),
-            AccountsSectionData(
-                title = StringConstants.Composable.Placeholders
-                    .AccountsSelectionViewSubscriptionsTitle
-            ),
-            AccountsSectionData(
-                title = StringConstants.Composable.Placeholders.AccountsSelectionDeleteAccountTitle,
-                onClick = { showDeleteDialog = true }
-            )
+    val isLowSpec = PerformancePreferences.instance?.lowSpecMode?.collectAsStateWithLifecycle()?.value ?: true
+    val accountsSectionListItems = listOf(
+        AccountsSectionData(
+            title = "Performance Mode",
+            value = if (isLowSpec) "Low-Spec (Optimized)" else "High-Performance (Active)",
+            onClick = onOpenPerformanceSettings
+        ),
+        AccountsSectionData(
+            title = StringConstants.Composable.Placeholders
+                .AccountsSelectionSwitchAccountsTitle,
+            value = StringConstants.Composable.Placeholders.AccountsSelectionSwitchAccountsEmail
+        ),
+        AccountsSectionData(
+            title = StringConstants.Composable.Placeholders.AccountsSelectionLogOut,
+            value = StringConstants.Composable.Placeholders.AccountsSelectionSwitchAccountsEmail
+        ),
+        AccountsSectionData(
+            title = StringConstants.Composable.Placeholders
+                .AccountsSelectionChangePasswordTitle,
+            value = StringConstants.Composable.Placeholders.AccountsSelectionChangePasswordValue
+        ),
+        AccountsSectionData(
+            title = StringConstants.Composable.Placeholders.AccountsSelectionAddNewAccountTitle,
+        ),
+        AccountsSectionData(
+            title = StringConstants.Composable.Placeholders
+                .AccountsSelectionViewSubscriptionsTitle
+        ),
+        AccountsSectionData(
+            title = StringConstants.Composable.Placeholders.AccountsSelectionDeleteAccountTitle,
+            onClick = { showDeleteDialog = true }
         )
-    }
+    )
 
     LazyVerticalGrid(
         modifier = Modifier

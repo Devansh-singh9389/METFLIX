@@ -27,10 +27,13 @@ import com.example.metflix.data.util.StringConstants.Movie.Reviewer.DefaultRatin
 import com.example.metflix.data.util.StringConstants.Movie.Reviewer.FreshTomatoes
 import com.example.metflix.data.util.StringConstants.Movie.Reviewer.ReviewerName
 import com.example.metflix.data.network.tmdb.TmdbApiClient
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 
 @Singleton
 class MovieRepositoryImpl @Inject constructor(
@@ -41,32 +44,37 @@ class MovieRepositoryImpl @Inject constructor(
     private val tmdbApiClient: TmdbApiClient,
 ) : MovieRepository {
 
+    private val movieDetailsCache = ConcurrentHashMap<String, MovieDetails>()
+    private val categoryDetailsCache = ConcurrentHashMap<String, MovieCategoryDetails>()
+
     override fun getFeaturedMovies() = flow {
         val list = movieDataSource.getFeaturedMovieList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getTrendingMovies(): Flow<MovieList> = flow {
         val list = movieDataSource.getTrendingMovieList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getTop10Movies(): Flow<MovieList> = flow {
         val list = movieDataSource.getTop10MovieList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getNowPlayingMovies(): Flow<MovieList> = flow {
         val list = movieDataSource.getNowPlayingMovieList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getMovieCategories() = flow {
         val list = movieCategoryDataSource.getMovieCategoryList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override suspend fun getMovieCategoryDetails(categoryId: String): MovieCategoryDetails {
+        categoryDetailsCache[categoryId]?.let { return it }
+
         val categoryList = movieCategoryDataSource.getMovieCategoryList()
         val category = categoryList.find { categoryId == it.id } ?: categoryList.firstOrNull()
 
@@ -78,17 +86,22 @@ class MovieRepositoryImpl @Inject constructor(
             if (allLocal.size > 20) allLocal.shuffled().take(20) else allLocal
         }
 
-        return MovieCategoryDetails(
+        val result = MovieCategoryDetails(
             id = category?.id ?: categoryId,
             name = category?.name ?: "Movies",
             movies = movieList
         )
+        categoryDetailsCache[categoryId] = result
+        return result
     }
 
     override suspend fun getMovieDetails(movieId: String): MovieDetails {
+        movieDetailsCache[movieId]?.let { return it }
+
         // Try live TMDB first
         val tmdbDetails = tmdbApiClient.getMovieDetails(movieId).getOrNull()
         if (tmdbDetails != null) {
+            movieDetailsCache[movieId] = tmdbDetails
             return tmdbDetails
         }
 
@@ -98,7 +111,7 @@ class MovieRepositoryImpl @Inject constructor(
         val similarMovieList = movieList.filter { it.id != movie.id }.take(4)
         val castList = movieCastDataSource.getMovieCastList()
 
-        return MovieDetails(
+        val details = MovieDetails(
             id = movie.id,
             videoUri = movie.videoUri,
             subtitleUri = movie.subtitleUri,
@@ -133,6 +146,8 @@ class MovieRepositoryImpl @Inject constructor(
                 ),
             ),
         )
+        movieDetailsCache[movieId] = details
+        return details
     }
 
     override suspend fun searchMovies(query: String): MovieList {
@@ -142,30 +157,30 @@ class MovieRepositoryImpl @Inject constructor(
     override fun getMoviesWithLongThumbnail() = flow {
         val list = movieDataSource.getMovieList(ThumbnailType.Long)
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getMovies(): Flow<MovieList> = flow {
         val list = movieDataSource.getMovieList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getPopularFilmsThisWeek(): Flow<MovieList> = flow {
         val list = movieDataSource.getPopularFilmThisWeek()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getTVShows(): Flow<MovieList> = flow {
         val list = tvDataSource.getTvShowList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getBingeWatchDramas(): Flow<MovieList> = flow {
         val list = tvDataSource.getBingeWatchDramaList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 
     override fun getFavouriteMovies(): Flow<MovieList> = flow {
         val list = movieDataSource.getFavoriteMovieList()
         emit(list)
-    }
+    }.flowOn(Dispatchers.IO)
 }

@@ -20,25 +20,29 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.metflix.presentation.screens.categories.CategoryMovieListScreen
+import com.example.metflix.presentation.screens.livetv.player.LiveTvPlayerScreen
 import com.example.metflix.presentation.screens.movies.MovieDetailsScreen
 import com.example.metflix.presentation.screens.videoPlayer.VideoPlayerScreen
 
 enum class Screens(
     private val args: List<String>? = null,
     val isTabItem: Boolean = false,
-    val tabIcon: ImageVector? = null
+    val tabIcon: ImageVector? = null,
+    val tabTitle: String? = null
 ) {
     Profile,
     Home(isTabItem = true),
-    Categories(isTabItem = true),
     Movies(isTabItem = true),
     Shows(isTabItem = true),
+    LiveTv(isTabItem = true, tabTitle = "Live TV"),
+    Categories(isTabItem = true),
     Favourites(isTabItem = true),
     Search(isTabItem = true, tabIcon = Icons.Default.Search),
     CategoryMovieList(listOf(CategoryMovieListScreen.CategoryIdBundleKey)),
     MovieDetails(listOf(MovieDetailsScreen.MovieIdBundleKey)),
     Dashboard,
-    VideoPlayer(listOf(VideoPlayerScreen.MovieIdBundleKey));
+    VideoPlayer(listOf(VideoPlayerScreen.MovieIdBundleKey)),
+    LiveTvPlayer(listOf(LiveTvPlayerScreen.ChannelIdBundleKey));
 
     operator fun invoke(): String {
         val argList = StringBuilder()

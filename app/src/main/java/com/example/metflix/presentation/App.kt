@@ -32,6 +32,8 @@ import com.example.metflix.presentation.screens.dashboard.DashboardScreen
 import com.example.metflix.presentation.screens.movies.MovieDetailsScreen
 import com.example.metflix.presentation.screens.videoPlayer.VideoPlayerScreen
 
+import com.example.metflix.presentation.screens.livetv.player.LiveTvPlayerScreen
+
 @Composable
 fun App(
     onBackPressed: () -> Unit
@@ -72,10 +74,11 @@ fun App(
                         type = NavType.StringType
                     }
                 )
-            ) {
+            ) { backStackEntry ->
+                val movieId = backStackEntry.arguments?.getString(MovieDetailsScreen.MovieIdBundleKey) ?: ""
                 MovieDetailsScreen(
                     goToMoviePlayer = {
-                        navController.navigate(Screens.VideoPlayer())
+                        navController.navigate(Screens.VideoPlayer.withArgs(movieId))
                     },
                     refreshScreenWithNewMovie = { movie ->
                         navController.navigate(
@@ -105,8 +108,13 @@ fun App(
                             Screens.MovieDetails.withArgs(movieId)
                         )
                     },
-                    openVideoPlayer = {
-                        navController.navigate(Screens.VideoPlayer())
+                    openVideoPlayer = { movie ->
+                        navController.navigate(Screens.VideoPlayer.withArgs(movie.id))
+                    },
+                    openLiveTvPlayer = { channelId ->
+                        navController.navigate(
+                            Screens.LiveTvPlayer.withArgs(android.net.Uri.encode(channelId))
+                        )
                     },
                     onBackPressed = onBackPressed,
                     isComingBackFromDifferentScreen = isComingBackFromDifferentScreen,
@@ -115,8 +123,31 @@ fun App(
                     }
                 )
             }
-            composable(route = Screens.VideoPlayer()) {
+            composable(
+                route = Screens.VideoPlayer(),
+                arguments = listOf(
+                    navArgument(VideoPlayerScreen.MovieIdBundleKey) {
+                        type = NavType.StringType
+                    }
+                )
+            ) {
                 VideoPlayerScreen(
+                    onBackPressed = {
+                        if (navController.navigateUp()) {
+                            isComingBackFromDifferentScreen = true
+                        }
+                    }
+                )
+            }
+            composable(
+                route = Screens.LiveTvPlayer(),
+                arguments = listOf(
+                    navArgument(LiveTvPlayerScreen.ChannelIdBundleKey) {
+                        type = NavType.StringType
+                    }
+                )
+            ) {
+                LiveTvPlayerScreen(
                     onBackPressed = {
                         if (navController.navigateUp()) {
                             isComingBackFromDifferentScreen = true
