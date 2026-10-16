@@ -31,4 +31,12 @@
     <string name="live">Live</string>
     <string name="message_loading">Loading…</string>
     <string name="message_error">Wops, something went wrong…</string>
+    <string name="where_to_watch">Where to Watch</string>
+    <string name="streaming_data_powered_by_justwatch">Streaming data powered by JustWatch</string>
+    <string name="stream_subscription">Stream</string>
+    <string name="rent">Rent</string>
+    <string name="buy">Buy</string>
+    <string name="free_with_ads">Free / Ads</string>
+    <string name="view_on_justwatch">Open on JustWatch</string>
+    <string name="country_region">Region: %s</string>
 </resources>

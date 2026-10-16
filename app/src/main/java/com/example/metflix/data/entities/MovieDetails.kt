@@ -40,4 +40,5 @@ data class MovieDetails(
     val revenue: String,
     val similarMovies: MovieList,
     val reviewsAndRatings: List<MovieReviewsAndRatings>,
+    val watchProviders: WatchProvidersInfo? = null,
 )
