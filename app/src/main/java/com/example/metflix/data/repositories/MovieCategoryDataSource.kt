@@ -19,16 +19,23 @@ package com.example.metflix.data.repositories
 import com.example.metflix.data.entities.toMovieCategory
 import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
+import com.example.metflix.data.network.tmdb.TmdbApiClient
+import com.example.metflix.data.network.tmdb.TmdbConfig
 import com.example.metflix.data.util.AssetsReader
 import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
 
 class MovieCategoryDataSource @Inject constructor(
     assetsReader: AssetsReader,
-    private val apiClient: MetFlixApiClient
+    private val apiClient: MetFlixApiClient,
+    private val tmdbApiClient: TmdbApiClient
 ) {
 
     private val movieCategoryDataReader = CachedDataReader {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getMovieCategories().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return@CachedDataReader tmdb
+        }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getCategories(NetworkConfig.CATEGORIES_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@CachedDataReader remote.map { it.toMovieCategory() }

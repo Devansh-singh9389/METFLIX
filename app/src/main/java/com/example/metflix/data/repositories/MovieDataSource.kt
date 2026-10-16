@@ -21,13 +21,16 @@ import com.example.metflix.data.entities.ThumbnailType
 import com.example.metflix.data.entities.toMovie
 import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
+import com.example.metflix.data.network.tmdb.TmdbApiClient
+import com.example.metflix.data.network.tmdb.TmdbConfig
 import com.example.metflix.data.util.AssetsReader
 import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
 
 class MovieDataSource @Inject constructor(
     assetsReader: AssetsReader,
-    private val apiClient: MetFlixApiClient
+    private val apiClient: MetFlixApiClient,
+    private val tmdbApiClient: TmdbApiClient
 ) {
 
     private val remoteMovieCache = CachedDataReader {
@@ -39,6 +42,10 @@ class MovieDataSource @Inject constructor(
     }
 
     private val mostPopularMovieDataReader = MovieDataReader {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getTrendingMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
+        }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getMovies(NetworkConfig.TRENDING_MOVIES_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie() }
@@ -49,6 +56,10 @@ class MovieDataSource @Inject constructor(
     }
 
     private val movieDataReader = MovieDataReader {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getPopularMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
+        }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = remoteMovieCache.read()
             if (remote.isNotEmpty()) return@MovieDataReader remote
@@ -59,6 +70,10 @@ class MovieDataSource @Inject constructor(
     }
 
     private var movieWithLongThumbnailDataReader: MovieDataReader = CachedDataReader {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getNowPlayingMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return@CachedDataReader tmdb
+        }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = remoteMovieCache.read()
             if (remote.isNotEmpty()) return@CachedDataReader remote.map { it.copy() }
@@ -69,6 +84,10 @@ class MovieDataSource @Inject constructor(
     }
 
     private val nowPlayingMovieDataReader: MovieDataReader = MovieDataReader {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getNowPlayingMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
+        }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getMovies(NetworkConfig.NOW_PLAYING_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie() }
@@ -85,6 +104,10 @@ class MovieDataSource @Inject constructor(
         }
 
     suspend fun getFeaturedMovieList(): List<Movie> {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getNowPlayingMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return tmdb.take(5)
+        }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getMovies(NetworkConfig.FEATURED_MOVIES_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return remote.map { it.toMovie(ThumbnailType.Long) }
@@ -94,11 +117,19 @@ class MovieDataSource @Inject constructor(
     }
 
     suspend fun getTrendingMovieList(): List<Movie> {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getTrendingMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return tmdb.take(10)
+        }
         val list = mostPopularMovieDataReader.read()
         return if (list.size >= 10) list.subList(0, 10) else list
     }
 
     suspend fun getTop10MovieList(): List<Movie> {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getTopRatedMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return tmdb.take(10)
+        }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getMovies(NetworkConfig.TOP10_MOVIES_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return remote.map { it.toMovie(ThumbnailType.Long) }
@@ -107,10 +138,19 @@ class MovieDataSource @Inject constructor(
         return if (list.size >= 30) list.subList(20, 30) else list.take(10)
     }
 
-    suspend fun getNowPlayingMovieList(): List<Movie> =
-        nowPlayingMovieDataReader.read()
+    suspend fun getNowPlayingMovieList(): List<Movie> {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getNowPlayingMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return tmdb.take(10)
+        }
+        return nowPlayingMovieDataReader.read()
+    }
 
     suspend fun getPopularFilmThisWeek(): List<Movie> {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getPopularMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) return tmdb.take(10)
+        }
         val list = mostPopularMovieDataReader.read()
         return if (list.size >= 20) list.subList(11, 20) else list.take(10)
     }
@@ -121,6 +161,10 @@ class MovieDataSource @Inject constructor(
     }
 
     suspend fun searchMovies(query: String): List<Movie> {
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.searchMovies(query).getOrNull()
+            if (!tmdb.isNullOrEmpty()) return tmdb
+        }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.searchMovies(query).getOrNull()
             if (!remote.isNullOrEmpty()) return remote.map { it.toMovie() }

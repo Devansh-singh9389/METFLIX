@@ -26,6 +26,7 @@ import com.example.metflix.data.util.StringConstants.Movie.Reviewer.DefaultCount
 import com.example.metflix.data.util.StringConstants.Movie.Reviewer.DefaultRating
 import com.example.metflix.data.util.StringConstants.Movie.Reviewer.FreshTomatoes
 import com.example.metflix.data.util.StringConstants.Movie.Reviewer.ReviewerName
+import com.example.metflix.data.network.tmdb.TmdbApiClient
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -37,6 +38,7 @@ class MovieRepositoryImpl @Inject constructor(
     private val tvDataSource: TvDataSource,
     private val movieCastDataSource: MovieCastDataSource,
     private val movieCategoryDataSource: MovieCategoryDataSource,
+    private val tmdbApiClient: TmdbApiClient,
 ) : MovieRepository {
 
     override fun getFeaturedMovies() = flow {
@@ -66,21 +68,34 @@ class MovieRepositoryImpl @Inject constructor(
 
     override suspend fun getMovieCategoryDetails(categoryId: String): MovieCategoryDetails {
         val categoryList = movieCategoryDataSource.getMovieCategoryList()
-        val category = categoryList.find { categoryId == it.id } ?: categoryList.first()
+        val category = categoryList.find { categoryId == it.id } ?: categoryList.firstOrNull()
 
-        val movieList = movieDataSource.getMovieList().shuffled().subList(0, 20)
+        val tmdbMovies = tmdbApiClient.getMoviesByCategory(categoryId).getOrNull()
+        val movieList = if (!tmdbMovies.isNullOrEmpty()) {
+            tmdbMovies
+        } else {
+            val allLocal = movieDataSource.getMovieList()
+            if (allLocal.size > 20) allLocal.shuffled().take(20) else allLocal
+        }
 
         return MovieCategoryDetails(
-            id = category.id,
-            name = category.name,
+            id = category?.id ?: categoryId,
+            name = category?.name ?: "Movies",
             movies = movieList
         )
     }
 
     override suspend fun getMovieDetails(movieId: String): MovieDetails {
+        // Try live TMDB first
+        val tmdbDetails = tmdbApiClient.getMovieDetails(movieId).getOrNull()
+        if (tmdbDetails != null) {
+            return tmdbDetails
+        }
+
+        // Local asset fallback
         val movieList = movieDataSource.getMovieList()
         val movie = movieList.find { it.id == movieId } ?: movieList.first()
-        val similarMovieList = movieList.subList(1, 4)
+        val similarMovieList = movieList.filter { it.id != movie.id }.take(4)
         val castList = movieCastDataSource.getMovieCastList()
 
         return MovieDetails(
@@ -91,24 +106,24 @@ class MovieRepositoryImpl @Inject constructor(
             name = movie.name,
             description = movie.description,
             pgRating = "PG-13",
-            releaseDate = "2021 (US)",
-            categories = listOf("Action", "Adventure", "Fantasy", "Comedy"),
-            duration = "1h 59m",
-            director = "Larry Page",
-            screenplay = "Sundai Pichai",
-            music = "Sergey Brin",
+            releaseDate = "2024",
+            categories = listOf("Action", "Adventure", "Drama"),
+            duration = "1h 55m",
+            director = "MetFlix Studios",
+            screenplay = "Original Production",
+            music = "Dolby Atmos",
             castAndCrew = castList,
             status = "Released",
             originalLanguage = "English",
-            budget = "$15M",
-            revenue = "$40M",
+            budget = "$20M",
+            revenue = "$85M",
             similarMovies = similarMovieList,
             reviewsAndRatings = listOf(
                 MovieReviewsAndRatings(
                     reviewerName = FreshTomatoes,
                     reviewerIconUri = StringConstants.Movie.Reviewer.FreshTomatoesImageUrl,
-                    reviewCount = "22",
-                    reviewRating = "89%"
+                    reviewCount = "48",
+                    reviewRating = "92%"
                 ),
                 MovieReviewsAndRatings(
                     reviewerName = ReviewerName,
