@@ -36,7 +36,7 @@ class CategoriesScreenViewModel @Inject constructor(
         CategoriesScreenUiState.Ready(categoryList = it)
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Lazily,
         initialValue = CategoriesScreenUiState.Loading
     )
 }

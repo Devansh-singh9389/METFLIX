@@ -17,17 +17,12 @@
 package com.example.metflix.data.repositories
 
 import com.example.metflix.data.entities.Movie
-import com.example.metflix.data.models.MovieCastResponseItem
-import com.example.metflix.data.models.MovieCategoriesResponseItem
-import com.example.metflix.data.models.MoviesResponseItem
-import com.example.metflix.data.util.AssetsReader
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 
+/**
+ * Thread-safe in-memory cache wrapper for data loaders.
+ */
 internal class CachedDataReader<T>(private val reader: suspend () -> List<T>) {
     private val mutex = Mutex()
     private var cache: List<T>? = null
@@ -49,33 +44,3 @@ internal class CachedDataReader<T>(private val reader: suspend () -> List<T>) {
 }
 
 internal typealias MovieDataReader = CachedDataReader<Movie>
-
-internal suspend fun readMovieData(
-    assetsReader: AssetsReader,
-    resourceId: String,
-    dispatcher: CoroutineDispatcher = Dispatchers.IO
-): List<MoviesResponseItem> = withContext(dispatcher) {
-    assetsReader.getJsonDataFromAsset(resourceId).map {
-        Json.decodeFromString<List<MoviesResponseItem>>(it)
-    }.getOrDefault(emptyList())
-}
-
-internal suspend fun readMovieCastData(
-    assetsReader: AssetsReader,
-    resourceId: String,
-    dispatcher: CoroutineDispatcher = Dispatchers.IO
-): List<MovieCastResponseItem> = withContext(dispatcher) {
-    assetsReader.getJsonDataFromAsset(resourceId).map {
-        Json.decodeFromString<List<MovieCastResponseItem>>(it)
-    }.getOrDefault(emptyList())
-}
-
-internal suspend fun readMovieCategoryData(
-    assetsReader: AssetsReader,
-    resourceId: String,
-    dispatcher: CoroutineDispatcher = Dispatchers.IO
-): List<MovieCategoriesResponseItem> = withContext(dispatcher) {
-    assetsReader.getJsonDataFromAsset(resourceId).map {
-        Json.decodeFromString<List<MovieCategoriesResponseItem>>(it)
-    }.getOrDefault(emptyList())
-}

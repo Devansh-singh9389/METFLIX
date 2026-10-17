@@ -39,7 +39,7 @@ class ShowScreenViewModel @Inject constructor(
         ShowScreenUiState.Ready(bingeWatchDramaList = bingeWatchDramaList, tvShowList = tvShowList)
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Lazily,
         initialValue = ShowScreenUiState.Loading
     )
 }

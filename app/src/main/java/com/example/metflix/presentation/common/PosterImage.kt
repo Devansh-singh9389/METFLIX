@@ -26,6 +26,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.size.Precision
 import com.example.metflix.data.entities.Movie
+import com.example.metflix.data.settings.PerformancePreferences
 import com.example.metflix.data.util.StringConstants
 
 @Composable
@@ -34,12 +35,13 @@ fun PosterImage(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val imageRequest = remember(movie.posterUri) {
+    val isHighQuality = PerformancePreferences.isHighQualityImagesActive
+    val imageRequest = remember(movie.posterUri, isHighQuality) {
         ImageRequest.Builder(context)
             .data(movie.posterUri)
-            .bitmapConfig(Bitmap.Config.RGB_565)
-            .allowRgb565(true)
-            .size(300, 450)
+            .bitmapConfig(if (isHighQuality) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565)
+            .allowRgb565(!isHighQuality)
+            .size(if (isHighQuality) 600 else 300, if (isHighQuality) 900 else 450)
             .precision(Precision.INEXACT)
             .crossfade(false)
             .build()

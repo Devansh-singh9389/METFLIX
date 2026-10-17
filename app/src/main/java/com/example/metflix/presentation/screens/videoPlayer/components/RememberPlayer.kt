@@ -32,25 +32,27 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 
 @OptIn(UnstableApi::class)
 @Composable
 fun rememberPlayer(context: Context): ExoPlayer {
     val player = remember {
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(15_000)
+            .setConnectTimeoutMs(20_000)
+            .setReadTimeoutMs(20_000)
             .setAllowCrossProtocolRedirects(true)
-            .setUserAgent("MetFlix-Player/1.0")
+            .setKeepPostFor302Redirects(true)
+            .setUserAgent("Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 MetFlix/1.0")
 
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 50_000,
+                /* minBufferMs = */ 20_000,
+                /* maxBufferMs = */ 60_000,
                 /* bufferForPlaybackMs = */ 1_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_500
+                /* bufferForPlaybackAfterRebufferMs = */ 3_000
             )
             .setBackBuffer(
                 /* backBufferDurationMs = */ 10_000,
@@ -68,8 +70,11 @@ fun rememberPlayer(context: Context): ExoPlayer {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(10))
+
         ExoPlayer.Builder(context, renderersFactory)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .setSeekForwardIncrementMs(10_000)
             .setSeekBackIncrementMs(10_000)

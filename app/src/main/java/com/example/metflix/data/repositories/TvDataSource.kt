@@ -16,20 +16,17 @@
 
 package com.example.metflix.data.repositories
 
-import com.example.metflix.data.entities.ThumbnailType
+import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.toMovie
 import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
 import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
-import com.example.metflix.data.util.AssetsReader
-import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class TvDataSource @Inject constructor(
-    assetsReader: AssetsReader,
     private val apiClient: MetFlixApiClient,
     private val tmdbApiClient: TmdbApiClient
 ) {
@@ -42,15 +39,15 @@ class TvDataSource @Inject constructor(
             val remote = apiClient.getMovies(NetworkConfig.TV_SHOWS_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@CachedDataReader remote.map { it.toMovie() }
         }
-        readMovieData(assetsReader, StringConstants.Assets.MostPopularTVShows).map { it.toMovie() }
+        emptyList()
     }
 
-    suspend fun getTvShowList() = mostPopularTvShowsReader.read().let { list ->
+    suspend fun getTvShowList(): List<Movie> = mostPopularTvShowsReader.read().let { list ->
         val count = list.size.coerceAtMost(10)
         list.subList(0, count)
     }
 
-    suspend fun getBingeWatchDramaList() = mostPopularTvShowsReader.read().let { list ->
+    suspend fun getBingeWatchDramaList(): List<Movie> = mostPopularTvShowsReader.read().let { list ->
         if (list.size >= 15) {
             list.subList(5, 15)
         } else {

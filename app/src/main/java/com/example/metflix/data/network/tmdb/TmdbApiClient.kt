@@ -21,19 +21,19 @@ import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieCategory
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.entities.ThumbnailType
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 @Singleton
-class TmdbApiClient @Inject constructor() {
+class TmdbApiClient @Inject constructor(
+    private val okHttpClient: OkHttpClient
+) {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -157,33 +157,25 @@ class TmdbApiClient @Inject constructor() {
                 "$urlWithoutKey${separator}api_key=$key&language=en-US"
             }
 
-            val url = URL(finalUrl)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 2000
-                readTimeout = 2500
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "MetFlix-AndroidTV/1.0")
-                if (isJwt) {
-                    setRequestProperty("Authorization", "Bearer $key")
-                }
+            val requestBuilder = Request.Builder()
+                .url(finalUrl)
+                .header("Accept", "application/json")
+                .header("User-Agent", "MetFlix-AndroidTV/1.0")
+
+            if (isJwt) {
+                requestBuilder.header("Authorization", "Bearer $key")
             }
 
-            try {
-                val statusCode = connection.responseCode
-                if (statusCode in 200..299) {
-                    val reader = BufferedReader(InputStreamReader(connection.inputStream))
-                    val response = reader.use { it.readText() }
-                    parser(response)
+            val response = okHttpClient.newCall(requestBuilder.build()).execute()
+            response.use { resp ->
+                if (resp.isSuccessful) {
+                    val bodyString = resp.body?.string().orEmpty()
+                    parser(bodyString)
                 } else {
-                    val errorText = connection.errorStream?.let { stream ->
-                        BufferedReader(InputStreamReader(stream)).use { it.readText() }
-                    } ?: "HTTP $statusCode"
-                    Log.w("TmdbApiClient", "TMDB API Error $statusCode: $errorText")
-                    throw Exception("TMDB error ($statusCode): $errorText")
+                    val errorText = resp.body?.string() ?: "HTTP ${resp.code}"
+                    Log.w("TmdbApiClient", "TMDB API Error ${resp.code}: $errorText")
+                    throw Exception("TMDB error (${resp.code}): $errorText")
                 }
-            } finally {
-                connection.disconnect()
             }
         }.onFailure { err ->
             tripCircuit()

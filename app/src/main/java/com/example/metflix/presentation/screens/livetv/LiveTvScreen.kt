@@ -20,7 +20,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -54,8 +56,9 @@ import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.presentation.common.Error
 import com.example.metflix.presentation.common.Loading
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
-import com.example.metflix.presentation.screens.livetv.components.LiveChannelCard
-import com.example.metflix.presentation.screens.livetv.components.LiveChannelHeaderPreview
+import com.example.metflix.presentation.screens.livetv.components.JioTvChannelCard
+import com.example.metflix.presentation.screens.livetv.components.JioTvGuideTimelineView
+import com.example.metflix.presentation.screens.livetv.components.JioTvHeaderPreview
 import com.example.metflix.presentation.screens.livetv.components.LiveTvPlaylistDialog
 import com.example.metflix.presentation.theme.MetFlixBottomListPadding
 
@@ -115,10 +118,12 @@ private fun LiveTvCatalog(
     val childPadding = rememberChildPadding()
     val gridState = rememberLazyGridState()
     var isPlaylistDialogOpen by remember { mutableStateOf(false) }
+    var isTimelineGuideMode by remember { mutableStateOf(false) }
 
     val shouldShowTopBar by remember {
         derivedStateOf {
-            gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset < 100
+            if (isTimelineGuideMode) true
+            else gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset < 100
         }
     }
 
@@ -134,8 +139,8 @@ private fun LiveTvCatalog(
                 .fillMaxSize()
                 .padding(horizontal = childPadding.start)
         ) {
-            // Focused Channel Header Info Preview
-            LiveChannelHeaderPreview(
+            // JioTV Hero Banner: Focused Channel, Now Airing show title, red progress bar & schedule
+            JioTvHeaderPreview(
                 channel = state.focusedChannel,
                 onWatchClick = onChannelClick,
                 onToggleFavorite = onToggleFavorite,
@@ -169,6 +174,28 @@ private fun LiveTvCatalog(
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
+
+                // View Mode Toggle (Cards vs JioTV EPG Guide Timeline)
+                Button(
+                    onClick = { isTimelineGuideMode = !isTimelineGuideMode },
+                    colors = ButtonDefaults.colors(
+                        containerColor = if (isTimelineGuideMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (isTimelineGuideMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isTimelineGuideMode) Icons.Default.GridView else Icons.Default.CalendarViewMonth,
+                        contentDescription = "Toggle Guide View",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isTimelineGuideMode) "Cards View" else "EPG Guide",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 // IPTV Sources Dialog Button
                 Button(
@@ -247,7 +274,7 @@ private fun LiveTvCatalog(
                         decorationBox = { innerTextField ->
                             if (state.searchQuery.isEmpty()) {
                                 Text(
-                                    text = "Filter channels by name, category or number…",
+                                    text = "Filter channels by name, category, or number…",
                                     color = Color.Gray,
                                     fontSize = 12.sp
                                 )
@@ -310,7 +337,7 @@ private fun LiveTvCatalog(
                 )
             }
 
-            // Channels Grid
+            // Main Channel Content: EPG Timeline Guide or JioTV Channel Cards Grid
             if (state.filteredChannels.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -339,7 +366,16 @@ private fun LiveTvCatalog(
                         )
                     }
                 }
+            } else if (isTimelineGuideMode) {
+                // JioTV Full Electronic Program Guide (EPG Timeline Mode)
+                JioTvGuideTimelineView(
+                    channels = state.filteredChannels,
+                    onChannelClick = onChannelClick,
+                    onChannelFocus = onChannelFocus,
+                    modifier = Modifier.weight(1f)
+                )
             } else {
+                // JioTV Channel Cards Mode (with live program, progress bar & remaining time)
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     state = gridState,
@@ -352,7 +388,7 @@ private fun LiveTvCatalog(
                         items = state.filteredChannels,
                         key = { it.id }
                     ) { channel ->
-                        LiveChannelCard(
+                        JioTvChannelCard(
                             channel = channel,
                             onClick = { onChannelClick(channel) },
                             onFocus = { onChannelFocus(channel) },

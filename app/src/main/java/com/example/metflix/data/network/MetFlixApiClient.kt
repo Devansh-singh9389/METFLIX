@@ -20,18 +20,18 @@ import android.util.Log
 import com.example.metflix.data.models.MovieCastResponseItem
 import com.example.metflix.data.models.MovieCategoriesResponseItem
 import com.example.metflix.data.models.MoviesResponseItem
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 @Singleton
-class MetFlixApiClient @Inject constructor() {
+class MetFlixApiClient @Inject constructor(
+    private val okHttpClient: OkHttpClient
+) {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -78,31 +78,21 @@ class MetFlixApiClient @Inject constructor() {
 
     private suspend fun <T> fetchJson(urlString: String, parser: (String) -> T): Result<T> = withContext(Dispatchers.IO) {
         runCatching {
-            val url = URL(urlString)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 8000
-                readTimeout = 8000
-                NetworkConfig.CUSTOM_HEADERS.forEach { (key, value) ->
-                    setRequestProperty(key, value)
-                }
+            val requestBuilder = Request.Builder().url(urlString)
+            NetworkConfig.CUSTOM_HEADERS.forEach { (key, value) ->
+                requestBuilder.header(key, value)
             }
 
-            try {
-                val statusCode = connection.responseCode
-                if (statusCode in 200..299) {
-                    val reader = BufferedReader(InputStreamReader(connection.inputStream))
-                    val response = reader.use { it.readText() }
-                    parser(response)
+            val response = okHttpClient.newCall(requestBuilder.build()).execute()
+            response.use { resp ->
+                if (resp.isSuccessful) {
+                    val bodyString = resp.body?.string().orEmpty()
+                    parser(bodyString)
                 } else {
-                    val errorText = connection.errorStream?.let { stream ->
-                        BufferedReader(InputStreamReader(stream)).use { it.readText() }
-                    } ?: "HTTP $statusCode"
-                    Log.w("MetFlixApiClient", "HTTP Error $statusCode for $urlString: $errorText")
-                    throw Exception("Network request failed ($statusCode): $errorText")
+                    val errorText = resp.body?.string() ?: "HTTP ${resp.code}"
+                    Log.w("MetFlixApiClient", "HTTP Error ${resp.code} for $urlString: $errorText")
+                    throw Exception("Network request failed (${resp.code}): $errorText")
                 }
-            } finally {
-                connection.disconnect()
             }
         }
     }

@@ -34,7 +34,12 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.OutlinedButtonDefaults
 import androidx.tv.material3.Text
+import android.graphics.Bitmap
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.metflix.data.entities.LiveChannel
 
 @Composable
@@ -199,8 +204,19 @@ fun LiveChannelHeaderPreview(
                         .padding(12.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    val context = LocalContext.current
+                    val imageRequest = remember(channel.logoUrl) {
+                        ImageRequest.Builder(context)
+                            .data(channel.logoUrl)
+                            .size(232, 152)
+                            .precision(Precision.INEXACT)
+                            .bitmapConfig(Bitmap.Config.RGB_565)
+                            .allowRgb565(true)
+                            .crossfade(false)
+                            .build()
+                    }
                     AsyncImage(
-                        model = channel.logoUrl,
+                        model = imageRequest,
                         contentDescription = channel.name,
                         modifier = Modifier.size(116.dp, 76.dp),
                         contentScale = ContentScale.Fit

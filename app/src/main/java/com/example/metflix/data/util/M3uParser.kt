@@ -13,6 +13,7 @@ object M3uParser {
     private val TVG_LOGO_REGEX = Regex("""tvg-logo="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val GROUP_TITLE_REGEX = Regex("""group-title="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val TVG_COUNTRY_REGEX = Regex("""tvg-country="([^"]*)"""", RegexOption.IGNORE_CASE)
+    private val TVG_LANGUAGE_REGEX = Regex("""tvg-language="([^"]*)"""", RegexOption.IGNORE_CASE)
 
     fun parse(inputStream: InputStream, defaultCategory: String = "General", maxChannels: Int = 300): List<LiveChannel> {
         val reader = BufferedReader(InputStreamReader(inputStream))
@@ -31,6 +32,7 @@ object M3uParser {
         var currentLogo: String? = null
         var currentGroup: String? = null
         var currentCountry: String? = null
+        var currentLanguage: String? = null
         var currentName: String? = null
         var channelCounter = 101
 
@@ -46,6 +48,7 @@ object M3uParser {
                     currentLogo = TVG_LOGO_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
                     currentGroup = GROUP_TITLE_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
                     currentCountry = TVG_COUNTRY_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
+                    currentLanguage = TVG_LANGUAGE_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
 
                     val commaIndex = line.lastIndexOf(',')
                     currentName = if (commaIndex != -1 && commaIndex + 1 < line.length) {
@@ -72,9 +75,11 @@ object M3uParser {
                                 logoUrl = currentLogo,
                                 category = category,
                                 country = currentCountry,
+                                language = currentLanguage,
                                 currentProgram = "Live Broadcast",
                                 programDescription = "Streaming live on $cleanName ($category)",
-                                isFavorite = false
+                                isFavorite = false,
+                                epgId = currentTvgId
                             )
                         )
                     }
@@ -85,6 +90,7 @@ object M3uParser {
                     currentLogo = null
                     currentGroup = null
                     currentCountry = null
+                    currentLanguage = null
                     currentName = null
                 }
             }

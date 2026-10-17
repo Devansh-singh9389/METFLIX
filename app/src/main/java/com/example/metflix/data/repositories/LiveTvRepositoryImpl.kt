@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.data.util.M3uParser
+import com.example.metflix.data.settings.PerformancePreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.InputStreamReader
@@ -23,9 +24,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+import com.example.metflix.data.epg.EpgEngine
+
 @Singleton
 class LiveTvRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val performancePreferences: PerformancePreferences,
+    private val epgEngine: EpgEngine
 ) : LiveTvRepository {
 
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -127,18 +132,22 @@ class LiveTvRepositoryImpl @Inject constructor(
 
             val statusCode = connection.responseCode
             if (statusCode in 200..299) {
-                val parsed = M3uParser.parse(connection.inputStream)
+                val parsed = M3uParser.parse(
+                    inputStream = connection.inputStream,
+                    maxChannels = performancePreferences.maxChannels.value
+                )
                 connection.disconnect()
 
                 if (parsed.isNotEmpty()) {
                     // Prepend default curated channels so guaranteed working channels remain at top
                     val curated = loadBundledDefaultChannels()
                     val merged = mergeChannels(curated, parsed)
+                    val enriched = merged.map { epgEngine.enrichChannelWithSchedule(it) }
 
-                    rawChannelsFlow.value = merged
-                    saveChannelsToCache(merged)
-                    Log.d(TAG, "Successfully loaded ${merged.size} live channels")
-                    merged.size
+                    rawChannelsFlow.value = enriched
+                    saveChannelsToCache(enriched)
+                    Log.d(TAG, "Successfully loaded ${enriched.size} live channels with EPG")
+                    enriched.size
                 } else {
                     Log.w(TAG, "M3U fetch returned 0 channels")
                     rawChannelsFlow.value.size
@@ -167,15 +176,17 @@ class LiveTvRepositoryImpl @Inject constructor(
         // 1. Try cache file first
         val cached = loadChannelsFromCache()
         if (cached.isNotEmpty()) {
-            rawChannelsFlow.value = cached
-            Log.d(TAG, "Loaded ${cached.size} channels from local cache")
+            val enriched = cached.map { epgEngine.enrichChannelWithSchedule(it) }
+            rawChannelsFlow.value = enriched
+            Log.d(TAG, "Loaded ${enriched.size} channels from local cache with EPG")
             return@withContext
         }
 
         // 2. Fall back to bundled default channels in assets
         val bundled = loadBundledDefaultChannels()
-        rawChannelsFlow.value = bundled
-        Log.d(TAG, "Loaded ${bundled.size} channels from bundled assets")
+        val enriched = bundled.map { epgEngine.enrichChannelWithSchedule(it) }
+        rawChannelsFlow.value = enriched
+        Log.d(TAG, "Loaded ${enriched.size} channels from bundled assets with EPG")
     }
 
     private fun loadBundledDefaultChannels(): List<LiveChannel> {

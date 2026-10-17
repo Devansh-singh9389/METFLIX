@@ -32,6 +32,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.components.SingletonComponent
 
+import com.example.metflix.data.network.SecureHttpClient
 import com.example.metflix.data.settings.PerformancePreferences
 import javax.inject.Inject
 
@@ -48,6 +49,9 @@ class MetFlixApplication : Hilt_MetFlixApplication(), ImageLoaderFactory {
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
+            .okHttpClient {
+                SecureHttpClient.client
+            }
             .memoryCache {
                 MemoryCache.Builder(this)
                     .maxSizePercent(0.25)

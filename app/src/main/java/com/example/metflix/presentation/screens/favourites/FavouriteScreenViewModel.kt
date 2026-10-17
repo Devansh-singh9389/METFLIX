@@ -49,7 +49,7 @@ class FavouriteScreenViewModel @Inject constructor(
         FavouriteScreenUiState.Ready(filtered, filterList)
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Lazily,
         initialValue = FavouriteScreenUiState.Loading
     )
 

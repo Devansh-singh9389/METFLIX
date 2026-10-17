@@ -23,24 +23,21 @@ import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
 import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
-import com.example.metflix.data.util.AssetsReader
-import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class MovieDataSource @Inject constructor(
-    assetsReader: AssetsReader,
     private val apiClient: MetFlixApiClient,
     private val tmdbApiClient: TmdbApiClient
 ) {
 
     private val remoteMovieCache = CachedDataReader {
-        apiClient.getMovies(NetworkConfig.MOVIES_ENDPOINT).getOrNull()?.map { it.toMovie() } ?: emptyList()
-    }
-
-    private val top250MovieDataReader = CachedDataReader {
-        readMovieData(assetsReader, StringConstants.Assets.Top250Movies)
+        if (NetworkConfig.USE_REMOTE_BACKEND) {
+            apiClient.getMovies(NetworkConfig.MOVIES_ENDPOINT).getOrNull()?.map { it.toMovie() } ?: emptyList()
+        } else {
+            emptyList()
+        }
     }
 
     private val trendingMovieDataReader = MovieDataReader {
@@ -52,9 +49,7 @@ class MovieDataSource @Inject constructor(
             val remote = apiClient.getMovies(NetworkConfig.TRENDING_MOVIES_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie() }
         }
-        readMovieData(assetsReader, StringConstants.Assets.MostPopularMovies).map {
-            it.toMovie()
-        }
+        emptyList()
     }
 
     private val popularMovieDataReader = MovieDataReader {
@@ -66,9 +61,7 @@ class MovieDataSource @Inject constructor(
             val remote = remoteMovieCache.read()
             if (remote.isNotEmpty()) return@MovieDataReader remote
         }
-        top250MovieDataReader.read().map {
-            it.toMovie()
-        }
+        emptyList()
     }
 
     private val nowPlayingMovieDataReader: MovieDataReader = MovieDataReader {
@@ -80,9 +73,7 @@ class MovieDataSource @Inject constructor(
             val remote = apiClient.getMovies(NetworkConfig.NOW_PLAYING_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie() }
         }
-        readMovieData(assetsReader, StringConstants.Assets.InTheaters).subList(0, 10).map {
-            it.toMovie()
-        }
+        emptyList()
     }
 
     private val topRatedMovieDataReader = MovieDataReader {
@@ -94,9 +85,7 @@ class MovieDataSource @Inject constructor(
             val remote = apiClient.getMovies(NetworkConfig.TOP10_MOVIES_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie(ThumbnailType.Long) }
         }
-        val list = top250MovieDataReader.read()
-        if (list.size >= 30) list.subList(20, 30).map { it.toMovie(ThumbnailType.Long) }
-        else list.take(10).map { it.toMovie(ThumbnailType.Long) }
+        emptyList()
     }
 
     private val movieWithLongThumbnailDataReader: MovieDataReader = CachedDataReader {
@@ -104,12 +93,12 @@ class MovieDataSource @Inject constructor(
         if (nowPlaying.isNotEmpty()) {
             return@CachedDataReader nowPlaying
         }
-        top250MovieDataReader.read().map {
-            it.toMovie(ThumbnailType.Long)
+        popularMovieDataReader.read().map {
+            it.copy(thumbnailType = ThumbnailType.Long)
         }
     }
 
-    suspend fun getMovieList(thumbnailType: ThumbnailType = ThumbnailType.Standard) =
+    suspend fun getMovieList(thumbnailType: ThumbnailType = ThumbnailType.Standard): List<Movie> =
         when (thumbnailType) {
             ThumbnailType.Standard -> popularMovieDataReader.read()
             ThumbnailType.Long -> movieWithLongThumbnailDataReader.read()

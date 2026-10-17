@@ -34,7 +34,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -66,6 +70,8 @@ fun Top10MoviesList(
 ) {
     var isListFocused by remember { mutableStateOf(false) }
     var selectedMovie by remember(movieList) { mutableStateOf(movieList.first()) }
+    val coroutineScope = rememberCoroutineScope()
+    var debounceJob by remember { mutableStateOf<Job?>(null) }
 
     val sectionTitle = if (isListFocused) {
         null
@@ -80,8 +86,12 @@ fun Top10MoviesList(
         movieList = movieList,
         sectionTitle = sectionTitle,
         onMovieClick = onMovieClick,
-        onMovieFocused = {
-            selectedMovie = it
+        onMovieFocused = { movie ->
+            debounceJob?.cancel()
+            debounceJob = coroutineScope.launch {
+                delay(150)
+                selectedMovie = movie
+            }
         },
         onFocusChanged = {
             isListFocused = it.hasFocus

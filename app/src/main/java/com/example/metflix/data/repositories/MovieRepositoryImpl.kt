@@ -105,9 +105,18 @@ class MovieRepositoryImpl @Inject constructor(
             return tmdbDetails
         }
 
-        // Local asset fallback
+        // Fallback if TMDB details unavailable
         val movieList = movieDataSource.getMovieList()
-        val movie = movieList.find { it.id == movieId } ?: movieList.first()
+        val movie = movieList.find { it.id == movieId }
+            ?: movieList.firstOrNull()
+            ?: Movie(
+                id = movieId,
+                name = "Details",
+                description = "Details currently unavailable.",
+                posterUri = "",
+                videoUri = TmdbConfig.DEFAULT_STREAM_URL,
+                subtitleUri = TmdbConfig.DEFAULT_SUBTITLE_URL
+            )
         val similarMovieList = movieList.filter { it.id != movie.id }.take(4)
         val castList = movieCastDataSource.getMovieCastList()
 

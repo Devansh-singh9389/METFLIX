@@ -19,3 +19,14 @@
 # Compose TV & Material
 -keep class androidx.tv.** { *; }
 -keep interface androidx.tv.** { *; }
+
+# Strip verbose/debug logs in optimized release build to save CPU cycles
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int d(...);
+}
+
+# Keep performance settings and models
+-keep class com.example.metflix.data.settings.** { *; }
+-keep class com.example.metflix.data.entities.** { *; }

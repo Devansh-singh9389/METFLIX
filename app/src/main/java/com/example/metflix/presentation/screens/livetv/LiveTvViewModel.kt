@@ -38,8 +38,38 @@ class LiveTvViewModel @Inject constructor(
             initialValue = ""
         )
 
+    private val filteredChannelsFlow = combine(
+        repository.getChannels(),
+        selectedCategory,
+        searchQuery,
+        sortOrder
+    ) { channels, category, query, sort ->
+        val categoryFiltered = when {
+            category.equals("All", ignoreCase = true) -> channels
+            category.equals("Favorites", ignoreCase = true) -> channels.filter { it.isFavorite }
+            else -> channels.filter { it.category.equals(category, ignoreCase = true) }
+        }
+
+        val searchFiltered = if (query.isBlank()) {
+            categoryFiltered
+        } else {
+            val q = query.trim().lowercase()
+            categoryFiltered.filter {
+                it.name.lowercase().contains(q) ||
+                it.channelNumber.toString().contains(q) ||
+                it.category.lowercase().contains(q)
+            }
+        }
+
+        when (sort) {
+            LiveTvSortOrder.ChannelNumber -> searchFiltered.sortedBy { it.channelNumber }
+            LiveTvSortOrder.NameAsc -> searchFiltered.sortedBy { it.name.lowercase() }
+        }
+    }
+
     val uiState: StateFlow<LiveTvUiState> = combine(
         repository.getChannels(),
+        filteredChannelsFlow,
         repository.getCategories(),
         selectedCategory,
         focusedChannel,
@@ -51,39 +81,19 @@ class LiveTvViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val channels = args[0] as List<LiveChannel>
         @Suppress("UNCHECKED_CAST")
-        val categories = args[1] as List<String>
-        val category = args[2] as String
-        val focused = args[3] as LiveChannel?
-        val refreshing = args[4] as Boolean
-        val query = args[5] as String
-        val sort = args[6] as LiveTvSortOrder
-        val playlistUrl = args[7] as String
+        val sorted = args[1] as List<LiveChannel>
+        @Suppress("UNCHECKED_CAST")
+        val categories = args[2] as List<String>
+        val category = args[3] as String
+        val focused = args[4] as LiveChannel?
+        val refreshing = args[5] as Boolean
+        val query = args[6] as String
+        val sort = args[7] as LiveTvSortOrder
+        val playlistUrl = args[8] as String
 
         if (channels.isEmpty() && refreshing) {
             LiveTvUiState.Loading
         } else {
-            val categoryFiltered = when {
-                category.equals("All", ignoreCase = true) -> channels
-                category.equals("Favorites", ignoreCase = true) -> channels.filter { it.isFavorite }
-                else -> channels.filter { it.category.equals(category, ignoreCase = true) }
-            }
-
-            val searchFiltered = if (query.isBlank()) {
-                categoryFiltered
-            } else {
-                val q = query.trim().lowercase()
-                categoryFiltered.filter {
-                    it.name.lowercase().contains(q) ||
-                    it.channelNumber.toString().contains(q) ||
-                    it.category.lowercase().contains(q)
-                }
-            }
-
-            val sorted = when (sort) {
-                LiveTvSortOrder.ChannelNumber -> searchFiltered.sortedBy { it.channelNumber }
-                LiveTvSortOrder.NameAsc -> searchFiltered.sortedBy { it.name.lowercase() }
-            }
-
             val currentFocused = focused?.let { f ->
                 sorted.firstOrNull { it.id == f.id }
             } ?: sorted.firstOrNull()
@@ -103,7 +113,7 @@ class LiveTvViewModel @Inject constructor(
         }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Lazily,
         initialValue = LiveTvUiState.Loading
     )
 

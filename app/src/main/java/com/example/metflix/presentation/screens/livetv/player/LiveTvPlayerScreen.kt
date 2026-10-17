@@ -1,5 +1,10 @@
 package com.example.metflix.presentation.screens.livetv.player
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
@@ -76,6 +81,9 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.media3.ui.compose.modifiers.resizeWithContentScale
@@ -92,8 +100,10 @@ import com.example.metflix.presentation.common.Error
 import com.example.metflix.presentation.common.Loading
 import com.example.metflix.presentation.screens.livetv.components.LiveBadge
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvAspectRatio
+import com.example.metflix.presentation.screens.livetv.player.components.LiveTvChannelDrawer
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvSettingsOverlay
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvStatsOverlay
+import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerBufferingSpinner
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberPlayer
 import com.example.metflix.presentation.theme.MetFlixCardShape
 import kotlinx.coroutines.delay
@@ -154,6 +164,31 @@ private fun LiveTvPlayerContent(
     var isOsdVisible by remember { mutableStateOf(true) }
     var playbackError by remember { mutableStateOf<String?>(null) }
 
+    // Stream Resilience & Auto-Reconnect States
+    var isBuffering by remember { mutableStateOf(true) }
+    var isReconnecting by remember { mutableStateOf(false) }
+    var reconnectAttempt by remember { mutableIntStateOf(0) }
+    var isManualError by remember { mutableStateOf(false) }
+
+    var currentDownloadSpeedBps by remember { mutableLongStateOf(0L) }
+    var totalStreamBytesDownloaded by remember { mutableLongStateOf(0L) }
+    var lastUserInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var currentTimeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            currentTimeMs = System.currentTimeMillis()
+        }
+    }
+
+    val currentEpg = remember(state.currentChannel, currentTimeMs) {
+        state.currentChannel.getCurrentEpgProgram(currentTimeMs)
+    }
+    val nextEpg = remember(state.currentChannel, currentTimeMs) {
+        state.currentChannel.getNextEpgProgram(currentTimeMs)
+    }
+
     // Settings States
     var currentAspectRatio by remember { mutableStateOf(LiveTvAspectRatio.Fit) }
     var currentQualityMaxHeight by remember { mutableIntStateOf(0) }
@@ -170,13 +205,25 @@ private fun LiveTvPlayerContent(
     var sourceResolutionLabel by remember { mutableStateOf("") }
 
     val rootFocusRequester = remember { FocusRequester() }
+    val firstActionButtonFocusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
 
-    // Auto-hide OSD banner after 5 seconds if not inside settings or drawer
-    LaunchedEffect(state.currentChannel.id, isOsdVisible, isSettingsOpen, isDrawerOpen) {
+    // Auto-hide OSD banner after 7 seconds of inactivity (5 to 10 seconds requirement)
+    LaunchedEffect(lastUserInteraction, isOsdVisible, isDrawerOpen, isSettingsOpen) {
         if (isOsdVisible && !isDrawerOpen && !isSettingsOpen) {
-            delay(5000)
+            delay(7000)
             isOsdVisible = false
+            runCatching { rootFocusRequester.requestFocus() }
+        }
+    }
+
+    // Direct focus to action buttons when OSD is visible, or root when hidden
+    LaunchedEffect(isOsdVisible, isDrawerOpen, isSettingsOpen) {
+        if (isOsdVisible && !isDrawerOpen && !isSettingsOpen) {
+            delay(50)
+            runCatching { firstActionButtonFocusRequester.requestFocus() }
+        } else if (!isOsdVisible && !isDrawerOpen && !isSettingsOpen) {
+            runCatching { rootFocusRequester.requestFocus() }
         }
     }
 
@@ -197,6 +244,9 @@ private fun LiveTvPlayerContent(
             if (format != null) {
                 if (format.bitrate > 0) {
                     videoBitrate = "${format.bitrate / 1000} kbps"
+                    if (currentDownloadSpeedBps == 0L) {
+                        currentDownloadSpeedBps = format.bitrate.toLong()
+                    }
                 }
                 if (format.width > 0 && format.height > 0) {
                     videoResolution = "${format.width}x${format.height}"
@@ -206,9 +256,18 @@ private fun LiveTvPlayerContent(
         }
     }
 
-    fun loadCurrentStream() {
-        playbackError = null
+    fun loadCurrentStream(isAutoRetry: Boolean = false) {
+        if (!isAutoRetry) {
+            playbackError = null
+            isManualError = false
+            reconnectAttempt = 0
+            isReconnecting = false
+        }
+        isBuffering = true
         isOsdVisible = true
+        lastUserInteraction = System.currentTimeMillis()
+        currentDownloadSpeedBps = 0L
+        totalStreamBytesDownloaded = 0L
 
         try {
             exoPlayer.stop()
@@ -227,7 +286,60 @@ private fun LiveTvPlayerContent(
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
         } catch (e: Exception) {
-            playbackError = e.localizedMessage ?: "Failed to load channel"
+            if (reconnectAttempt >= 8) {
+                isManualError = true
+                playbackError = e.localizedMessage ?: "Failed to load channel"
+            } else {
+                isReconnecting = true
+            }
+        }
+    }
+
+    // Exponential Auto-Reconnect Loop for Network Drops
+    LaunchedEffect(isReconnecting, reconnectAttempt) {
+        if (isReconnecting && reconnectAttempt < 8) {
+            val backoffDelayMs = (1500L * (1 shl reconnectAttempt.coerceAtMost(2))).coerceAtMost(5000L)
+            delay(backoffDelayMs)
+            reconnectAttempt++
+            try {
+                exoPlayer.prepare()
+                exoPlayer.play()
+            } catch (_: Exception) {
+                // Next attempt will fire if error triggers again
+            }
+        } else if (reconnectAttempt >= 8) {
+            isReconnecting = false
+            isManualError = true
+            playbackError = "Unable to reconnect to stream. Please check your internet connection."
+        }
+    }
+
+    // Android Network Callback: Instantly recover when Wi-Fi / Ethernet reconnects
+    DisposableEffect(context) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                scope.launch {
+                    if (isReconnecting || isManualError) {
+                        delay(500)
+                        isReconnecting = false
+                        reconnectAttempt = 0
+                        isManualError = false
+                        playbackError = null
+                        loadCurrentStream()
+                    }
+                }
+            }
+        }
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        try {
+            connectivityManager?.registerNetworkCallback(request, networkCallback)
+        } catch (_: Exception) {}
+
+        onDispose {
+            runCatching { connectivityManager?.unregisterNetworkCallback(networkCallback) }
         }
     }
 
@@ -238,8 +350,48 @@ private fun LiveTvPlayerContent(
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                when (playbackState) {
+                    Player.STATE_BUFFERING -> {
+                        isBuffering = true
+                    }
+                    Player.STATE_READY -> {
+                        isBuffering = false
+                        isReconnecting = false
+                        reconnectAttempt = 0
+                        isManualError = false
+                        playbackError = null
+                    }
+                    Player.STATE_ENDED -> {
+                        isBuffering = false
+                    }
+                    Player.STATE_IDLE -> {
+                        if (!isReconnecting && !isManualError) {
+                            isBuffering = false
+                        }
+                    }
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    isBuffering = false
+                    isReconnecting = false
+                    reconnectAttempt = 0
+                    isManualError = false
+                    playbackError = null
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = error.localizedMessage ?: "Stream unavailable"
+                if (reconnectAttempt < 8) {
+                    isBuffering = false
+                    isReconnecting = true
+                } else {
+                    isReconnecting = false
+                    isManualError = true
+                    playbackError = error.localizedMessage ?: "Stream unavailable"
+                }
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -283,8 +435,38 @@ private fun LiveTvPlayerContent(
                 } ?: videoResolution
             }
         }
+
+        val analyticsListener = object : AnalyticsListener {
+            override fun onLoadCompleted(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData
+            ) {
+                if (loadEventInfo.bytesLoaded > 0) {
+                    totalStreamBytesDownloaded += loadEventInfo.bytesLoaded
+                    if (loadEventInfo.loadDurationMs > 0) {
+                        currentDownloadSpeedBps = (loadEventInfo.bytesLoaded * 8000L) / loadEventInfo.loadDurationMs
+                    }
+                }
+            }
+
+            override fun onBandwidthEstimate(
+                eventTime: AnalyticsListener.EventTime,
+                totalLoadTimeMs: Int,
+                totalBytesLoaded: Long,
+                bitrateEstimate: Long
+            ) {
+                if (bitrateEstimate > 0) {
+                    currentDownloadSpeedBps = bitrateEstimate
+                }
+            }
+        }
+
         exoPlayer.addListener(listener)
+        exoPlayer.addAnalyticsListener(analyticsListener)
+
         onDispose {
+            exoPlayer.removeAnalyticsListener(analyticsListener)
             exoPlayer.removeListener(listener)
         }
     }
@@ -295,15 +477,14 @@ private fun LiveTvPlayerContent(
             runCatching { rootFocusRequester.requestFocus() }
         } else if (isDrawerOpen) {
             isDrawerOpen = false
+            isOsdVisible = true
+            lastUserInteraction = System.currentTimeMillis()
+            runCatching { rootFocusRequester.requestFocus() }
+        } else if (isOsdVisible) {
+            isOsdVisible = false
             runCatching { rootFocusRequester.requestFocus() }
         } else {
             onBackPressed()
-        }
-    }
-
-    LaunchedEffect(isDrawerOpen, isSettingsOpen) {
-        if (!isDrawerOpen && !isSettingsOpen) {
-            runCatching { rootFocusRequester.requestFocus() }
         }
     }
 
@@ -314,9 +495,10 @@ private fun LiveTvPlayerContent(
             .focusRequester(rootFocusRequester)
             .focusable()
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyUp) {
+                if (event.type == KeyEventType.KeyDown) {
+                    lastUserInteraction = System.currentTimeMillis()
                     when (event.key) {
-                        Key.DirectionUp -> {
+                        Key.DirectionUp, Key.ChannelUp, Key.PageUp -> {
                             if (!isDrawerOpen && !isSettingsOpen) {
                                 isOsdVisible = true
                                 onNextChannel()
@@ -324,7 +506,7 @@ private fun LiveTvPlayerContent(
                             } else false
                         }
 
-                        Key.DirectionDown -> {
+                        Key.DirectionDown, Key.ChannelDown, Key.PageDown -> {
                             if (!isDrawerOpen && !isSettingsOpen) {
                                 isOsdVisible = true
                                 onPreviousChannel()
@@ -332,30 +514,91 @@ private fun LiveTvPlayerContent(
                             } else false
                         }
 
-                        Key.DirectionLeft, Key.DirectionCenter, Key.Enter -> {
-                            if (!isDrawerOpen && !isSettingsOpen) {
-                                isDrawerOpen = true
+                        Key.Menu, Key.Settings -> {
+                            if (!isDrawerOpen) {
+                                isSettingsOpen = !isSettingsOpen
                                 isOsdVisible = false
                                 true
                             } else false
                         }
 
-                        Key.DirectionRight -> {
-                            if (isDrawerOpen) {
-                                isDrawerOpen = false
+                        Key.Back, Key.Escape -> {
+                            if (isSettingsOpen) {
+                                isSettingsOpen = false
                                 runCatching { rootFocusRequester.requestFocus() }
                                 true
-                            } else if (!isSettingsOpen) {
-                                onToggleFavorite()
+                            } else if (isDrawerOpen) {
+                                isDrawerOpen = false
                                 isOsdVisible = true
+                                lastUserInteraction = System.currentTimeMillis()
+                                runCatching { rootFocusRequester.requestFocus() }
                                 true
-                            } else false
+                            } else if (isOsdVisible) {
+                                isOsdVisible = false
+                                runCatching { rootFocusRequester.requestFocus() }
+                                true
+                            } else {
+                                false
+                            }
                         }
 
-                        Key.Menu, Key.Settings -> {
-                            isSettingsOpen = !isSettingsOpen
-                            isOsdVisible = false
-                            true
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            if (!isOsdVisible && !isDrawerOpen && !isSettingsOpen) {
+                                // When OSD is hidden, pressing OK opens the channel list drawer
+                                isDrawerOpen = true
+                                isOsdVisible = false
+                                true
+                            } else {
+                                // When OSD is visible OR drawer is open, let the focused item handle Enter/OK
+                                false
+                            }
+                        }
+
+                        Key.DirectionLeft, Key.DirectionRight -> {
+                            if (!isOsdVisible && !isDrawerOpen && !isSettingsOpen) {
+                                // When OSD is hidden, Left/Right wakes up OSD and focuses the action buttons
+                                isOsdVisible = true
+                                scope.launch {
+                                    delay(50)
+                                    runCatching { firstActionButtonFocusRequester.requestFocus() }
+                                }
+                                true
+                            } else if (isDrawerOpen) {
+                                if (event.key == Key.DirectionRight) {
+                                    isDrawerOpen = false
+                                    isOsdVisible = true
+                                    lastUserInteraction = System.currentTimeMillis()
+                                    runCatching { rootFocusRequester.requestFocus() }
+                                    true
+                                } else false
+                            } else {
+                                // When OSD is visible, allow D-Pad to move naturally across action buttons
+                                false
+                            }
+                        }
+
+                        else -> false
+                    }
+                } else if (event.type == KeyEventType.KeyUp) {
+                    when (event.key) {
+                        Key.DirectionUp, Key.ChannelUp, Key.PageUp,
+                        Key.DirectionDown, Key.ChannelDown, Key.PageDown -> {
+                            !isDrawerOpen && !isSettingsOpen
+                        }
+
+                        Key.Menu, Key.Settings -> !isDrawerOpen
+
+                        Key.Back, Key.Escape -> {
+                            isSettingsOpen || isDrawerOpen || isOsdVisible
+                        }
+
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            !isOsdVisible && !isDrawerOpen && !isSettingsOpen
+                        }
+
+                        Key.DirectionLeft, Key.DirectionRight -> {
+                            if (isDrawerOpen && event.key == Key.DirectionRight) true
+                            else !isOsdVisible && !isDrawerOpen && !isSettingsOpen
                         }
 
                         else -> false
@@ -385,16 +628,34 @@ private fun LiveTvPlayerContent(
                 videoBitrate = videoBitrate,
                 audioInfo = audioInfo,
                 bufferHealthMs = bufferHealthMs,
+                downloadSpeed = formatStreamSpeed(currentDownloadSpeedBps),
+                dataConsumed = formatStreamDataUsage(totalStreamBytesDownloaded),
                 modifier = Modifier.align(Alignment.TopEnd)
             )
         }
 
-        // Error message if stream fails
-        if (playbackError != null) {
+        // Video Buffering Spinner (during regular buffering)
+        if (isBuffering && !isReconnecting && !isManualError) {
+            VideoPlayerBufferingSpinner(
+                label = "Buffering stream…",
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+
+        // Auto-Reconnecting Spinner (during network drop recovery)
+        if (isReconnecting) {
+            VideoPlayerBufferingSpinner(
+                label = "Connection lost. Reconnecting… (Attempt $reconnectAttempt/8)",
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+
+        // Error message if stream fails persistently after all automatic retries
+        if (isManualError && playbackError != null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.65f)),
+                    .background(Color.Black.copy(alpha = 0.75f)),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -406,19 +667,37 @@ private fun LiveTvPlayerContent(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Unable to connect to live stream",
+                        text = "Stream Connection Lost",
                         style = MaterialTheme.typography.titleLarge,
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Press D-Pad UP or DOWN to zap, or click Reconnect",
+                        text = "Internet disconnected or source stream offline.\nAuto-reconnect will resume when connection returns.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.LightGray
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { loadCurrentStream() }) {
-                        Text("Reconnect Stream")
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = {
+                                reconnectAttempt = 0
+                                isManualError = false
+                                playbackError = null
+                                loadCurrentStream()
+                            }
+                        ) {
+                            Text("Reconnect Stream")
+                        }
+                        Button(
+                            onClick = onNextChannel,
+                            colors = ButtonDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        ) {
+                            Text("Next Channel")
+                        }
                     }
                 }
             }
@@ -517,37 +796,114 @@ private fun LiveTvPlayerContent(
                                         color = MaterialTheme.colorScheme.secondary
                                     )
                                 }
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                // Real-time Internet Speed & Video Stream Data Consumption Badges
+                                StreamMetricBadge(
+                                    icon = "⚡",
+                                    label = "Speed",
+                                    value = formatStreamSpeed(currentDownloadSpeedBps),
+                                    accentColor = Color(0xFF00E5FF)
+                                )
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                StreamMetricBadge(
+                                    icon = "📶",
+                                    label = "Data Used",
+                                    value = formatStreamDataUsage(totalStreamBytesDownloaded),
+                                    accentColor = Color(0xFF69F0AE)
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(2.dp))
 
                             Text(
                                 text = state.currentChannel.name,
-                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White
                             )
 
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            // JioTV Live Show Title
                             Text(
-                                text = "Now: ${state.currentChannel.currentProgram}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.85f),
+                                text = currentEpg.title,
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 19.sp
+                                ),
+                                color = Color.White,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Show Time Slot, Elapsed & Remaining countdown
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = currentEpg.formattedTimeSlot,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                    color = Color.LightGray
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "•   ${currentEpg.elapsedMinutes(currentTimeMs)}m played   /   ${currentEpg.remainingMinutes(currentTimeMs)}m left",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFFF5252)
+                                )
+                                if (nextEpg != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "•   Next: ${nextEpg.formattedStartTime} ${nextEpg.title}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.Gray,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // JioTV Red Linear Progress Bar
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.9f)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color.White.copy(alpha = 0.15f))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(fraction = currentEpg.progress(currentTimeMs).coerceIn(0.02f, 1f))
+                                        .height(3.dp)
+                                        .background(Color(0xFFE50914))
+                                )
+                            }
                         }
 
-                        // Navigation Zapping Hints
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = "▲ / ▼ Zap Channel",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.LightGray
-                            )
-                            Text(
-                                text = "◀ Guide  •  ▶ Favorite",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.LightGray
-                            )
+                        // Navigation Remote Hints
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("▲ / ▼ / CH+/- ", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                                Text("Zap", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("◀ / ▶ ", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                                Text("Select", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("OK ", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                                Text("Enter / Guide", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("MENU ", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
+                                Text("Settings", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("EXIT ", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.secondary)
+                                Text("Hide", style = MaterialTheme.typography.labelSmall, color = Color.LightGray)
+                            }
                         }
                     }
 
@@ -565,9 +921,12 @@ private fun LiveTvPlayerContent(
                                 isDrawerOpen = true
                                 isOsdVisible = false
                             },
+                            modifier = Modifier.focusRequester(firstActionButtonFocusRequester),
                             colors = ButtonDefaults.colors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                contentColor = MaterialTheme.colorScheme.onSurface
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                focusedContainerColor = MaterialTheme.colorScheme.primary,
+                                focusedContentColor = MaterialTheme.colorScheme.onPrimary
                             )
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -579,10 +938,15 @@ private fun LiveTvPlayerContent(
 
                         // Favorite toggle button
                         Button(
-                            onClick = onToggleFavorite,
+                            onClick = {
+                                onToggleFavorite()
+                                lastUserInteraction = System.currentTimeMillis()
+                            },
                             colors = ButtonDefaults.colors(
                                 containerColor = if (state.currentChannel.isFavorite) Color(0xFFFFD700).copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                contentColor = if (state.currentChannel.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface
+                                contentColor = if (state.currentChannel.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface,
+                                focusedContainerColor = Color(0xFFFFD700),
+                                focusedContentColor = Color.Black
                             )
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -602,10 +966,14 @@ private fun LiveTvPlayerContent(
 
                         // Reconnect / Reload button
                         Button(
-                            onClick = { loadCurrentStream() },
+                            onClick = {
+                                loadCurrentStream()
+                            },
                             colors = ButtonDefaults.colors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                contentColor = MaterialTheme.colorScheme.onSurface
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                focusedContainerColor = MaterialTheme.colorScheme.primary,
+                                focusedContentColor = MaterialTheme.colorScheme.onPrimary
                             )
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -617,10 +985,15 @@ private fun LiveTvPlayerContent(
 
                         // Stats toggle button
                         Button(
-                            onClick = { isStatsVisible = !isStatsVisible },
+                            onClick = {
+                                isStatsVisible = !isStatsVisible
+                                lastUserInteraction = System.currentTimeMillis()
+                            },
                             colors = ButtonDefaults.colors(
                                 containerColor = if (isStatsVisible) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                contentColor = if (isStatsVisible) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurface
+                                contentColor = if (isStatsVisible) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurface,
+                                focusedContainerColor = MaterialTheme.colorScheme.secondary,
+                                focusedContentColor = MaterialTheme.colorScheme.onSecondary
                             )
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -640,7 +1013,9 @@ private fun LiveTvPlayerContent(
                             },
                             colors = ButtonDefaults.colors(
                                 containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                focusedContainerColor = MaterialTheme.colorScheme.primary,
+                                focusedContentColor = MaterialTheme.colorScheme.onPrimary
                             )
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -655,134 +1030,25 @@ private fun LiveTvPlayerContent(
         }
 
         // Side Mini-Guide / Channel Switcher Drawer
-        AnimatedVisibility(
-            visible = isDrawerOpen,
-            enter = slideInHorizontally(initialOffsetX = { -it }),
-            exit = slideOutHorizontally(targetOffsetX = { -it }),
+        LiveTvChannelDrawer(
+            isPresented = isDrawerOpen,
+            currentChannel = state.currentChannel,
+            channels = state.channels,
+            onSelectChannel = { ch ->
+                onSelectChannel(ch)
+                isDrawerOpen = false
+                isOsdVisible = true
+                lastUserInteraction = System.currentTimeMillis()
+                runCatching { rootFocusRequester.requestFocus() }
+            },
+            onDismiss = {
+                isDrawerOpen = false
+                isOsdVisible = true
+                lastUserInteraction = System.currentTimeMillis()
+                runCatching { rootFocusRequester.requestFocus() }
+            },
             modifier = Modifier.align(Alignment.CenterStart)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(360.dp)
-                    .background(Color.Black.copy(alpha = 0.94f))
-                    .padding(20.dp)
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Live Channels (${state.channels.size})",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
-                        )
-                        Text(
-                            text = "▶ Close",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.Gray
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    val listState = rememberLazyListState(
-                        initialFirstVisibleItemIndex = state.currentIndex.coerceAtLeast(0)
-                    )
-
-                    LazyColumn(
-                        state = listState,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(
-                            items = state.channels,
-                            key = { it.id }
-                        ) { ch ->
-                            val isCurrent = ch.id == state.currentChannel.id
-
-                            Card(
-                                onClick = {
-                                    onSelectChannel(ch)
-                                    isDrawerOpen = false
-                                    runCatching { rootFocusRequester.requestFocus() }
-                                },
-                                shape = CardDefaults.shape(MetFlixCardShape),
-                                colors = CardDefaults.colors(
-                                    containerColor = if (isCurrent) {
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-                                    } else {
-                                        Color.White.copy(alpha = 0.08f)
-                                    }
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(
-                                        if (isCurrent) {
-                                            Modifier.border(
-                                                1.dp,
-                                                MaterialTheme.colorScheme.primary,
-                                                MetFlixCardShape
-                                            )
-                                        } else Modifier
-                                    )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "${ch.channelNumber}",
-                                        style = MaterialTheme.typography.labelMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.LightGray
-                                        ),
-                                        modifier = Modifier.width(36.dp)
-                                    )
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = ch.name,
-                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
-                                            ),
-                                            color = Color.White,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = ch.category,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color.Gray
-                                        )
-                                    }
-
-                                    if (isCurrent) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Currently Playing",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    } else if (ch.isFavorite) {
-                                        Icon(
-                                            imageVector = Icons.Default.Star,
-                                            contentDescription = "Favorite",
-                                            tint = Color(0xFFFFD700),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        )
 
         // Live TV Settings Modal
         LiveTvSettingsOverlay(
@@ -827,5 +1093,64 @@ private fun LiveTvPlayerContent(
                 runCatching { rootFocusRequester.requestFocus() }
             }
         )
+    }
+}
+
+@Composable
+private fun StreamMetricBadge(
+    icon: String,
+    label: String,
+    value: String,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(accentColor.copy(alpha = 0.12f))
+            .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = icon,
+            fontSize = 11.sp
+        )
+        Text(
+            text = "$label:",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Medium,
+                fontSize = 11.sp
+            ),
+            color = Color.LightGray
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp
+            ),
+            color = accentColor
+        )
+    }
+}
+
+private fun formatStreamSpeed(bps: Long): String {
+    return when {
+        bps >= 1_000_000L -> String.format(java.util.Locale.US, "%.1f Mbps", bps / 1_000_000.0)
+        bps >= 1_000L -> String.format(java.util.Locale.US, "%.0f kbps", bps / 1_000.0)
+        bps > 0 -> "$bps bps"
+        else -> "-- kbps"
+    }
+}
+
+private fun formatStreamDataUsage(bytes: Long): String {
+    return when {
+        bytes >= 1024L * 1024L * 1024L -> String.format(java.util.Locale.US, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+        bytes >= 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+        bytes >= 1024L -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
+        bytes > 0 -> "$bytes B"
+        else -> "0 KB"
     }
 }

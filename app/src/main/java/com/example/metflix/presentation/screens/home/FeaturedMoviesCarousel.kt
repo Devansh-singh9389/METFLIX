@@ -122,7 +122,7 @@ fun FeaturedMoviesCarousel(
             }),
         itemCount = movies.size,
         carouselState = carouselState,
-        autoScrollDurationMillis = if (isCarouselFocused) 8000L else Long.MAX_VALUE,
+        autoScrollDurationMillis = if (isCarouselFocused && !com.example.metflix.data.settings.PerformancePreferences.isLowSpecModeActive) 8000L else Long.MAX_VALUE,
         carouselIndicator = {
             CarouselIndicator(
                 itemCount = movies.size,
@@ -236,12 +236,13 @@ private val carouselBackgroundGradient = Brush.verticalGradient(
 @Composable
 private fun CarouselItemBackground(movie: Movie, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val imageRequest = remember(movie.posterUri) {
+    val isHighQuality = com.example.metflix.data.settings.PerformancePreferences.isHighQualityImagesActive
+    val imageRequest = remember(movie.posterUri, isHighQuality) {
         ImageRequest.Builder(context)
             .data(movie.posterUri)
-            .bitmapConfig(Bitmap.Config.RGB_565)
-            .allowRgb565(true)
-            .size(960, 540)
+            .bitmapConfig(if (isHighQuality) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565)
+            .allowRgb565(!isHighQuality)
+            .size(if (isHighQuality) 1920 else 960, if (isHighQuality) 1080 else 540)
             .precision(Precision.INEXACT)
             .crossfade(false)
             .build()

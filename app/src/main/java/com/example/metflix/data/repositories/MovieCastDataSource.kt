@@ -16,15 +16,15 @@
 
 package com.example.metflix.data.repositories
 
+import com.example.metflix.data.entities.MovieCast
 import com.example.metflix.data.entities.toMovieCast
 import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
-import com.example.metflix.data.util.AssetsReader
-import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 class MovieCastDataSource @Inject constructor(
-    assetsReader: AssetsReader,
     private val apiClient: MetFlixApiClient
 ) {
 
@@ -33,10 +33,8 @@ class MovieCastDataSource @Inject constructor(
             val remote = apiClient.getCast(NetworkConfig.CAST_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@CachedDataReader remote.map { it.toMovieCast() }
         }
-        readMovieCastData(assetsReader, StringConstants.Assets.MovieCast).map {
-            it.toMovieCast()
-        }
+        emptyList()
     }
 
-    suspend fun getMovieCastList() = movieCastDataReader.read()
+    suspend fun getMovieCastList(): List<MovieCast> = movieCastDataReader.read()
 }

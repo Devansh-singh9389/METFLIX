@@ -45,7 +45,7 @@ class HomeScreeViewModel @Inject constructor(movieRepository: MovieRepository) :
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Lazily,
         initialValue = HomeScreenUiState.Loading
     )
 }

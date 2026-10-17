@@ -27,6 +27,8 @@ fun LiveTvStatsOverlay(
     videoBitrate: String,
     audioInfo: String,
     bufferHealthMs: Long,
+    downloadSpeed: String = "",
+    dataConsumed: String = "",
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -51,6 +53,12 @@ fun LiveTvStatsOverlay(
             StatRow("Category", channel.category)
             StatRow("Resolution", videoResolution.ifBlank { "Detecting…" })
             StatRow("Bitrate", videoBitrate.ifBlank { "Adaptive Auto" })
+            if (downloadSpeed.isNotBlank()) {
+                StatRow("Download Speed", downloadSpeed)
+            }
+            if (dataConsumed.isNotBlank()) {
+                StatRow("Data Consumed", dataConsumed)
+            }
             StatRow("Audio", audioInfo.ifBlank { "Standard Stereo" })
             StatRow("Buffer Health", "${bufferHealthMs} ms")
             StatRow("Protocol", if (channel.streamUrl.contains(".m3u8")) "HLS Live Stream" else "Live Stream")

@@ -32,15 +32,6 @@ object StringConstants {
         }
     }
 
-    object Assets {
-        const val Top250Movies = "movies.json"
-        const val MostPopularMovies = "movies.json"
-        const val InTheaters = "movies.json"
-        const val MostPopularTVShows = "movies.json"
-        const val MovieCategories = "movieCategories.json"
-        const val MovieCast = "movieCast.json"
-    }
-
     object Exceptions {
         const val UnknownException = "Unknown Exception!"
         const val InvalidCategoryId = "Invalid category ID!"

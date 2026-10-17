@@ -21,9 +21,8 @@ android {
 
     buildTypes {
         release {
-            optimization {
-                enable = true
-            }
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -83,6 +82,9 @@ dependencies {
 
     // Coil (image loading)
     implementation(libs.coil.compose)
+
+    // Networking & DNS-over-HTTPS (DoH)
+    implementation(libs.okhttp)
 
     // Media3 (video player)
     implementation(libs.androidx.media3.exoplayer)

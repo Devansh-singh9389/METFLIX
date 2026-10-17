@@ -16,22 +16,41 @@
 
 package com.example.metflix.data.repositories
 
+import com.example.metflix.data.entities.MovieCategory
 import com.example.metflix.data.entities.toMovieCategory
 import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
 import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
-import com.example.metflix.data.util.AssetsReader
-import com.example.metflix.data.util.StringConstants
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class MovieCategoryDataSource @Inject constructor(
-    assetsReader: AssetsReader,
     private val apiClient: MetFlixApiClient,
     private val tmdbApiClient: TmdbApiClient
 ) {
+
+    private val defaultCategories = listOf(
+        MovieCategory("28", "Action"),
+        MovieCategory("12", "Adventure"),
+        MovieCategory("16", "Animation"),
+        MovieCategory("35", "Comedy"),
+        MovieCategory("80", "Crime"),
+        MovieCategory("99", "Documentary"),
+        MovieCategory("18", "Drama"),
+        MovieCategory("10751", "Family"),
+        MovieCategory("14", "Fantasy"),
+        MovieCategory("36", "History"),
+        MovieCategory("27", "Horror"),
+        MovieCategory("10402", "Music"),
+        MovieCategory("9648", "Mystery"),
+        MovieCategory("10749", "Romance"),
+        MovieCategory("878", "Sci-Fi"),
+        MovieCategory("53", "Thriller"),
+        MovieCategory("10752", "War"),
+        MovieCategory("37", "Western")
+    )
 
     private val movieCategoryDataReader = CachedDataReader {
         if (TmdbConfig.USE_TMDB) {
@@ -42,10 +61,8 @@ class MovieCategoryDataSource @Inject constructor(
             val remote = apiClient.getCategories(NetworkConfig.CATEGORIES_ENDPOINT).getOrNull()
             if (!remote.isNullOrEmpty()) return@CachedDataReader remote.map { it.toMovieCategory() }
         }
-        readMovieCategoryData(assetsReader, StringConstants.Assets.MovieCategories).map {
-            it.toMovieCategory()
-        }
+        defaultCategories
     }
 
-    suspend fun getMovieCategoryList() = movieCategoryDataReader.read()
+    suspend fun getMovieCategoryList(): List<MovieCategory> = movieCategoryDataReader.read()
 }

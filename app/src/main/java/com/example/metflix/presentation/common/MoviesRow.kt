@@ -304,10 +304,16 @@ private fun MoviesRowItemText(
     modifier: Modifier = Modifier
 ) {
     if (showItemTitle) {
-        val movieNameAlpha by animateFloatAsState(
-            targetValue = if (isItemFocused) 1f else 0f,
-            label = "",
-        )
+        val isLowSpec = com.example.metflix.data.settings.PerformancePreferences.isLowSpecModeActive
+        val movieNameAlpha = if (isLowSpec) {
+            if (isItemFocused) 1f else 0f
+        } else {
+            val animAlpha by animateFloatAsState(
+                targetValue = if (isItemFocused) 1f else 0f,
+                label = "",
+            )
+            animAlpha
+        }
         Text(
             text = movie.name,
             style = MaterialTheme.typography.bodyMedium.copy(

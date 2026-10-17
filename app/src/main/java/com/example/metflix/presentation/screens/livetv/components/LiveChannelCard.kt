@@ -43,7 +43,12 @@ import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import android.graphics.Bitmap
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.presentation.theme.MetFlixCardShape
 
@@ -128,8 +133,19 @@ fun LiveChannelCard(
                 contentAlignment = Alignment.Center
             ) {
                 if (!channel.logoUrl.isNullOrBlank()) {
+                    val context = LocalContext.current
+                    val imageRequest = remember(channel.logoUrl) {
+                        ImageRequest.Builder(context)
+                            .data(channel.logoUrl)
+                            .size(160, 90)
+                            .precision(Precision.INEXACT)
+                            .bitmapConfig(Bitmap.Config.RGB_565)
+                            .allowRgb565(true)
+                            .crossfade(false)
+                            .build()
+                    }
                     AsyncImage(
-                        model = channel.logoUrl,
+                        model = imageRequest,
                         contentDescription = channel.name,
                         modifier = Modifier
                             .fillMaxSize()
