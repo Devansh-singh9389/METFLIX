@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -111,6 +112,7 @@ fun DashboardTopBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 var isTabRowFocused by remember { mutableStateOf(false) }
+                var focusedTabIndex by remember(selectedTabIndex) { mutableIntStateOf(selectedTabIndex) }
 
                 Spacer(modifier = Modifier.width(20.dp))
                 TabRow(
@@ -118,11 +120,12 @@ fun DashboardTopBar(
                         .onFocusChanged {
                             isTabRowFocused = it.isFocused || it.hasFocus
                         },
-                    selectedTabIndex = selectedTabIndex,
+                    selectedTabIndex = if (isTabRowFocused) focusedTabIndex else selectedTabIndex,
                     indicator = { tabPositions, _ ->
-                        if (selectedTabIndex in tabPositions.indices) {
+                        val activeIndex = if (isTabRowFocused) focusedTabIndex else selectedTabIndex
+                        if (activeIndex in tabPositions.indices) {
                             DashboardTopBarItemIndicator(
-                                currentTabPosition = tabPositions[selectedTabIndex],
+                                currentTabPosition = tabPositions[activeIndex],
                                 anyTabFocused = isTabRowFocused,
                                 shape = MetFlixCardShape
                             )
@@ -138,11 +141,12 @@ fun DashboardTopBar(
                                     .focusRequester(focusRequesters.getOrNull(index + 1) ?: remember { FocusRequester() }),
                                 selected = index == selectedTabIndex,
                                 onFocus = {
+                                    focusedTabIndex = index
                                     if (index != selectedTabIndex) {
                                         pendingTabSwitchJob?.cancel()
                                         pendingTabSwitchJob = coroutineScope.launch {
-                                            delay(200)
-                                            onScreenSelection(screen)
+                                            delay(900)
+                                            runCatching { onScreenSelection(screen) }
                                         }
                                     }
                                 },

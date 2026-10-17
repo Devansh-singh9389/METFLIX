@@ -10,6 +10,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -25,10 +26,11 @@ class LiveTvViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val selectedCategory = MutableStateFlow("All")
-    private val focusedChannel = MutableStateFlow<LiveChannel?>(null)
+    private val _focusedChannel = MutableStateFlow<LiveChannel?>(null)
+    val focusedChannel: StateFlow<LiveChannel?> = _focusedChannel.asStateFlow()
+
     private val isRefreshing = MutableStateFlow(false)
     private val statusMessage = MutableStateFlow<String?>(null)
-    private val searchQuery = MutableStateFlow("")
     private val sortOrder = MutableStateFlow(LiveTvSortOrder.ChannelNumber)
 
     val currentPlaylistUrl: StateFlow<String> = repository.getCurrentPlaylistUrl()
@@ -41,29 +43,17 @@ class LiveTvViewModel @Inject constructor(
     private val filteredChannelsFlow = combine(
         repository.getChannels(),
         selectedCategory,
-        searchQuery,
         sortOrder
-    ) { channels, category, query, sort ->
+    ) { channels, category, sort ->
         val categoryFiltered = when {
             category.equals("All", ignoreCase = true) -> channels
             category.equals("Favorites", ignoreCase = true) -> channels.filter { it.isFavorite }
             else -> channels.filter { it.category.equals(category, ignoreCase = true) }
         }
 
-        val searchFiltered = if (query.isBlank()) {
-            categoryFiltered
-        } else {
-            val q = query.trim().lowercase()
-            categoryFiltered.filter {
-                it.name.lowercase().contains(q) ||
-                it.channelNumber.toString().contains(q) ||
-                it.category.lowercase().contains(q)
-            }
-        }
-
         when (sort) {
-            LiveTvSortOrder.ChannelNumber -> searchFiltered.sortedBy { it.channelNumber }
-            LiveTvSortOrder.NameAsc -> searchFiltered.sortedBy { it.name.lowercase() }
+            LiveTvSortOrder.ChannelNumber -> categoryFiltered.sortedBy { it.channelNumber }
+            LiveTvSortOrder.NameAsc -> categoryFiltered.sortedBy { it.name.lowercase() }
         }
     }
 
@@ -72,9 +62,7 @@ class LiveTvViewModel @Inject constructor(
         filteredChannelsFlow,
         repository.getCategories(),
         selectedCategory,
-        focusedChannel,
         isRefreshing,
-        searchQuery,
         sortOrder,
         repository.getCurrentPlaylistUrl()
     ) { args ->
@@ -85,28 +73,27 @@ class LiveTvViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val categories = args[2] as List<String>
         val category = args[3] as String
-        val focused = args[4] as LiveChannel?
-        val refreshing = args[5] as Boolean
-        val query = args[6] as String
-        val sort = args[7] as LiveTvSortOrder
-        val playlistUrl = args[8] as String
+        val refreshing = args[4] as Boolean
+        val sort = args[5] as LiveTvSortOrder
+        val playlistUrl = args[6] as String
 
         if (channels.isEmpty() && refreshing) {
             LiveTvUiState.Loading
         } else {
-            val currentFocused = focused?.let { f ->
-                sorted.firstOrNull { it.id == f.id }
-            } ?: sorted.firstOrNull()
+            // Keep focusedChannel in sync if current is null or not in category
+            if (_focusedChannel.value == null || sorted.none { it.id == _focusedChannel.value?.id }) {
+                _focusedChannel.value = sorted.firstOrNull()
+            }
 
             LiveTvUiState.Ready(
                 allChannels = channels,
                 filteredChannels = sorted,
                 categories = categories,
                 selectedCategory = category,
-                focusedChannel = currentFocused,
+                focusedChannel = _focusedChannel.value,
                 isRefreshing = refreshing,
                 totalCount = channels.size,
-                searchQuery = query,
+                searchQuery = "",
                 sortOrder = sort,
                 currentPlaylistUrl = playlistUrl
             )
@@ -122,11 +109,11 @@ class LiveTvViewModel @Inject constructor(
     }
 
     fun onChannelFocused(channel: LiveChannel) {
-        focusedChannel.value = channel
+        _focusedChannel.value = channel
     }
 
     fun onSearchQueryChange(query: String) {
-        searchQuery.value = query
+        // No-op (search bar removed for minimal TV UI)
     }
 
     fun onSortOrderChange(order: LiveTvSortOrder) {

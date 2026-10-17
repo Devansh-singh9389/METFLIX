@@ -64,6 +64,13 @@ fun HomeScreen(
                     trendingMovies = s.trendingMovieList,
                     top10Movies = s.top10MovieList,
                     nowPlayingMovies = s.nowPlayingMovieList,
+                    popularThisWeekMovies = s.popularThisWeekList,
+                    netflixMovies = s.netflixMovieList,
+                    primeMovies = s.primeMovieList,
+                    disneyMovies = s.disneyMovieList,
+                    upcomingMovies = s.upcomingMovieList,
+                    topRatedMovies = s.topRatedMovieList,
+                    bingeDramasMovies = s.bingeDramasMovieList,
                     onMovieClick = onMovieClick,
                     onScroll = onScroll,
                     goToVideoPlayer = goToVideoPlayer,
@@ -84,6 +91,13 @@ private fun Catalog(
     trendingMovies: MovieList,
     top10Movies: MovieList,
     nowPlayingMovies: MovieList,
+    popularThisWeekMovies: MovieList,
+    netflixMovies: MovieList,
+    primeMovies: MovieList,
+    disneyMovies: MovieList,
+    upcomingMovies: MovieList,
+    topRatedMovies: MovieList,
+    bingeDramasMovies: MovieList,
     onMovieClick: (movie: Movie) -> Unit,
     onScroll: (isTopBarVisible: Boolean) -> Unit,
     goToVideoPlayer: (movie: Movie) -> Unit,
@@ -156,6 +170,76 @@ private fun Catalog(
                     modifier = Modifier.padding(top = 16.dp),
                     movieList = nowPlayingMovies,
                     title = StringConstants.Composable.HomeScreenNowPlayingMoviesTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
+        }
+        if (popularThisWeekMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = popularThisWeekMovies,
+                    title = StringConstants.Composable.PopularFilmsThisWeekTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
+        }
+        if (netflixMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = netflixMovies,
+                    title = StringConstants.Composable.NetflixMoviesTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
+        }
+        if (primeMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = primeMovies,
+                    title = StringConstants.Composable.PrimeMoviesTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
+        }
+        if (disneyMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = disneyMovies,
+                    title = StringConstants.Composable.DisneyMoviesTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
+        }
+        if (topRatedMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = topRatedMovies,
+                    title = StringConstants.Composable.TopRatedMoviesTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
+        }
+        if (upcomingMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = upcomingMovies,
+                    title = StringConstants.Composable.UpcomingMoviesTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
+        }
+        if (bingeDramasMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = bingeDramasMovies,
+                    title = StringConstants.Composable.BingeWatchDramasTitle,
                     onMovieSelected = onMovieClick
                 )
             }

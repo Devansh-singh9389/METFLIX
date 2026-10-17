@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
@@ -54,6 +55,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
@@ -64,6 +67,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.example.metflix.data.network.resolvers.StreamServer
 
 private val SpeedOptions = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
@@ -90,6 +94,9 @@ fun VideoPlayerSettingsOverlay(
     isPresented: Boolean,
     currentSpeed: Float,
     currentContentScale: ContentScale,
+    availableServers: List<StreamServer> = emptyList(),
+    selectedServer: StreamServer? = null,
+    onSelectServer: (StreamServer) -> Unit = {},
     currentQualityMaxHeight: Int = 0,
     availableQualityHeights: List<Int> = emptyList(),
     sourceResolutionLabel: String = "",
@@ -99,12 +106,14 @@ fun VideoPlayerSettingsOverlay(
     selectedSubtitleTrackIndex: Int = -1,
     currentSleepTimerMinutes: Int = 0,
     isStatsVisible: Boolean = false,
+    isWebPlayerMode: Boolean = false,
     onSelectSpeed: (Float) -> Unit,
     onSelectContentScale: (ContentScale) -> Unit,
     onSelectQuality: (Int) -> Unit = {},
     onSelectAudioTrack: (Int) -> Unit = {},
     onSelectSubtitleTrack: (Int) -> Unit = {},
     onSelectSleepTimer: (Int) -> Unit = {},
+    onTogglePlayerEngine: (Boolean) -> Unit = {},
     onToggleStats: () -> Unit = {},
     onRestartMovie: () -> Unit = {},
     onDismiss: () -> Unit,
@@ -120,8 +129,6 @@ fun VideoPlayerSettingsOverlay(
         runCatching { initialFocusRequester.requestFocus() }
     }
 
-    val isSingleQuality = availableQualityHeights.size <= 1
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -130,8 +137,8 @@ fun VideoPlayerSettingsOverlay(
     ) {
         Surface(
             modifier = Modifier
-                .width(620.dp)
-                .padding(vertical = 20.dp),
+                .width(640.dp)
+                .padding(vertical = 16.dp),
             shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),
             colors = ClickableSurfaceDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
@@ -143,7 +150,7 @@ fun VideoPlayerSettingsOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
+                    .padding(22.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -186,53 +193,113 @@ fun VideoPlayerSettingsOverlay(
                     }
                 }
 
-                // 1. Video Aspect Ratio / Scale section
-                SettingsSectionHeader(
-                    icon = Icons.Default.AspectRatio,
-                    title = "Screen Aspect Ratio"
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val scaleModes = listOf(
-                        "Fit (Original)" to ContentScale.Fit,
-                        "Zoom / Crop" to ContentScale.Crop,
-                        "Stretch" to ContentScale.FillBounds
+                // 1. Streaming Server / Multi-Server Section
+                if (availableServers.isNotEmpty()) {
+                    SettingsSectionHeader(
+                        icon = Icons.Default.Dns,
+                        title = "Streaming Server / Source"
                     )
 
-                    scaleModes.forEachIndexed { index, (title, scale) ->
-                        val isSelected = currentContentScale == scale
-                        val buttonModifier = if (index == 0) {
-                            Modifier.focusRequester(initialFocusRequester)
-                        } else Modifier
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        availableServers.chunked(2).forEachIndexed { rowIndex, rowServers ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowServers.forEachIndexed { colIndex, server ->
+                                    val isSelected = selectedServer?.id == server.id
+                                    val buttonModifier = if (rowIndex == 0 && colIndex == 0) {
+                                        Modifier.focusRequester(initialFocusRequester)
+                                    } else Modifier
 
-                        OptionPillButton(
-                            label = title,
-                            isSelected = isSelected,
-                            onClick = { onSelectContentScale(scale) },
-                            modifier = buttonModifier.weight(1f)
+                                    ServerPillButton(
+                                        server = server,
+                                        isSelected = isSelected,
+                                        onClick = { onSelectServer(server) },
+                                        modifier = buttonModifier.weight(1f)
+                                    )
+                                }
+                                if (rowServers.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "⚡ Servers are probed in parallel and dynamically ranked by response time, direct stream, and regional audio match.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            fontSize = 11.sp
                         )
                     }
                 }
 
-                // 2. Video Quality Section
+                // 1.5. Playback Engine Section (Web Embed vs Native ExoPlayer)
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.HighQuality,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = "Video Quality",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Dns,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Playback Engine",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onTogglePlayerEngine(true) },
+                            colors = ButtonDefaults.colors(
+                                containerColor = if (isWebPlayerMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        ) {
+                            Text("Web Embed", style = MaterialTheme.typography.labelMedium)
+                        }
+                        Button(
+                            onClick = { onTogglePlayerEngine(false) },
+                            colors = ButtonDefaults.colors(
+                                containerColor = if (!isWebPlayerMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        ) {
+                            Text("Native (ExoPlayer)", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+
+                // 2. Video Quality / Multi-Resolution Section
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HighQuality,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Video Quality & Resolution",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (sourceResolutionLabel.isNotBlank()) {
                         Box(
                             modifier = Modifier
@@ -243,27 +310,76 @@ fun VideoPlayerSettingsOverlay(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "Source: $sourceResolutionLabel",
+                                text = "Live: $sourceResolutionLabel",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
 
-                if (isSingleQuality) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    VideoQualityOptions.forEach { (label, height) ->
+                        val isSelected = currentQualityMaxHeight == height
                         OptionPillButton(
-                            label = if (sourceResolutionLabel.isNotBlank()) "Original ($sourceResolutionLabel)" else "Auto (Source Feed)",
-                            isSelected = true,
-                            onClick = {},
+                            label = label,
+                            isSelected = isSelected,
+                            onClick = { onSelectQuality(height) },
                             modifier = Modifier.weight(1f)
                         )
                     }
+                }
 
+                val qualityDescription = when (currentQualityMaxHeight) {
+                    0 -> "Auto: Dynamically adapts stream quality and bitrates to your network for smooth playback."
+                    1080 -> "1080p Full HD: Maximum crispness, recommended for high-speed Wi-Fi & Ethernet."
+                    720 -> "720p HD: High definition with balanced internet data consumption."
+                    480 -> "480p SD: Data Saver mode — uses up to 80% less internet bandwidth."
+                    360 -> "360p Low: Minimum data usage for low-speed connections."
+                    else -> "Adaptive streaming"
+                }
+
+                Text(
+                    text = qualityDescription,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                    fontSize = 11.sp
+                )
+
+                // 3. Audio Track / Multi-Audio Selection
+                SettingsSectionHeader(
+                    icon = Icons.Default.Audiotrack,
+                    title = "Audio Track & Language"
+                )
+
+                if (availableAudioTracks.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        availableAudioTracks.chunked(3).forEach { rowTracks ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowTracks.forEach { trackLabel ->
+                                    val index = availableAudioTracks.indexOf(trackLabel)
+                                    val isSelected = selectedAudioTrackIndex == index
+                                    OptionPillButton(
+                                        label = trackLabel,
+                                        isSelected = isSelected,
+                                        onClick = { onSelectAudioTrack(index) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                repeat(3 - rowTracks.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                } else {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -282,65 +398,11 @@ fun VideoPlayerSettingsOverlay(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Stream provided at direct source quality with zero transcoding overhead.",
+                            text = "Primary Direct Audio (Stereo / Multichannel Pass-Through)",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.LightGray,
                             fontSize = 11.sp
                         )
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        VideoQualityOptions.forEach { (label, height) ->
-                            val isSelected = currentQualityMaxHeight == height
-                            OptionPillButton(
-                                label = label,
-                                isSelected = isSelected,
-                                onClick = { onSelectQuality(height) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
-                    val qualityDescription = when (currentQualityMaxHeight) {
-                        0 -> "Auto: Dynamically adapts video quality to your internet speed for smooth playback."
-                        1080 -> "1080p Full HD: Maximum crispness, recommended for high-speed Wi-Fi."
-                        720 -> "720p HD: High definition with moderate bandwidth consumption."
-                        480 -> "480p SD: Data Saver mode — uses up to 80% less internet data."
-                        360 -> "360p Low: Minimum data usage for low-speed connections."
-                        else -> "Adaptive streaming"
-                    }
-
-                    Text(
-                        text = qualityDescription,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                        fontSize = 11.sp
-                    )
-                }
-
-                // 3. Audio Track Selection
-                if (availableAudioTracks.isNotEmpty()) {
-                    SettingsSectionHeader(
-                        icon = Icons.Default.Audiotrack,
-                        title = "Audio Track / Language"
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        availableAudioTracks.forEachIndexed { index, trackLabel ->
-                            val isSelected = selectedAudioTrackIndex == index
-                            OptionPillButton(
-                                label = trackLabel,
-                                isSelected = isSelected,
-                                onClick = { onSelectAudioTrack(index) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
                     }
                 }
 
@@ -374,7 +436,34 @@ fun VideoPlayerSettingsOverlay(
                     }
                 }
 
-                // 5. Playback Speed Section
+                // 5. Screen Aspect Ratio / Scale
+                SettingsSectionHeader(
+                    icon = Icons.Default.AspectRatio,
+                    title = "Screen Aspect Ratio"
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val scaleModes = listOf(
+                        "Fit (Original)" to ContentScale.Fit,
+                        "Zoom / Crop" to ContentScale.Crop,
+                        "Stretch" to ContentScale.FillBounds
+                    )
+
+                    scaleModes.forEach { (title, scale) ->
+                        val isSelected = currentContentScale == scale
+                        OptionPillButton(
+                            label = title,
+                            isSelected = isSelected,
+                            onClick = { onSelectContentScale(scale) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // 6. Playback Speed
                 SettingsSectionHeader(
                     icon = Icons.Default.Speed,
                     title = "Playback Speed"
@@ -386,10 +475,8 @@ fun VideoPlayerSettingsOverlay(
                 ) {
                     SpeedOptions.forEach { speed ->
                         val isSelected = currentSpeed == speed
-                        val label = if (speed == 1.0f) "1.0x" else "${speed}x"
-
                         OptionPillButton(
-                            label = label,
+                            label = "${speed}x",
                             isSelected = isSelected,
                             onClick = { onSelectSpeed(speed) },
                             modifier = Modifier.weight(1f)
@@ -397,10 +484,10 @@ fun VideoPlayerSettingsOverlay(
                     }
                 }
 
-                // 6. Sleep Timer (Auto Off)
+                // 7. Sleep Timer
                 SettingsSectionHeader(
                     icon = Icons.Default.Timer,
-                    title = "Sleep Timer (Auto Pause)"
+                    title = "Sleep Timer"
                 )
 
                 Row(
@@ -418,18 +505,29 @@ fun VideoPlayerSettingsOverlay(
                     }
                 }
 
-                // 7. Stream Actions & Diagnostics
+                // 8. Stream Diagnostics & Actions
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Button(
+                        onClick = onToggleStats,
+                        modifier = Modifier.weight(1f),
+                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (isStatsVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                            focusedContainerColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Text(text = if (isStatsVisible) "Hide Diagnostics HUD" else "Show Diagnostics HUD")
+                    }
+
                     Button(
                         onClick = onRestartMovie,
                         modifier = Modifier.weight(1f),
+                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
                         colors = ButtonDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
                             focusedContainerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
@@ -439,28 +537,7 @@ fun VideoPlayerSettingsOverlay(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Restart Movie", style = MaterialTheme.typography.labelMedium)
-                    }
-
-                    Button(
-                        onClick = onToggleStats,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (isStatsVisible) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                            contentColor = if (isStatsVisible) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurface,
-                            focusedContainerColor = MaterialTheme.colorScheme.secondary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isStatsVisible) "Hide Stream Stats" else "Show Stream Stats",
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                        Text(text = "Restart Video")
                     }
                 }
             }
@@ -485,6 +562,121 @@ private fun SettingsSectionHeader(icon: ImageVector, title: String) {
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary
         )
+    }
+}
+
+@Composable
+private fun ServerPillButton(
+    server: StreamServer,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.height(44.dp),
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+            },
+            contentColor = if (isSelected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            focusedContainerColor = MaterialTheme.colorScheme.secondary,
+            focusedContentColor = MaterialTheme.colorScheme.onSecondary
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSecondary),
+                shape = RoundedCornerShape(8.dp)
+            )
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                if (isSelected) {
+                    Text(
+                        text = "✓",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF4CAF50)
+                    )
+                } else if (server.rank in 1..3) {
+                    Text(
+                        text = "#${server.rank}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    )
+                }
+                Text(
+                    text = server.name,
+                    fontSize = 12.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (server.isRegionalMatch) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                Color(0xFFFF9800).copy(alpha = 0.25f),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "REGIONAL",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFB74D)
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .background(
+                            if (isSelected) Color.White.copy(alpha = 0.25f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                            RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    val badgeText = if (server.latencyMs != null && server.latencyMs > 0) {
+                        "${server.latencyMs}ms"
+                    } else {
+                        server.badge
+                    }
+                    Text(
+                        text = badgeText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
     }
 }
 

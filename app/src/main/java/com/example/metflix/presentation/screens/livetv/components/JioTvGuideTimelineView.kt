@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -66,7 +67,7 @@ fun JioTvGuideTimelineView(
     var currentTimeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(15_000)
+            delay(60_000)
             currentTimeMs = System.currentTimeMillis()
         }
     }
@@ -174,6 +175,7 @@ private fun JioTvChannelTimelineRow(
             modifier = Modifier
                 .width(200.dp)
                 .height(82.dp)
+                .graphicsLayer { }
                 .onFocusChanged {
                     if (it.isFocused) onChannelFocus()
                 },
@@ -301,7 +303,8 @@ private fun JioTvProgramBlock(
         onClick = onClick,
         modifier = Modifier
             .width(220.dp)
-            .height(82.dp),
+            .height(82.dp)
+            .graphicsLayer { },
         shape = CardDefaults.shape(RoundedCornerShape(6.dp)),
         border = CardDefaults.border(
             focusedBorder = Border(

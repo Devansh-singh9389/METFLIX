@@ -51,9 +51,9 @@ import kotlinx.coroutines.delay
 @Composable
 fun JioTvHeaderPreview(
     channel: LiveChannel?,
-    onWatchClick: (LiveChannel) -> Unit,
-    onToggleFavorite: (LiveChannel) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onWatchClick: ((LiveChannel) -> Unit)? = null,
+    onToggleFavorite: ((LiveChannel) -> Unit)? = null,
 ) {
     if (channel == null) {
         Spacer(modifier = modifier.height(200.dp))
@@ -63,7 +63,7 @@ fun JioTvHeaderPreview(
     var currentTimeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(15_000)
+            delay(60_000)
             currentTimeMs = System.currentTimeMillis()
         }
     }
@@ -225,51 +225,6 @@ fun JioTvHeaderPreview(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Watch Live & Favorite Buttons
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        onClick = { onWatchClick(channel) },
-                        colors = ButtonDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Watch Live",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    OutlinedButton(
-                        onClick = { onToggleFavorite(channel) },
-                        colors = OutlinedButtonDefaults.colors(
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Icon(
-                            imageVector = if (channel.isFavorite) Icons.Default.Star else Icons.Outlined.StarBorder,
-                            contentDescription = null,
-                            tint = if (channel.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (channel.isFavorite) "Favorited" else "Favorite",
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                }
             }
 
             // Right side: Upcoming shows timeline preview

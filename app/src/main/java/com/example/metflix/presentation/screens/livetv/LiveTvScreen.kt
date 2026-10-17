@@ -1,6 +1,5 @@
 package com.example.metflix.presentation.screens.livetv
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,20 +16,15 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.CalendarViewMonth
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,12 +35,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Button
@@ -75,6 +65,7 @@ fun LiveTvScreen(
     viewModel: LiveTvViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val focusedChannel by viewModel.focusedChannel.collectAsStateWithLifecycle()
 
     when (val state = uiState) {
         is LiveTvUiState.Loading -> {
@@ -88,12 +79,11 @@ fun LiveTvScreen(
         is LiveTvUiState.Ready -> {
             LiveTvCatalog(
                 state = state,
+                focusedChannel = focusedChannel,
                 onCategorySelect = viewModel::onCategorySelected,
                 onChannelFocus = viewModel::onChannelFocused,
                 onChannelClick = onChannelClick,
-                onToggleFavorite = { viewModel.toggleFavorite(it.id) },
                 onRefresh = { viewModel.refreshChannels() },
-                onSearchChange = viewModel::onSearchQueryChange,
                 onSortChange = viewModel::onSortOrderChange,
                 onSelectPlaylist = viewModel::selectPlaylistUrl,
                 onScroll = onScroll,
@@ -107,12 +97,11 @@ fun LiveTvScreen(
 @Composable
 private fun LiveTvCatalog(
     state: LiveTvUiState.Ready,
+    focusedChannel: LiveChannel?,
     onCategorySelect: (String) -> Unit,
     onChannelFocus: (LiveChannel) -> Unit,
     onChannelClick: (LiveChannel) -> Unit,
-    onToggleFavorite: (LiveChannel) -> Unit,
     onRefresh: () -> Unit,
-    onSearchChange: (String) -> Unit,
     onSortChange: (LiveTvSortOrder) -> Unit,
     onSelectPlaylist: (String) -> Unit,
     onScroll: (isTopBarVisible: Boolean) -> Unit,
@@ -130,21 +119,14 @@ private fun LiveTvCatalog(
         { channel ->
             focusDebounceJob?.cancel()
             focusDebounceJob = coroutineScope.launch {
-                delay(150)
+                delay(30)
                 onChannelFocus(channel)
             }
         }
     }
 
-    val shouldShowTopBar by remember {
-        derivedStateOf {
-            if (isTimelineGuideMode) true
-            else gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset < 100
-        }
-    }
-
-    LaunchedEffect(shouldShowTopBar) {
-        onScroll(shouldShowTopBar)
+    LaunchedEffect(Unit) {
+        onScroll(true)
     }
 
     val selectedCategoryIndex = state.categories.indexOf(state.selectedCategory).coerceAtLeast(0)
@@ -157,200 +139,192 @@ private fun LiveTvCatalog(
         ) {
             // JioTV Hero Banner: Focused Channel, Now Airing show title, red progress bar & schedule
             JioTvHeaderPreview(
-                channel = state.focusedChannel,
-                onWatchClick = onChannelClick,
-                onToggleFavorite = onToggleFavorite,
-                modifier = Modifier.padding(top = 8.dp, bottom = 10.dp)
+                channel = focusedChannel,
+                modifier = Modifier.padding(top = 6.dp, bottom = 8.dp)
             )
 
-            // Category Filter Row & Action Buttons
+            // Source & Regional Switcher Toolbar Row (100% TV Remote Reachable)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 10.dp),
+                    .padding(bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TabRow(
-                    selectedTabIndex = selectedCategoryIndex,
-                    modifier = Modifier.weight(1f)
+                // Quick Source Selector: Hindi, World, English, All Sources
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    state.categories.forEachIndexed { index, cat ->
-                        Tab(
-                            selected = index == selectedCategoryIndex,
-                            onFocus = { onCategorySelect(cat) },
-                            onClick = { onCategorySelect(cat) }
-                        ) {
-                            Text(
-                                text = cat,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.titleSmall
+                    val isHindi = state.currentPlaylistUrl.contains("hin.m3u")
+                    val isWorld = state.currentPlaylistUrl.contains("index.m3u")
+                    val isEnglish = state.currentPlaylistUrl.contains("eng.m3u")
+
+                    Button(
+                        onClick = { onSelectPlaylist("https://iptv-org.github.io/iptv/languages/hin.m3u") },
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (isHindi) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isHindi) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = "🇮🇳 Hindi",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (isHindi) FontWeight.Bold else FontWeight.Normal
                             )
-                        }
+                        )
+                    }
+
+                    Button(
+                        onClick = { onSelectPlaylist("https://iptv-org.github.io/iptv/index.m3u") },
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (isWorld) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isWorld) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = "🌍 World",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (isWorld) FontWeight.Bold else FontWeight.Normal
+                            )
+                        )
+                    }
+
+                    Button(
+                        onClick = { onSelectPlaylist("https://iptv-org.github.io/iptv/languages/eng.m3u") },
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (isEnglish) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isEnglish) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = "🌐 English",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (isEnglish) FontWeight.Bold else FontWeight.Normal
+                            )
+                        )
+                    }
+
+                    // IPTV Sources Dialog Button
+                    Button(
+                        onClick = { isPlaylistDialogOpen = true },
+                        colors = ButtonDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.List,
+                            contentDescription = "IPTV Sources",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "IPTV Sources", style = MaterialTheme.typography.labelMedium)
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.weight(1f))
 
-                // View Mode Toggle (Cards vs JioTV EPG Guide Timeline)
-                Button(
-                    onClick = { isTimelineGuideMode = !isTimelineGuideMode },
-                    colors = ButtonDefaults.colors(
-                        containerColor = if (isTimelineGuideMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (isTimelineGuideMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // Tools: View Mode Toggle, Sort, Refresh, Total CH
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isTimelineGuideMode) Icons.Default.GridView else Icons.Default.CalendarViewMonth,
-                        contentDescription = "Toggle Guide View",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    // View Mode Toggle (Cards vs JioTV EPG Guide Timeline)
+                    Button(
+                        onClick = { isTimelineGuideMode = !isTimelineGuideMode },
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (isTimelineGuideMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isTimelineGuideMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Icon(
+                            imageVector = if (isTimelineGuideMode) Icons.Default.GridView else Icons.Default.CalendarViewMonth,
+                            contentDescription = "Toggle Guide View",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isTimelineGuideMode) "Cards" else "EPG Guide",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+
+                    // Sort Order Toggle Button
+                    Button(
+                        onClick = {
+                            val next = if (state.sortOrder == LiveTvSortOrder.ChannelNumber) {
+                                LiveTvSortOrder.NameAsc
+                            } else {
+                                LiveTvSortOrder.ChannelNumber
+                            }
+                            onSortChange(next)
+                        },
+                        colors = ButtonDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Sort,
+                            contentDescription = "Sort",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = state.sortOrder.title,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+
+                    // Refresh Button
+                    Button(
+                        onClick = onRefresh,
+                        colors = ButtonDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Sync",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (state.isRefreshing) "Syncing…" else "Sync",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+
+                    // Total Filtered Count Badge
                     Text(
-                        text = if (isTimelineGuideMode) "Cards View" else "EPG Guide",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // IPTV Sources Dialog Button
-                Button(
-                    onClick = { isPlaylistDialogOpen = true },
-                    colors = ButtonDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.List,
-                        contentDescription = "IPTV Sources",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "IPTV Sources", style = MaterialTheme.typography.labelSmall)
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Refresh Button
-                Button(
-                    onClick = onRefresh,
-                    colors = ButtonDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Sync",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (state.isRefreshing) "Syncing…" else "Sync",
-                        style = MaterialTheme.typography.labelSmall
+                        text = "${state.filteredChannels.size} CH",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            // Search Bar & Sort Order Row
-            Row(
+            // Category Filter TabRow
+            TabRow(
+                selectedTabIndex = selectedCategoryIndex,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(bottom = 12.dp)
             ) {
-                // Search Input Box
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .background(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                            RoundedCornerShape(8.dp)
+                state.categories.forEachIndexed { index, cat ->
+                    Tab(
+                        selected = index == selectedCategoryIndex,
+                        onFocus = { onCategorySelect(cat) },
+                        onClick = { onCategorySelect(cat) }
+                    ) {
+                        Text(
+                            text = cat,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.titleSmall
                         )
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = Color.LightGray,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    BasicTextField(
-                        value = state.searchQuery,
-                        onValueChange = onSearchChange,
-                        textStyle = TextStyle(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 13.sp
-                        ),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.weight(1f),
-                        decorationBox = { innerTextField ->
-                            if (state.searchQuery.isEmpty()) {
-                                Text(
-                                    text = "Filter channels by name, category, or number…",
-                                    color = Color.Gray,
-                                    fontSize = 12.sp
-                                )
-                            }
-                            innerTextField()
-                        }
-                    )
-                    if (state.searchQuery.isNotEmpty()) {
-                        Button(
-                            onClick = { onSearchChange("") },
-                            shape = ButtonDefaults.shape(RoundedCornerShape(50)),
-                            colors = ButtonDefaults.colors(containerColor = Color.Transparent)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = "Clear",
-                                tint = Color.LightGray,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
                     }
                 }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Sort Order Toggle Button
-                Button(
-                    onClick = {
-                        val next = if (state.sortOrder == LiveTvSortOrder.ChannelNumber) {
-                            LiveTvSortOrder.NameAsc
-                        } else {
-                            LiveTvSortOrder.ChannelNumber
-                        }
-                        onSortChange(next)
-                    },
-                    colors = ButtonDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Sort,
-                        contentDescription = "Sort",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Sort: ${state.sortOrder.title}",
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Total Filtered Count Badge
-                Text(
-                    text = "${state.filteredChannels.size} of ${state.totalCount} channels",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             // Main Channel Content: EPG Timeline Guide or JioTV Channel Cards Grid
@@ -370,10 +344,8 @@ private fun LiveTvCatalog(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = if (state.searchQuery.isNotBlank()) {
-                                "No channels matching \"${state.searchQuery}\""
-                            } else if (state.selectedCategory.equals("Favorites", ignoreCase = true)) {
-                                "No favorite channels yet. Add channels to Favorites by clicking 'Favorite'!"
+                            text = if (state.selectedCategory.equals("Favorites", ignoreCase = true)) {
+                                "No favorite channels yet. Add channels to Favorites!"
                             } else {
                                 "No channels found in this category."
                             },
@@ -402,7 +374,8 @@ private fun LiveTvCatalog(
                 ) {
                     items(
                         items = state.filteredChannels,
-                        key = { it.id }
+                        key = { it.id },
+                        contentType = { "channel_card" }
                     ) { channel ->
                         JioTvChannelCard(
                             channel = channel,

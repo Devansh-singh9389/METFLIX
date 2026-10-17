@@ -45,6 +45,13 @@ class HomeScreeViewModel @Inject constructor(
         var trending: MovieList = emptyList()
         var top10: MovieList = emptyList()
         var nowPlaying: MovieList = emptyList()
+        var popularThisWeek: MovieList = emptyList()
+        var netflix: MovieList = emptyList()
+        var prime: MovieList = emptyList()
+        var disney: MovieList = emptyList()
+        var upcoming: MovieList = emptyList()
+        var topRated: MovieList = emptyList()
+        var bingeDramas: MovieList = emptyList()
 
         fun emitState() {
             if (featured.isNotEmpty() || trending.isNotEmpty() || top10.isNotEmpty() || nowPlaying.isNotEmpty()) {
@@ -52,7 +59,14 @@ class HomeScreeViewModel @Inject constructor(
                     featuredMovieList = featured,
                     trendingMovieList = trending,
                     top10MovieList = top10,
-                    nowPlayingMovieList = nowPlaying
+                    nowPlayingMovieList = nowPlaying,
+                    popularThisWeekList = popularThisWeek,
+                    netflixMovieList = netflix,
+                    primeMovieList = prime,
+                    disneyMovieList = disney,
+                    upcomingMovieList = upcoming,
+                    topRatedMovieList = topRated,
+                    bingeDramasMovieList = bingeDramas
                 )
             }
         }
@@ -84,6 +98,55 @@ class HomeScreeViewModel @Inject constructor(
                 emitState()
             }
         }
+
+        viewModelScope.launch {
+            movieRepository.getPopularFilmsThisWeek().collect { list ->
+                popularThisWeek = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getNetflixMovies().collect { list ->
+                netflix = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getPrimeMovies().collect { list ->
+                prime = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getDisneyMovies().collect { list ->
+                disney = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getUpcomingMovies().collect { list ->
+                upcoming = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getMostVotedMovies().collect { list ->
+                topRated = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getBingeWatchDramas().collect { list ->
+                bingeDramas = list
+                emitState()
+            }
+        }
     }
 }
 
@@ -96,6 +159,13 @@ sealed interface HomeScreenUiState {
         val featuredMovieList: MovieList,
         val trendingMovieList: MovieList,
         val top10MovieList: MovieList,
-        val nowPlayingMovieList: MovieList
+        val nowPlayingMovieList: MovieList,
+        val popularThisWeekList: MovieList = emptyList(),
+        val netflixMovieList: MovieList = emptyList(),
+        val primeMovieList: MovieList = emptyList(),
+        val disneyMovieList: MovieList = emptyList(),
+        val upcomingMovieList: MovieList = emptyList(),
+        val topRatedMovieList: MovieList = emptyList(),
+        val bingeDramasMovieList: MovieList = emptyList()
     ) : HomeScreenUiState
 }

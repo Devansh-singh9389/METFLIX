@@ -36,14 +36,23 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 
 @OptIn(UnstableApi::class)
 @Composable
-fun rememberPlayer(context: Context): ExoPlayer {
-    val player = remember {
+fun rememberPlayer(
+    context: Context,
+    headers: Map<String, String> = emptyMap()
+): ExoPlayer {
+    val player = remember(headers) {
+        val userAgent = headers["User-Agent"] ?: "AndroidXMedia3/1.8.0 (Linux; Android; MetFlix)"
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setConnectTimeoutMs(20_000)
             .setReadTimeoutMs(20_000)
             .setAllowCrossProtocolRedirects(true)
             .setKeepPostFor302Redirects(true)
-            .setUserAgent("Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 MetFlix/1.0")
+            .setUserAgent(userAgent)
+
+        val cleanHeaders = headers.filterKeys { !it.equals("User-Agent", ignoreCase = true) }
+        if (cleanHeaders.isNotEmpty()) {
+            httpDataSourceFactory.setDefaultRequestProperties(cleanHeaders)
+        }
 
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
 

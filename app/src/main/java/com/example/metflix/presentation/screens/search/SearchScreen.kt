@@ -182,18 +182,21 @@ fun SearchResult(
                                 when (it.nativeKeyEvent.keyCode) {
                                     KeyEvent.KEYCODE_DPAD_DOWN -> {
                                         focusManager.moveFocus(FocusDirection.Down)
+                                        return@onKeyEvent true
                                     }
 
                                     KeyEvent.KEYCODE_DPAD_UP -> {
                                         focusManager.moveFocus(FocusDirection.Up)
+                                        return@onKeyEvent true
                                     }
 
                                     KeyEvent.KEYCODE_BACK -> {
                                         focusManager.moveFocus(FocusDirection.Exit)
+                                        return@onKeyEvent true
                                     }
                                 }
                             }
-                            true
+                            false
                         },
                     cursorBrush = Brush.verticalGradient(
                         colors = listOf(

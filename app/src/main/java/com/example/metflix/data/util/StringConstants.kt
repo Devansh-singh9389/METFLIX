@@ -56,6 +56,11 @@ object StringConstants {
         const val HomeScreenNowPlayingMoviesTitle = "Now Playing Movies"
         const val PopularFilmsThisWeekTitle = "Popular films this week"
         const val BingeWatchDramasTitle = "Bingewatch dramas"
+        const val NetflixMoviesTitle = "Popular on Netflix"
+        const val PrimeMoviesTitle = "Prime Video Hits"
+        const val DisneyMoviesTitle = "Disney+ Favorites"
+        const val UpcomingMoviesTitle = "Upcoming Releases"
+        const val TopRatedMoviesTitle = "Top Rated & Most Voted"
         fun movieDetailsScreenSimilarTo(name: String) = "Similar to $name"
         fun reviewCount(count: String) = "$count reviews"
 

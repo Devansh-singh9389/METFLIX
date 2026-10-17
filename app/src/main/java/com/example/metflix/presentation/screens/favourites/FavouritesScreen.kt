@@ -85,9 +85,6 @@ private fun Catalog(
     LaunchedEffect(shouldShowTopBar) {
         onScroll(shouldShowTopBar)
     }
-    LaunchedEffect(isTopBarVisible) {
-        if (isTopBarVisible) filteredMoviesGridState.animateScrollToItem(0)
-    }
 
     val chipRowTopPadding by animateDpAsState(
         targetValue = if (shouldShowTopBar) 0.dp else childPadding.top, label = ""

@@ -16,8 +16,6 @@
 
 package com.example.metflix.presentation.screens.categories
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -130,13 +128,10 @@ private fun Catalog(
                         }
                     }
             ) {
-                val itemAlpha by animateFloatAsState(
-                    targetValue = if (isFocused) .6f else 0.2f,
-                    label = ""
-                )
-
                 Box(contentAlignment = Alignment.Center) {
-                    Box(modifier = Modifier.graphicsLayer { alpha = itemAlpha }) {
+                    Box(modifier = Modifier.graphicsLayer {
+                        alpha = if (isFocused) 0.6f else 0.2f
+                    }) {
                         GradientBg(index)
                     }
                     Text(

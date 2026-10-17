@@ -16,8 +16,6 @@
 
 package com.example.metflix.presentation.common
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -119,7 +117,9 @@ fun MoviesRow(
                     Modifier
                 }
                 MoviesRowItem(
-                    modifier = itemModifier.weight(1f),
+                    modifier = itemModifier
+                        .weight(1f)
+                        .graphicsLayer { },
                     index = index,
                     itemDirection = itemDirection,
                     onMovieSelected = {
@@ -190,7 +190,9 @@ fun ImmersiveListMoviesRow(
                     Modifier
                 }
                 MoviesRowItem(
-                    modifier = itemModifier.weight(1f),
+                    modifier = itemModifier
+                        .weight(1f)
+                        .graphicsLayer { },
                     index = index,
                     itemDirection = itemDirection,
                     onMovieSelected = {

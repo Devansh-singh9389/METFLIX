@@ -51,6 +51,7 @@ fun PosterImage(
         modifier = modifier,
         model = imageRequest,
         contentDescription = StringConstants.Composable.ContentDescription.moviePoster(movie.name),
-        contentScale = ContentScale.Crop
+        contentScale = ContentScale.Crop,
+        clipToBounds = true
     )
 }

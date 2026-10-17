@@ -1,13 +1,9 @@
 package com.example.metflix.presentation.screens.livetv.components
 
 import android.graphics.Bitmap
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,6 +74,7 @@ fun JioTvChannelCard(
     Card(
         onClick = onClick,
         modifier = modifier
+            .graphicsLayer { }
             .onFocusChanged {
                 if (it.isFocused) onFocus()
             },

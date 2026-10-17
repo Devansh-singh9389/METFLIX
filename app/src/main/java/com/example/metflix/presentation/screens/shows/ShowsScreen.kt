@@ -91,13 +91,13 @@ private fun Catalog(
         state = lazyListState,
         contentPadding = PaddingValues(top = childPadding.top, bottom = 104.dp)
     ) {
-        item {
+        item(contentType = "movie_list") {
             MoviesScreenMovieList(
                 movieList = tvShowList,
                 onMovieClick = onTVShowClick
             )
         }
-        item {
+        item(contentType = "movies_row") {
             MoviesRow(
                 modifier = Modifier.padding(top = childPadding.top),
                 title = StringConstants.Composable.BingeWatchDramasTitle,

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -146,7 +147,7 @@ fun DashboardScreen(
         // Used to show/hide DashboardTopBar
         val topBarYOffsetPx by animateIntAsState(
             targetValue = if (isTopBarVisible) 0 else -topBarHeightPx,
-            animationSpec = tween(),
+            animationSpec = tween(durationMillis = 150),
             label = "",
             finishedListener = {
                 if (it == -topBarHeightPx && isComingBackFromDifferentScreen) {
@@ -159,7 +160,7 @@ fun DashboardScreen(
         // Used to push down/pull up NavHost when DashboardTopBar is shown/hidden
         val navHostTopPaddingPx by animateIntAsState(
             targetValue = if (isTopBarVisible) topBarHeightPx else 0,
-            animationSpec = tween(),
+            animationSpec = tween(durationMillis = 150),
             label = "",
         )
 
@@ -172,7 +173,7 @@ fun DashboardScreen(
 
         DashboardTopBar(
             modifier = Modifier
-                .offset { IntOffset(x = 0, y = topBarYOffsetPx) }
+                .graphicsLayer { translationY = topBarYOffsetPx.toFloat() }
                 .onSizeChanged { topBarHeightPx = it.height }
                 .onFocusChanged { isTopBarFocused = it.hasFocus }
                 .padding(
@@ -206,7 +207,7 @@ fun DashboardScreen(
             updateTopBarVisibility = { isTopBarVisible = it },
             isTopBarVisible = isTopBarVisible,
             navController = navController,
-            modifier = Modifier.offset { IntOffset(x = 0, y = navHostTopPaddingPx) },
+            modifier = Modifier.graphicsLayer { translationY = navHostTopPaddingPx.toFloat() },
         )
     }
 }

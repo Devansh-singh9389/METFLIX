@@ -23,8 +23,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,6 +37,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
+import com.example.metflix.data.network.resolvers.ResolvedStream
+import com.example.metflix.data.network.resolvers.StreamServer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,6 +69,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -96,6 +102,7 @@ import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerSettingsOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerStatsOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerState
+import com.example.metflix.presentation.screens.videoPlayer.components.WebStreamPlayer
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberPlayer
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberVideoPlayerPulseState
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberVideoPlayerState
@@ -125,6 +132,15 @@ fun VideoPlayerScreen(
         is VideoPlayerScreenUiState.Done -> {
             VideoPlayerScreenContent(
                 movieDetails = s.movieDetails,
+                resolvedStream = s.resolvedStream,
+                currentServer = s.currentServer,
+                availableServers = s.availableServers,
+                isResolving = s.isResolving,
+                onSelectServer = { videoPlayerScreenViewModel.selectServer(it) },
+                onRetryNextServer = { videoPlayerScreenViewModel.retryNextServer() },
+                onCapturedDirectStream = { url, headers ->
+                    videoPlayerScreenViewModel.onCapturedDirectStream(url, headers)
+                },
                 onBackPressed = onBackPressed
             )
         }
@@ -133,9 +149,20 @@ fun VideoPlayerScreen(
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Unit) {
+fun VideoPlayerScreenContent(
+    movieDetails: MovieDetails,
+    resolvedStream: ResolvedStream?,
+    currentServer: StreamServer,
+    availableServers: List<StreamServer>,
+    isResolving: Boolean,
+    onSelectServer: (StreamServer) -> Unit,
+    onRetryNextServer: () -> Unit,
+    onCapturedDirectStream: (String, Map<String, String>) -> Unit = { _, _ -> },
+    onBackPressed: () -> Unit
+) {
     val context = LocalContext.current
-    val exoPlayer = rememberPlayer(context)
+    val streamHeaders = resolvedStream?.headers ?: emptyMap()
+    val exoPlayer = rememberPlayer(context, streamHeaders)
 
     val videoPlayerState = rememberVideoPlayerState(
         hideSeconds = 4,
@@ -147,6 +174,10 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
     var currentCues by remember { mutableStateOf<List<Cue>>(emptyList()) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isPlaylistOpen by remember { mutableStateOf(false) }
+
+    var isWebPlayerForced by remember { mutableStateOf<Boolean?>(null) }
+    val isDirectStream = resolvedStream?.isDirectStream == true
+    val isWebPlayerActive = isWebPlayerForced ?: (!isDirectStream)
 
     var isPlaying by remember { mutableStateOf(exoPlayer.isPlaying) }
     var isBuffering by remember { mutableStateOf(true) }
@@ -204,9 +235,34 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
                         C.TRACK_TYPE_AUDIO -> {
                             for (i in 0 until group.length) {
                                 val format = group.getTrackFormat(i)
-                                val lang = format.language?.uppercase() ?: "AUDIO ${audioNames.size + 1}"
-                                val ch = if (format.channelCount > 0) " (${format.channelCount}ch)" else ""
-                                audioNames.add("$lang$ch")
+                                val langCode = format.language.orEmpty()
+                                val langName = when (langCode.lowercase()) {
+                                    "en", "eng" -> "English"
+                                    "hi", "hin" -> "Hindi"
+                                    "es", "spa" -> "Spanish"
+                                    "fr", "fra", "fre" -> "French"
+                                    "de", "deu", "ger" -> "German"
+                                    "it", "ita" -> "Italian"
+                                    "ja", "jpn" -> "Japanese"
+                                    "ko", "kor" -> "Korean"
+                                    "zh", "zho", "chi" -> "Chinese"
+                                    "ta", "tam" -> "Tamil"
+                                    "te", "tel" -> "Telugu"
+                                    "ml", "mal" -> "Malayalam"
+                                    "ar", "ara" -> "Arabic"
+                                    "ru", "rus" -> "Russian"
+                                    "pt", "por" -> "Portuguese"
+                                    else -> if (langCode.isNotBlank()) langCode.uppercase() else "Audio ${audioNames.size + 1}"
+                                }
+                                val channelText = when (format.channelCount) {
+                                    6 -> "5.1 Surround"
+                                    8 -> "7.1 Surround"
+                                    2 -> "Stereo"
+                                    1 -> "Mono"
+                                    else -> if (format.channelCount > 0) "${format.channelCount}ch" else ""
+                                }
+                                val label = if (channelText.isNotBlank()) "$langName ($channelText)" else langName
+                                audioNames.add(label)
                                 if (group.isTrackSelected(i)) {
                                     currentAudio = format
                                 }
@@ -215,18 +271,19 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
                         C.TRACK_TYPE_TEXT -> {
                             for (i in 0 until group.length) {
                                 val format = group.getTrackFormat(i)
-                                val lang = format.language?.replaceFirstChar { it.uppercase() } ?: "Sub ${subNames.size + 1}"
+                                val lang = format.label ?: format.language?.replaceFirstChar { it.uppercase() } ?: "Sub ${subNames.size + 1}"
                                 subNames.add(lang)
                             }
                         }
                     }
                 }
-                availableQualityHeights = heights.sortedDescending()
+                val directHeights = resolvedStream?.qualities?.map { it.height }?.filter { it > 0 } ?: emptyList()
+                availableQualityHeights = (heights + directHeights).distinct().sortedDescending()
                 sourceResolutionLabel = highestFormat?.let { fmt ->
                     val p = if (fmt.height > 0) "${fmt.height}p" else ""
                     val fps = if (fmt.frameRate > 0) " @ ${fmt.frameRate.toInt()}fps" else ""
                     "$p$fps".trim()
-                } ?: ""
+                } ?: resolvedStream?.qualities?.firstOrNull()?.quality ?: ""
 
                 if (audioNames.isNotEmpty()) {
                     availableAudioTracks = audioNames
@@ -276,21 +333,28 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
         }
     }
 
-    LaunchedEffect(exoPlayer, movieDetails) {
+    LaunchedEffect(exoPlayer, movieDetails, resolvedStream, isWebPlayerActive) {
         playbackError = null
-        isBuffering = true
-        exoPlayer.stop()
-        exoPlayer.clearMediaItems()
+        if (isWebPlayerActive) {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
+            isBuffering = false
+        } else {
+            isBuffering = true
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
 
-        val items = buildList {
-            add(movieDetails.intoMediaItem())
-            movieDetails.similarMovies.forEach {
-                add(it.intoMediaItem())
+            val activeStreamUrl = resolvedStream?.streamUrl?.takeIf { it.isNotBlank() } ?: movieDetails.videoUri
+            val items = buildList {
+                add(movieDetails.intoMediaItem(activeStreamUrl, resolvedStream))
+                movieDetails.similarMovies.forEach {
+                    add(it.intoMediaItem())
+                }
             }
+            exoPlayer.setMediaItems(items)
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
         }
-        exoPlayer.setMediaItems(items)
-        exoPlayer.prepare()
-        exoPlayer.playWhenReady = true
     }
 
     BackHandler(onBack = {
@@ -306,8 +370,8 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
     val pulseState = rememberVideoPlayerPulseState()
     val rootFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(videoPlayerState.isControlsVisible) {
-        if (!videoPlayerState.isControlsVisible && !isSettingsOpen && !isPlaylistOpen) {
+    LaunchedEffect(videoPlayerState.isControlsVisible, isWebPlayerActive) {
+        if (!isWebPlayerActive && !videoPlayerState.isControlsVisible && !isSettingsOpen && !isPlaylistOpen) {
             rootFocusRequester.requestFocus()
         }
     }
@@ -340,14 +404,30 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             .fillMaxSize()
             .then(rootModifier)
     ) {
-        PlayerSurface(
-            player = exoPlayer,
-            surfaceType = SURFACE_TYPE_SURFACE_VIEW,
-            modifier = Modifier.resizeWithContentScale(
-                contentScale = currentContentScale,
-                sourceSizeDp = null
+        if (isWebPlayerActive) {
+            val webUrl = resolvedStream?.streamUrl?.takeIf { it.isNotBlank() } ?: movieDetails.videoUri
+            WebStreamPlayer(
+                url = webUrl,
+                onCapturedDirectStream = { directUrl, headers ->
+                    onCapturedDirectStream(directUrl, headers)
+                },
+                onError = { err ->
+                    playbackError = err
+                },
+                onToggleControls = {
+                    videoPlayerState.showControls(isPlaying = true)
+                }
             )
-        )
+        } else {
+            PlayerSurface(
+                player = exoPlayer,
+                surfaceType = SURFACE_TYPE_SURFACE_VIEW,
+                modifier = Modifier.resizeWithContentScale(
+                    contentScale = currentContentScale,
+                    sourceSizeDp = null
+                )
+            )
+        }
 
         val focusRequester = remember { FocusRequester() }
         VideoPlayerOverlay(
@@ -359,7 +439,9 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
                 if (pulseState.type != NONE) {
                     VideoPlayerPulse(pulseState)
                 } else if (isBuffering && playbackError == null) {
-                    VideoPlayerBufferingSpinner(label = "Loading stream...")
+                    VideoPlayerBufferingSpinner(
+                        label = if (isResolving) "Connecting to ${currentServer.name}..." else "Buffering stream..."
+                    )
                 }
             },
             subtitles = {
@@ -440,36 +522,59 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "Playback Error",
+                        text = "Playback Issue on ${currentServer.name}",
                         style = MaterialTheme.typography.titleLarge,
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = playbackError ?: "Unable to load stream",
+                        text = playbackError ?: "Unable to stream. Please switch to another server.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.LightGray
                     )
                     Spacer(modifier = Modifier.height(20.dp))
-                    Button(
-                        onClick = {
-                            playbackError = null
-                            isBuffering = true
-                            exoPlayer.prepare()
-                            exoPlayer.play()
-                        },
-                        colors = ButtonDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
+                    androidx.compose.foundation.layout.Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text(text = "Retry Playback")
+                        Button(
+                            onClick = {
+                                isWebPlayerForced = null
+                                onRetryNextServer()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SwapHoriz,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.size(8.dp))
+                            Text(text = "Try Next Server")
+                        }
+
+                        Button(
+                            onClick = {
+                                playbackError = null
+                                isBuffering = true
+                                exoPlayer.prepare()
+                                exoPlayer.play()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                focusedContainerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.size(8.dp))
+                            Text(text = "Retry Current")
+                        }
                     }
                 }
             }
@@ -498,6 +603,13 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             isPresented = isSettingsOpen,
             currentSpeed = currentSpeed,
             currentContentScale = currentContentScale,
+            availableServers = availableServers,
+            selectedServer = currentServer,
+            onSelectServer = { server ->
+                isWebPlayerForced = null
+                onSelectServer(server)
+                isSettingsOpen = false
+            },
             currentQualityMaxHeight = currentQualityMaxHeight,
             availableQualityHeights = availableQualityHeights,
             sourceResolutionLabel = sourceResolutionLabel,
@@ -507,6 +619,10 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             selectedSubtitleTrackIndex = selectedSubtitleTrackIndex,
             currentSleepTimerMinutes = currentSleepTimerMinutes,
             isStatsVisible = isStatsVisible,
+            isWebPlayerMode = isWebPlayerActive,
+            onTogglePlayerEngine = { isWeb ->
+                isWebPlayerForced = isWeb
+            },
             onSelectSpeed = { speed ->
                 currentSpeed = speed
                 exoPlayer.playbackParameters = PlaybackParameters(speed)
@@ -520,13 +636,22 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             },
             onSelectQuality = { height ->
                 currentQualityMaxHeight = height
-                val builder = exoPlayer.trackSelectionParameters.buildUpon()
-                if (height > 0) {
-                    builder.setMaxVideoSize(Int.MAX_VALUE, height)
+                val matchingQuality = resolvedStream?.qualities?.firstOrNull { it.height == height }
+                if (matchingQuality != null && matchingQuality.url != exoPlayer.currentMediaItem?.localConfiguration?.uri?.toString()) {
+                    val currentPos = exoPlayer.currentPosition
+                    val wasPlaying = exoPlayer.isPlaying
+                    exoPlayer.setMediaItem(movieDetails.intoMediaItem(matchingQuality.url, resolvedStream), currentPos)
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = wasPlaying
                 } else {
-                    builder.clearVideoSizeConstraints()
+                    val builder = exoPlayer.trackSelectionParameters.buildUpon()
+                    if (height > 0) {
+                        builder.setMaxVideoSize(Int.MAX_VALUE, height)
+                    } else {
+                        builder.clearVideoSizeConstraints()
+                    }
+                    exoPlayer.trackSelectionParameters = builder.build()
                 }
-                exoPlayer.trackSelectionParameters = builder.build()
             },
             onSelectAudioTrack = { index ->
                 selectedAudioTrackIndex = index
@@ -681,9 +806,46 @@ private fun formatDurationTime(millis: Long): String {
     }
 }
 
-private fun MovieDetails.intoMediaItem(): MediaItem {
+private fun MovieDetails.intoMediaItem(
+    streamUrlOverride: String? = null,
+    resolvedStream: ResolvedStream? = null
+): MediaItem {
+    val targetUri = streamUrlOverride?.takeIf { it.isNotBlank() } ?: videoUri
+    val subConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
+    val allSubs = resolvedStream?.subtitles.orEmpty()
+    val englishSub = allSubs.firstOrNull { it.language.equals("English", ignoreCase = true) || it.label.contains("English", ignoreCase = true) }
+    val otherSubs = allSubs.filter { it != englishSub }.take(6)
+    val subsToLoad = listOfNotNull(englishSub) + otherSubs
+
+    subsToLoad.forEach { sub ->
+        val mimeType = if (sub.uri.contains(".vtt")) {
+            MimeTypes.TEXT_VTT
+        } else {
+            MimeTypes.APPLICATION_SUBRIP
+        }
+        val isDefault = sub.language.equals("English", ignoreCase = true) || sub.label.contains("English", ignoreCase = true)
+        subConfigs.add(
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(sub.uri))
+                .setMimeType(mimeType)
+                .setLanguage(sub.language)
+                .setLabel(sub.label)
+                .setSelectionFlags(if (isDefault) C.SELECTION_FLAG_DEFAULT else 0)
+                .build()
+        )
+    }
+
+    if (subConfigs.isEmpty() && subtitleUri != null) {
+        subConfigs.add(
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitleUri))
+                .setMimeType(MimeTypes.TEXT_VTT)
+                .setLanguage("en")
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
+        )
+    }
+
     return MediaItem.Builder()
-        .setUri(videoUri)
+        .setUri(targetUri)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(name)
@@ -691,20 +853,8 @@ private fun MovieDetails.intoMediaItem(): MediaItem {
                 .setDescription(description)
                 .build()
         )
-        .setSubtitleConfigurations(
-            if (subtitleUri == null) {
-                emptyList()
-            } else {
-                listOf(
-                    MediaItem.SubtitleConfiguration
-                        .Builder(Uri.parse(subtitleUri))
-                        .setMimeType("application/vtt")
-                        .setLanguage("en")
-                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                        .build()
-                )
-            }
-        ).build()
+        .setSubtitleConfigurations(subConfigs)
+        .build()
 }
 
 private fun Movie.intoMediaItem(): MediaItem {

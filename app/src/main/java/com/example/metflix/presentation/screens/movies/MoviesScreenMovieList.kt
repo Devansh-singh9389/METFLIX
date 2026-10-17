@@ -16,8 +16,6 @@
 
 package com.example.metflix.presentation.screens.movies
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -102,10 +100,16 @@ private fun MovieListItem(
                 .width(itemWidth)
                 .aspectRatio(2f)
                 .padding(end = 32.dp)
-                .onFocusChanged { isFocused = it.isFocused || it.hasFocus },
+                .onFocusChanged { isFocused = it.isFocused || it.hasFocus }
+                .graphicsLayer { },
             scale = CardDefaults.scale(focusedScale = 1f),
             border = CardDefaults.border(
                 focusedBorder = Border(
+                    border = BorderStroke(
+                        width = MetFlixBorderWidth, color = MaterialTheme.colorScheme.onSurface
+                    )
+                ),
+                pressedBorder = Border(
                     border = BorderStroke(
                         width = MetFlixBorderWidth, color = MaterialTheme.colorScheme.onSurface
                     )
@@ -137,6 +141,7 @@ private fun MovieListItem(
                         .ContentDescription
                         .moviePoster(movie.name),
                     contentScale = ContentScale.Crop,
+                    clipToBounds = true,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer { alpha = contentAlpha }

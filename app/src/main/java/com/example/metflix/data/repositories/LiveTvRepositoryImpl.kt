@@ -139,8 +139,11 @@ class LiveTvRepositoryImpl @Inject constructor(
                 connection.disconnect()
 
                 if (parsed.isNotEmpty()) {
-                    // Prepend default curated channels so guaranteed working channels remain at top
-                    val curated = loadBundledDefaultChannels()
+                    // Prepend default curated channels only for default playlist so Hindi/World playlists show their own channels
+                    val isSpecificOrRegional = targetUrl.contains("hin.m3u") ||
+                                                targetUrl.contains("in.m3u") ||
+                                                targetUrl.contains("index.m3u")
+                    val curated = if (isSpecificOrRegional) emptyList() else loadBundledDefaultChannels()
                     val merged = mergeChannels(curated, parsed)
                     val enriched = merged.map { epgEngine.enrichChannelWithSchedule(it) }
 

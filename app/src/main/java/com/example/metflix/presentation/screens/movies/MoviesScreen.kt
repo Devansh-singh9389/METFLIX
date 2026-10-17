@@ -103,7 +103,7 @@ private fun Catalog(
         contentPadding = PaddingValues(top = childPadding.top, bottom = 104.dp)
     ) {
         // 1. TMDb Helper Category Filter Chips
-        item {
+        item(contentType = "filter_chips") {
             MovieCategoryFilterChips(
                 selectedFilter = state.selectedFilter,
                 onFilterSelected = onFilterSelected,
@@ -115,7 +115,7 @@ private fun Catalog(
             "All" -> {
                 // Featured In Theatres Hero Row
                 if (state.heroMovieList.isNotEmpty()) {
-                    item {
+                    item(contentType = "hero_row") {
                         Column {
                             Text(
                                 text = "🎬 In Theatres & Featured",
@@ -132,7 +132,7 @@ private fun Catalog(
 
                 // TMDb Helper Standard Rows
                 if (state.trendingTodayList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "🔥 Trending Today",
@@ -143,7 +143,7 @@ private fun Catalog(
                 }
 
                 if (state.trendingThisWeekList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "📈 Trending This Week",
@@ -154,7 +154,7 @@ private fun Catalog(
                 }
 
                 if (state.popularMoviesList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "🍿 Popular Movies",
@@ -165,7 +165,7 @@ private fun Catalog(
                 }
 
                 if (state.topRatedList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "🌟 Top Rated Classics",
@@ -176,7 +176,7 @@ private fun Catalog(
                 }
 
                 if (state.upcomingList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "🗓️ Upcoming Releases",
@@ -187,7 +187,7 @@ private fun Catalog(
                 }
 
                 if (state.boxOfficeHitsList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "💰 Top Box Office & Revenue",
@@ -198,7 +198,7 @@ private fun Catalog(
                 }
 
                 if (state.mostVotedList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "⭐ Fan Favorites (Most Voted)",
@@ -210,7 +210,7 @@ private fun Catalog(
 
                 // Streaming Provider Rows (TMDb Helper Watch Providers)
                 if (state.netflixList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "🔴 Trending on Netflix",
@@ -221,7 +221,7 @@ private fun Catalog(
                 }
 
                 if (state.primeList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "🔷 Streaming on Prime Video",
@@ -232,7 +232,7 @@ private fun Catalog(
                 }
 
                 if (state.disneyList.isNotEmpty()) {
-                    item {
+                    item(contentType = "movies_row") {
                         MoviesRow(
                             modifier = Modifier.padding(top = childPadding.top),
                             title = "✨ Disney+ Hotstar Hits",
@@ -244,7 +244,7 @@ private fun Catalog(
             }
 
             "In Theatres" -> {
-                item {
+                item(contentType = "hero_row") {
                     MoviesScreenMovieList(
                         movieList = state.heroMovieList,
                         onMovieClick = onMovieClick
@@ -253,7 +253,7 @@ private fun Catalog(
             }
 
             "Trending Today" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "🔥 Trending Today",
@@ -261,7 +261,7 @@ private fun Catalog(
                         onMovieSelected = onMovieClick
                     )
                 }
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "📈 Trending This Week",
@@ -272,7 +272,7 @@ private fun Catalog(
             }
 
             "Trending Week" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "📈 Trending This Week",
@@ -283,7 +283,7 @@ private fun Catalog(
             }
 
             "Top Rated" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "🌟 Top Rated Movies",
@@ -294,7 +294,7 @@ private fun Catalog(
             }
 
             "Upcoming" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "🗓️ Upcoming Cinema Releases",
@@ -305,7 +305,7 @@ private fun Catalog(
             }
 
             "Box Office" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "💰 Top Box Office Hits",
@@ -316,7 +316,7 @@ private fun Catalog(
             }
 
             "Most Voted" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "⭐ Highly Rated & Most Voted",
@@ -327,7 +327,7 @@ private fun Catalog(
             }
 
             "Netflix" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "🔴 Popular on Netflix",
@@ -338,7 +338,7 @@ private fun Catalog(
             }
 
             "Prime Video" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "🔷 Popular on Amazon Prime Video",
@@ -349,7 +349,7 @@ private fun Catalog(
             }
 
             "Disney+" -> {
-                item {
+                item(contentType = "movies_row") {
                     MoviesRow(
                         modifier = Modifier.padding(top = childPadding.top),
                         title = "✨ Disney+ Hotstar Specials",

@@ -49,6 +49,13 @@ fun MovieCard(
                             color = MaterialTheme.colorScheme.onSurface
                         ),
                         shape = MetFlixCardShape
+                    ),
+                    pressedBorder = Border(
+                        border = BorderStroke(
+                            width = MetFlixBorderWidth,
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        shape = MetFlixCardShape
                     )
                 ),
                 scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),

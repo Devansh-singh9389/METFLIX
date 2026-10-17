@@ -163,8 +163,8 @@ private fun Background(
 ) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(tween(150)),
-        exit = fadeOut(tween(150)),
+        enter = fadeIn(tween(100)),
+        exit = fadeOut(tween(100)),
         modifier = modifier
     ) {
         PosterImage(movie = movie, modifier = Modifier.fillMaxSize())
