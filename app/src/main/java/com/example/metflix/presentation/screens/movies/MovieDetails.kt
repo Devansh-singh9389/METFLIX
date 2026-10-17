@@ -29,10 +29,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
@@ -44,6 +46,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.example.metflix.presentation.utils.PlayerResolver
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
@@ -107,12 +110,13 @@ fun MovieDetails(
                         music = movieDetails.music
                     )
                 }
-                WatchTrailerButton(
+                PlaybackActionButtonsRow(
                     modifier = Modifier.onFocusChanged {
                         if (it.isFocused) {
                             coroutineScope.launch { bringIntoViewRequester.bringIntoView() }
                         }
                     },
+                    movieTitle = movieDetails.name,
                     goToMoviePlayer = goToMoviePlayer
                 )
             }
@@ -121,25 +125,56 @@ fun MovieDetails(
 }
 
 @Composable
-private fun WatchTrailerButton(
+private fun PlaybackActionButtonsRow(
+    movieTitle: String,
     modifier: Modifier = Modifier,
     goToMoviePlayer: () -> Unit
 ) {
-    Button(
-        onClick = goToMoviePlayer,
+    val context = LocalContext.current
+    Row(
         modifier = modifier.padding(top = 24.dp),
-        contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-        shape = ButtonDefaults.shape(shape = MetFlixButtonShape)
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = Icons.Outlined.PlayArrow,
-            contentDescription = null
-        )
-        Spacer(Modifier.size(8.dp))
-        Text(
-            text = stringResource(R.string.watch_trailer),
-            style = MaterialTheme.typography.titleSmall
-        )
+        Button(
+            onClick = goToMoviePlayer,
+            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+            shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
+            colors = ButtonDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                focusedContainerColor = MaterialTheme.colorScheme.onPrimary
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.PlayArrow,
+                contentDescription = null
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(
+                text = "Play Movie",
+                style = MaterialTheme.typography.titleSmall
+            )
+        }
+
+        Button(
+            onClick = { PlayerResolver.launchYouTubeTrailer(context, movieTitle) },
+            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+            shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
+            colors = ButtonDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                focusedContainerColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Videocam,
+                contentDescription = null
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(
+                text = stringResource(R.string.watch_trailer),
+                style = MaterialTheme.typography.titleSmall
+            )
+        }
     }
 }
 

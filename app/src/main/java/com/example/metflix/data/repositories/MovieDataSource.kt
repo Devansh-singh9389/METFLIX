@@ -25,11 +25,15 @@ import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Singleton
 class MovieDataSource @Inject constructor(
     private val apiClient: MetFlixApiClient,
-    private val tmdbApiClient: TmdbApiClient
+    private val tmdbApiClient: TmdbApiClient,
+    private val diskCache: TmdbDiskCache
 ) {
 
     private val remoteMovieCache = CachedDataReader {
@@ -40,58 +44,285 @@ class MovieDataSource @Inject constructor(
         }
     }
 
-    private val trendingMovieDataReader = MovieDataReader {
+    private val trendingMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("trending")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                fetchTrendingLive()?.let { trendingMovieDataReader.update(it) }
+            }
+            return@MovieDataReader cached
+        }
+        fetchTrendingLive() ?: emptyList()
+    }
+
+    private suspend fun fetchTrendingLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
             val tmdb = tmdbApiClient.getTrendingMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("trending", tmdb)
+                return tmdb
+            }
         }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getMovies(NetworkConfig.TRENDING_MOVIES_ENDPOINT).getOrNull()
-            if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie() }
+            if (!remote.isNullOrEmpty()) {
+                val mapped = remote.map { it.toMovie() }
+                diskCache.saveMovies("trending", mapped)
+                return mapped
+            }
         }
-        emptyList()
+        return null
     }
 
-    private val popularMovieDataReader = MovieDataReader {
+    private val popularMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("popular")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                fetchPopularLive()?.let { popularMovieDataReader.update(it) }
+            }
+            return@MovieDataReader cached
+        }
+        fetchPopularLive() ?: emptyList()
+    }
+
+    private suspend fun fetchPopularLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
             val tmdb = tmdbApiClient.getPopularMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("popular", tmdb)
+                return tmdb
+            }
         }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = remoteMovieCache.read()
-            if (remote.isNotEmpty()) return@MovieDataReader remote
+            if (remote.isNotEmpty()) {
+                diskCache.saveMovies("popular", remote)
+                return remote
+            }
         }
-        emptyList()
+        return null
     }
 
     private val nowPlayingMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("now_playing")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                fetchNowPlayingLive()?.let { nowPlayingMovieDataReader.update(it) }
+            }
+            return@MovieDataReader cached
+        }
+        fetchNowPlayingLive() ?: emptyList()
+    }
+
+    private suspend fun fetchNowPlayingLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
             val tmdb = tmdbApiClient.getNowPlayingMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("now_playing", tmdb)
+                return tmdb
+            }
         }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getMovies(NetworkConfig.NOW_PLAYING_ENDPOINT).getOrNull()
-            if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie() }
+            if (!remote.isNullOrEmpty()) {
+                val mapped = remote.map { it.toMovie() }
+                diskCache.saveMovies("now_playing", mapped)
+                return mapped
+            }
         }
-        emptyList()
+        return null
     }
 
-    private val topRatedMovieDataReader = MovieDataReader {
+    private val topRatedMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("top_rated")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                fetchTopRatedLive()?.let { topRatedMovieDataReader.update(it) }
+            }
+            return@MovieDataReader cached
+        }
+        fetchTopRatedLive() ?: emptyList()
+    }
+
+    private suspend fun fetchTopRatedLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
             val tmdb = tmdbApiClient.getTopRatedMovies().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return@MovieDataReader tmdb
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("top_rated", tmdb)
+                return tmdb
+            }
         }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getMovies(NetworkConfig.TOP10_MOVIES_ENDPOINT).getOrNull()
-            if (!remote.isNullOrEmpty()) return@MovieDataReader remote.map { it.toMovie(ThumbnailType.Long) }
+            if (!remote.isNullOrEmpty()) {
+                val mapped = remote.map { it.toMovie(ThumbnailType.Long) }
+                diskCache.saveMovies("top_rated", mapped)
+                return mapped
+            }
         }
-        emptyList()
+        return null
     }
 
     private val movieWithLongThumbnailDataReader: MovieDataReader = CachedDataReader {
         val nowPlaying = nowPlayingMovieDataReader.read()
         if (nowPlaying.isNotEmpty()) {
             return@CachedDataReader nowPlaying
+        }
+        popularMovieDataReader.read()
+    }
+
+    private val trendingDayMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("trending_day")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val tmdb = tmdbApiClient.getTrendingMoviesDay().getOrNull()
+                if (!tmdb.isNullOrEmpty()) {
+                    diskCache.saveMovies("trending_day", tmdb)
+                    trendingDayMovieDataReader.update(tmdb)
+                }
+            }
+            return@MovieDataReader cached
+        }
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getTrendingMoviesDay().getOrNull()
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("trending_day", tmdb)
+                return@MovieDataReader tmdb
+            }
+        }
+        trendingMovieDataReader.read()
+    }
+
+    private val upcomingMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("upcoming")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val tmdb = tmdbApiClient.getUpcomingMovies().getOrNull()
+                if (!tmdb.isNullOrEmpty()) {
+                    diskCache.saveMovies("upcoming", tmdb)
+                    upcomingMovieDataReader.update(tmdb)
+                }
+            }
+            return@MovieDataReader cached
+        }
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getUpcomingMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("upcoming", tmdb)
+                return@MovieDataReader tmdb
+            }
+        }
+        popularMovieDataReader.read()
+    }
+
+    private val topRevenueMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("top_revenue")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val tmdb = tmdbApiClient.getTopRevenueMovies().getOrNull()
+                if (!tmdb.isNullOrEmpty()) {
+                    diskCache.saveMovies("top_revenue", tmdb)
+                    topRevenueMovieDataReader.update(tmdb)
+                }
+            }
+            return@MovieDataReader cached
+        }
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getTopRevenueMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("top_revenue", tmdb)
+                return@MovieDataReader tmdb
+            }
+        }
+        topRatedMovieDataReader.read()
+    }
+
+    private val mostVotedMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("most_voted")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val tmdb = tmdbApiClient.getMostVotedMovies().getOrNull()
+                if (!tmdb.isNullOrEmpty()) {
+                    diskCache.saveMovies("most_voted", tmdb)
+                    mostVotedMovieDataReader.update(tmdb)
+                }
+            }
+            return@MovieDataReader cached
+        }
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getMostVotedMovies().getOrNull()
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("most_voted", tmdb)
+                return@MovieDataReader tmdb
+            }
+        }
+        popularMovieDataReader.read()
+    }
+
+    private val netflixMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("netflix")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val tmdb = tmdbApiClient.getMoviesByWatchProvider(providerId = 8).getOrNull()
+                if (!tmdb.isNullOrEmpty()) {
+                    diskCache.saveMovies("netflix", tmdb)
+                    netflixMovieDataReader.update(tmdb)
+                }
+            }
+            return@MovieDataReader cached
+        }
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getMoviesByWatchProvider(providerId = 8).getOrNull()
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("netflix", tmdb)
+                return@MovieDataReader tmdb
+            }
+        }
+        popularMovieDataReader.read()
+    }
+
+    private val primeMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("prime")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val tmdb = tmdbApiClient.getMoviesByWatchProvider(providerId = 119).getOrNull()
+                if (!tmdb.isNullOrEmpty()) {
+                    diskCache.saveMovies("prime", tmdb)
+                    primeMovieDataReader.update(tmdb)
+                }
+            }
+            return@MovieDataReader cached
+        }
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getMoviesByWatchProvider(providerId = 119).getOrNull()
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("prime", tmdb)
+                return@MovieDataReader tmdb
+            }
+        }
+        popularMovieDataReader.read()
+    }
+
+    private val disneyMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("disney")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val tmdb = tmdbApiClient.getMoviesByWatchProvider(providerId = 337).getOrNull()
+                    ?: tmdbApiClient.getMoviesByWatchProvider(providerId = 122).getOrNull()
+                if (!tmdb.isNullOrEmpty()) {
+                    diskCache.saveMovies("disney", tmdb)
+                    disneyMovieDataReader.update(tmdb)
+                }
+            }
+            return@MovieDataReader cached
+        }
+        if (TmdbConfig.USE_TMDB) {
+            val tmdb = tmdbApiClient.getMoviesByWatchProvider(providerId = 337).getOrNull()
+                ?: tmdbApiClient.getMoviesByWatchProvider(providerId = 122).getOrNull()
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("disney", tmdb)
+                return@MovieDataReader tmdb
+            }
         }
         popularMovieDataReader.read()
     }
@@ -126,6 +357,14 @@ class MovieDataSource @Inject constructor(
         val list = popularMovieDataReader.read()
         return if (list.size >= 20) list.subList(10, 20) else list.take(10)
     }
+
+    suspend fun getTrendingDayMovieList(): List<Movie> = trendingDayMovieDataReader.read()
+    suspend fun getUpcomingMovieList(): List<Movie> = upcomingMovieDataReader.read()
+    suspend fun getTopRevenueMovieList(): List<Movie> = topRevenueMovieDataReader.read()
+    suspend fun getMostVotedMovieList(): List<Movie> = mostVotedMovieDataReader.read()
+    suspend fun getNetflixMovieList(): List<Movie> = netflixMovieDataReader.read()
+    suspend fun getPrimeMovieList(): List<Movie> = primeMovieDataReader.read()
+    suspend fun getDisneyMovieList(): List<Movie> = disneyMovieDataReader.read()
 
     suspend fun getFavoriteMovieList(): List<Movie> {
         val list = popularMovieDataReader.read()

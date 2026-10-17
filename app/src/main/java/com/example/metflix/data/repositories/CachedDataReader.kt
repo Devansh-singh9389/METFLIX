@@ -36,6 +36,12 @@ internal class CachedDataReader<T>(private val reader: suspend () -> List<T>) {
         return cache ?: emptyList()
     }
 
+    suspend fun update(newData: List<T>) {
+        mutex.withLock {
+            cache = newData
+        }
+    }
+
     suspend fun clear() {
         mutex.withLock {
             cache = null

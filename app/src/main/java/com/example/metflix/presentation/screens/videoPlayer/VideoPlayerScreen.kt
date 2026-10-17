@@ -94,11 +94,13 @@ import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulse.Type.NONE
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerPulseState
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerSettingsOverlay
+import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerStatsOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerState
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberPlayer
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberVideoPlayerPulseState
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberVideoPlayerState
 import com.example.metflix.presentation.utils.handleDPadKeyEvents
+import kotlinx.coroutines.delay
 
 object VideoPlayerScreen {
     const val MovieIdBundleKey = "movieId"
@@ -154,6 +156,16 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
     var availableQualityHeights by remember { mutableStateOf<List<Int>>(emptyList()) }
     var sourceResolutionLabel by remember { mutableStateOf("") }
 
+    var availableAudioTracks by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedAudioTrackIndex by remember { mutableIntStateOf(0) }
+    var availableSubtitleTracks by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedSubtitleTrackIndex by remember { mutableIntStateOf(-1) }
+    var currentSleepTimerMinutes by remember { mutableIntStateOf(0) }
+    var isStatsVisible by remember { mutableStateOf(false) }
+    var bufferHealthMs by remember { mutableStateOf(0L) }
+    var videoBitrate by remember { mutableStateOf("") }
+    var audioInfo by remember { mutableStateOf("") }
+
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -172,15 +184,39 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             override fun onTracksChanged(tracks: Tracks) {
                 val heights = mutableSetOf<Int>()
                 var highestFormat: Format? = null
+                val audioNames = mutableListOf<String>()
+                val subNames = mutableListOf<String>()
+                var currentAudio: Format? = null
+
                 for (group in tracks.groups) {
-                    if (group.type == C.TRACK_TYPE_VIDEO) {
-                        for (i in 0 until group.length) {
-                            val format = group.getTrackFormat(i)
-                            if (format.height > 0) {
-                                heights.add(format.height)
+                    when (group.type) {
+                        C.TRACK_TYPE_VIDEO -> {
+                            for (i in 0 until group.length) {
+                                val format = group.getTrackFormat(i)
+                                if (format.height > 0) {
+                                    heights.add(format.height)
+                                }
+                                if (highestFormat == null || format.height > (highestFormat?.height ?: 0)) {
+                                    highestFormat = format
+                                }
                             }
-                            if (highestFormat == null || format.height > (highestFormat?.height ?: 0)) {
-                                highestFormat = format
+                        }
+                        C.TRACK_TYPE_AUDIO -> {
+                            for (i in 0 until group.length) {
+                                val format = group.getTrackFormat(i)
+                                val lang = format.language?.uppercase() ?: "AUDIO ${audioNames.size + 1}"
+                                val ch = if (format.channelCount > 0) " (${format.channelCount}ch)" else ""
+                                audioNames.add("$lang$ch")
+                                if (group.isTrackSelected(i)) {
+                                    currentAudio = format
+                                }
+                            }
+                        }
+                        C.TRACK_TYPE_TEXT -> {
+                            for (i in 0 until group.length) {
+                                val format = group.getTrackFormat(i)
+                                val lang = format.language?.replaceFirstChar { it.uppercase() } ?: "Sub ${subNames.size + 1}"
+                                subNames.add(lang)
                             }
                         }
                     }
@@ -190,6 +226,19 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
                     val p = if (fmt.height > 0) "${fmt.height}p" else ""
                     val fps = if (fmt.frameRate > 0) " @ ${fmt.frameRate.toInt()}fps" else ""
                     "$p$fps".trim()
+                } ?: ""
+
+                if (audioNames.isNotEmpty()) {
+                    availableAudioTracks = audioNames
+                }
+                if (subNames.isNotEmpty()) {
+                    availableSubtitleTracks = subNames
+                }
+                audioInfo = currentAudio?.let { fmt ->
+                    val lang = fmt.language?.uppercase() ?: "STEREO"
+                    val ch = if (fmt.channelCount > 0) " ${fmt.channelCount}ch" else ""
+                    val sampleRate = if (fmt.sampleRate > 0) " ${fmt.sampleRate / 1000}kHz" else ""
+                    "$lang$ch$sampleRate".trim()
                 } ?: ""
             }
 
@@ -205,6 +254,25 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
+        }
+    }
+
+    LaunchedEffect(isStatsVisible) {
+        while (isStatsVisible) {
+            bufferHealthMs = exoPlayer.totalBufferedDuration.coerceAtLeast(0L)
+            val fmt = exoPlayer.videoFormat
+            if (fmt != null && fmt.bitrate > 0) {
+                videoBitrate = "${String.format("%.2f", fmt.bitrate / 1_000_000f)} Mbps"
+            }
+            delay(1000)
+        }
+    }
+
+    LaunchedEffect(currentSleepTimerMinutes) {
+        if (currentSleepTimerMinutes > 0) {
+            delay(currentSleepTimerMinutes * 60 * 1000L)
+            exoPlayer.pause()
+            currentSleepTimerMinutes = 0
         }
     }
 
@@ -256,7 +324,11 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             .mediaKeyEvents(
                 exoPlayer = exoPlayer,
                 videoPlayerState = videoPlayerState,
-                pulseState = pulseState
+                pulseState = pulseState,
+                onToggleSettings = {
+                    isSettingsOpen = !isSettingsOpen
+                    isPlaylistOpen = false
+                }
             )
             .focusable()
     } else {
@@ -403,6 +475,24 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             }
         }
 
+        // Real-Time Stream Diagnostics (Stats for Nerds)
+        if (isStatsVisible && !isSettingsOpen && !isPlaylistOpen) {
+            VideoPlayerStatsOverlay(
+                movieTitle = movieDetails.name,
+                videoResolution = sourceResolutionLabel,
+                videoBitrate = videoBitrate,
+                audioInfo = audioInfo,
+                subtitleInfo = if (selectedSubtitleTrackIndex >= 0) {
+                    availableSubtitleTracks.getOrNull(selectedSubtitleTrackIndex) ?: "English"
+                } else "Off",
+                playbackSpeed = "${currentSpeed}x",
+                bufferHealthMs = bufferHealthMs,
+                currentPositionText = formatDurationTime(exoPlayer.currentPosition),
+                durationText = formatDurationTime(exoPlayer.duration),
+                modifier = Modifier.align(Alignment.TopEnd)
+            )
+        }
+
         // Settings Dialog Overlay
         VideoPlayerSettingsOverlay(
             isPresented = isSettingsOpen,
@@ -411,16 +501,21 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
             currentQualityMaxHeight = currentQualityMaxHeight,
             availableQualityHeights = availableQualityHeights,
             sourceResolutionLabel = sourceResolutionLabel,
+            availableAudioTracks = availableAudioTracks,
+            selectedAudioTrackIndex = selectedAudioTrackIndex,
+            availableSubtitleTracks = availableSubtitleTracks,
+            selectedSubtitleTrackIndex = selectedSubtitleTrackIndex,
+            currentSleepTimerMinutes = currentSleepTimerMinutes,
+            isStatsVisible = isStatsVisible,
             onSelectSpeed = { speed ->
                 currentSpeed = speed
                 exoPlayer.playbackParameters = PlaybackParameters(speed)
             },
             onSelectContentScale = { scale ->
                 currentContentScale = scale
-                exoPlayer.videoScalingMode = if (scale == ContentScale.Crop) {
-                    C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-                } else {
-                    C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+                exoPlayer.videoScalingMode = when (scale) {
+                    ContentScale.Crop -> C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+                    else -> C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 }
             },
             onSelectQuality = { height ->
@@ -432,6 +527,44 @@ fun VideoPlayerScreenContent(movieDetails: MovieDetails, onBackPressed: () -> Un
                     builder.clearVideoSizeConstraints()
                 }
                 exoPlayer.trackSelectionParameters = builder.build()
+            },
+            onSelectAudioTrack = { index ->
+                selectedAudioTrackIndex = index
+                if (index < availableAudioTracks.size) {
+                    val trackName = availableAudioTracks[index]
+                    val lang = trackName.split(" ").firstOrNull()?.lowercase()
+                    if (!lang.isNullOrBlank()) {
+                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setPreferredAudioLanguage(lang)
+                            .build()
+                    }
+                }
+            },
+            onSelectSubtitleTrack = { index ->
+                selectedSubtitleTrackIndex = index
+                if (index < 0) {
+                    isSubtitlesEnabled = false
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                        .build()
+                } else {
+                    isSubtitlesEnabled = true
+                    val lang = availableSubtitleTracks.getOrNull(index)?.lowercase() ?: "en"
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setPreferredTextLanguage(lang)
+                        .build()
+                }
+            },
+            onSelectSleepTimer = { currentSleepTimerMinutes = it },
+            onToggleStats = { isStatsVisible = !isStatsVisible },
+            onRestartMovie = {
+                exoPlayer.seekTo(0L)
+                exoPlayer.play()
+                isSettingsOpen = false
             },
             onDismiss = {
                 isSettingsOpen = false
@@ -491,10 +624,15 @@ private fun Modifier.dPadEvents(
 private fun Modifier.mediaKeyEvents(
     exoPlayer: ExoPlayer,
     videoPlayerState: VideoPlayerState,
-    pulseState: VideoPlayerPulseState
+    pulseState: VideoPlayerPulseState,
+    onToggleSettings: () -> Unit
 ): Modifier = this.onPreviewKeyEvent { event ->
     if (event.type == KeyEventType.KeyUp) {
         when (event.key) {
+            Key.Menu, Key.Settings -> {
+                onToggleSettings()
+                true
+            }
             Key.MediaPlay -> {
                 exoPlayer.play()
                 videoPlayerState.showControls(isPlaying = true)
@@ -528,6 +666,19 @@ private fun Modifier.mediaKeyEvents(
             else -> false
         }
     } else false
+}
+
+private fun formatDurationTime(millis: Long): String {
+    if (millis <= 0) return "00:00"
+    val totalSeconds = millis / 1000
+    val seconds = totalSeconds % 60
+    val minutes = (totalSeconds / 60) % 60
+    val hours = totalSeconds / 3600
+    return if (hours > 0) {
+        String.format("%02d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format("%02d:%02d", minutes, seconds)
+    }
 }
 
 private fun MovieDetails.intoMediaItem(): MediaItem {

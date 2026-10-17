@@ -23,31 +23,68 @@ import com.example.metflix.data.entities.MovieList
 import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 @HiltViewModel
-class HomeScreeViewModel @Inject constructor(movieRepository: MovieRepository) : ViewModel() {
+class HomeScreeViewModel @Inject constructor(
+    private val movieRepository: MovieRepository
+) : ViewModel() {
 
-    val uiState: StateFlow<HomeScreenUiState> = combine(
-        movieRepository.getFeaturedMovies(),
-        movieRepository.getTrendingMovies(),
-        movieRepository.getTop10Movies(),
-        movieRepository.getNowPlayingMovies(),
-    ) { featuredMovieList, trendingMovieList, top10MovieList, nowPlayingMovieList ->
-        HomeScreenUiState.Ready(
-            featuredMovieList,
-            trendingMovieList,
-            top10MovieList,
-            nowPlayingMovieList
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Lazily,
-        initialValue = HomeScreenUiState.Loading
-    )
+    private val _uiState = MutableStateFlow<HomeScreenUiState>(HomeScreenUiState.Loading)
+    val uiState: StateFlow<HomeScreenUiState> = _uiState.asStateFlow()
+
+    init {
+        loadData()
+    }
+
+    private fun loadData() {
+        var featured: MovieList = emptyList()
+        var trending: MovieList = emptyList()
+        var top10: MovieList = emptyList()
+        var nowPlaying: MovieList = emptyList()
+
+        fun emitState() {
+            if (featured.isNotEmpty() || trending.isNotEmpty() || top10.isNotEmpty() || nowPlaying.isNotEmpty()) {
+                _uiState.value = HomeScreenUiState.Ready(
+                    featuredMovieList = featured,
+                    trendingMovieList = trending,
+                    top10MovieList = top10,
+                    nowPlayingMovieList = nowPlaying
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getFeaturedMovies().collect { list ->
+                featured = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getTrendingMovies().collect { list ->
+                trending = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getTop10Movies().collect { list ->
+                top10 = list
+                emitState()
+            }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getNowPlayingMovies().collect { list ->
+                nowPlaying = list
+                emitState()
+            }
+        }
+    }
 }
 
 @Immutable

@@ -106,6 +106,13 @@ private fun Details(
         }
 
         item {
+            WhereToWatchSection(
+                movieDetails = movieDetails,
+                onPlayInMetFlix = goToMoviePlayer
+            )
+        }
+
+        item {
             CastAndCrewList(
                 castAndCrew = movieDetails.castAndCrew
             )

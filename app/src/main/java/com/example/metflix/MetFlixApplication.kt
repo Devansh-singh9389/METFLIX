@@ -44,13 +44,13 @@ class MetFlixApplication : Hilt_MetFlixApplication(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
-        // Initialize and apply performance preferences on app launch
+        SecureHttpClient.getClient(this)
     }
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
             .okHttpClient {
-                SecureHttpClient.client
+                SecureHttpClient.getClient(this)
             }
             .memoryCache {
                 MemoryCache.Builder(this)

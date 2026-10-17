@@ -16,9 +16,11 @@
 
 package com.example.metflix.data.network
 
+import android.content.Context
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import okhttp3.OkHttpClient
@@ -29,7 +31,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
-        return SecureHttpClient.client
+    fun provideOkHttpClient(@ApplicationContext context: Context): OkHttpClient {
+        return SecureHttpClient.getClient(context)
     }
 }

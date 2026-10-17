@@ -18,12 +18,14 @@ package com.example.metflix.data.entities
 
 import androidx.compose.runtime.Immutable
 import com.example.metflix.data.models.MoviesResponseItem
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Immutable
 data class Movie(
     val id: String,
     val videoUri: String,
-    val subtitleUri: String?,
+    val subtitleUri: String? = null,
     val posterUri: String,
     val name: String,
     val description: String

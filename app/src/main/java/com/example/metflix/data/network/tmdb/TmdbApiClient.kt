@@ -45,7 +45,11 @@ class TmdbApiClient @Inject constructor(
     @Volatile
     private var circuitTrippedUntil: Long = 0L
 
+    @Volatile
+    private var consecutiveFailures: Int = 0
+
     fun resetCircuit() {
+        consecutiveFailures = 0
         circuitTrippedUntil = 0L
     }
 
@@ -53,10 +57,18 @@ class TmdbApiClient @Inject constructor(
         return System.currentTimeMillis() < circuitTrippedUntil
     }
 
-    private fun tripCircuit() {
-        // Cooldown for 3 minutes if connection times out or fails
-        circuitTrippedUntil = System.currentTimeMillis() + 180_000L
-        Log.w("TmdbApiClient", "TMDB network failure. Circuit breaker tripped for 180s.")
+    private fun recordSuccess() {
+        consecutiveFailures = 0
+        circuitTrippedUntil = 0L
+    }
+
+    private fun recordFailure(endpoint: String, error: String) {
+        consecutiveFailures++
+        Log.w("TmdbApiClient", "TMDB failure count $consecutiveFailures ($endpoint): $error")
+        if (consecutiveFailures >= 4) {
+            circuitTrippedUntil = System.currentTimeMillis() + 8_000L
+            Log.w("TmdbApiClient", "TMDB circuit opened for 8s after 4 consecutive failures.")
+        }
     }
 
     private val isConfigured: Boolean
@@ -65,6 +77,46 @@ class TmdbApiClient @Inject constructor(
     suspend fun getTrendingMovies(): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API disabled or circuit breaker active"))
         return fetchJson("${TmdbConfig.BASE_URL}/trending/movie/week") { raw ->
+            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
+    suspend fun getTrendingMoviesDay(): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API disabled or circuit breaker active"))
+        return fetchJson("${TmdbConfig.BASE_URL}/trending/movie/day") { raw ->
+            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
+    suspend fun getUpcomingMovies(): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        return fetchJson("${TmdbConfig.BASE_URL}/movie/upcoming") { raw ->
+            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
+    suspend fun getTopRevenueMovies(): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        return fetchJson("${TmdbConfig.BASE_URL}/discover/movie?sort_by=revenue.desc") { raw ->
+            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
+    suspend fun getMostVotedMovies(): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        return fetchJson("${TmdbConfig.BASE_URL}/discover/movie?sort_by=vote_count.desc") { raw ->
+            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
+    suspend fun getMoviesByWatchProvider(providerId: Int, region: String = "IN"): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        return fetchJson("${TmdbConfig.BASE_URL}/discover/movie?with_watch_providers=$providerId&watch_region=$region&sort_by=popularity.desc") { raw ->
             val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
             page.results.map { it.toMovie(ThumbnailType.Standard) }
         }
@@ -128,7 +180,7 @@ class TmdbApiClient @Inject constructor(
 
     suspend fun getMovieDetails(movieId: String): Result<MovieDetails> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/movie/$movieId?append_to_response=credits,similar") { raw ->
+        return fetchJson("${TmdbConfig.BASE_URL}/movie/$movieId?append_to_response=credits,similar,watch/providers") { raw ->
             val response = json.decodeFromString<TmdbMovieDetailsResponse>(raw)
             response.toMovieDetails()
         }
@@ -177,9 +229,10 @@ class TmdbApiClient @Inject constructor(
                     throw Exception("TMDB error (${resp.code}): $errorText")
                 }
             }
+        }.onSuccess {
+            recordSuccess()
         }.onFailure { err ->
-            tripCircuit()
-            Log.w("TmdbApiClient", "TMDB request failed ($urlWithoutKey): ${err.message}")
+            recordFailure(urlWithoutKey, err.message.orEmpty())
         }
     }
 }

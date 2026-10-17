@@ -35,11 +35,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -71,6 +75,16 @@ val VideoQualityOptions = listOf(
     "360p" to 360
 )
 
+val VideoSleepTimerOptions = listOf(
+    "Off" to 0,
+    "15m" to 15,
+    "30m" to 30,
+    "45m" to 45,
+    "60m" to 60,
+    "90m" to 90,
+    "120m" to 120
+)
+
 @Composable
 fun VideoPlayerSettingsOverlay(
     isPresented: Boolean,
@@ -79,9 +93,20 @@ fun VideoPlayerSettingsOverlay(
     currentQualityMaxHeight: Int = 0,
     availableQualityHeights: List<Int> = emptyList(),
     sourceResolutionLabel: String = "",
+    availableAudioTracks: List<String> = emptyList(),
+    selectedAudioTrackIndex: Int = 0,
+    availableSubtitleTracks: List<String> = emptyList(),
+    selectedSubtitleTrackIndex: Int = -1,
+    currentSleepTimerMinutes: Int = 0,
+    isStatsVisible: Boolean = false,
     onSelectSpeed: (Float) -> Unit,
     onSelectContentScale: (ContentScale) -> Unit,
     onSelectQuality: (Int) -> Unit = {},
+    onSelectAudioTrack: (Int) -> Unit = {},
+    onSelectSubtitleTrack: (Int) -> Unit = {},
+    onSelectSleepTimer: (Int) -> Unit = {},
+    onToggleStats: () -> Unit = {},
+    onRestartMovie: () -> Unit = {},
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -105,8 +130,8 @@ fun VideoPlayerSettingsOverlay(
     ) {
         Surface(
             modifier = Modifier
-                .width(580.dp)
-                .padding(vertical = 24.dp),
+                .width(620.dp)
+                .padding(vertical = 20.dp),
             shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),
             colors = ClickableSurfaceDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
@@ -118,7 +143,7 @@ fun VideoPlayerSettingsOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(26.dp)
+                    .padding(24.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -139,7 +164,7 @@ fun VideoPlayerSettingsOverlay(
                             modifier = Modifier.size(26.dp)
                         )
                         Text(
-                            text = "Playback Settings",
+                            text = "Movie Playback Settings",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -161,9 +186,38 @@ fun VideoPlayerSettingsOverlay(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                // 1. Video Aspect Ratio / Scale section
+                SettingsSectionHeader(
+                    icon = Icons.Default.AspectRatio,
+                    title = "Screen Aspect Ratio"
+                )
 
-                // 1. Video Quality Section
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val scaleModes = listOf(
+                        "Fit (Original)" to ContentScale.Fit,
+                        "Zoom / Crop" to ContentScale.Crop,
+                        "Stretch" to ContentScale.FillBounds
+                    )
+
+                    scaleModes.forEachIndexed { index, (title, scale) ->
+                        val isSelected = currentContentScale == scale
+                        val buttonModifier = if (index == 0) {
+                            Modifier.focusRequester(initialFocusRequester)
+                        } else Modifier
+
+                        OptionPillButton(
+                            label = title,
+                            isSelected = isSelected,
+                            onClick = { onSelectContentScale(scale) },
+                            modifier = buttonModifier.weight(1f)
+                        )
+                    }
+                }
+
+                // 2. Video Quality Section
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -172,7 +226,7 @@ fun VideoPlayerSettingsOverlay(
                         imageVector = Icons.Default.HighQuality,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                     Text(
                         text = "Video Quality",
@@ -198,18 +252,15 @@ fun VideoPlayerSettingsOverlay(
                 }
 
                 if (isSingleQuality) {
-                    // Single quality stream detected
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OptionPillButton(
-                            label = if (sourceResolutionLabel.isNotBlank()) "Original ($sourceResolutionLabel)" else "Auto (Source)",
+                            label = if (sourceResolutionLabel.isNotBlank()) "Original ($sourceResolutionLabel)" else "Auto (Source Feed)",
                             isSelected = true,
                             onClick = {},
-                            modifier = Modifier
-                                .weight(1f)
-                                .focusRequester(initialFocusRequester)
+                            modifier = Modifier.weight(1f)
                         )
                     }
 
@@ -231,40 +282,35 @@ fun VideoPlayerSettingsOverlay(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "This channel/stream is provided at a single fixed quality by the source broadcaster. The player streams it directly with zero transcoding overhead.",
+                            text = "Stream provided at direct source quality with zero transcoding overhead.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.LightGray,
                             fontSize = 11.sp
                         )
                     }
                 } else {
-                    // Multi-bitrate / Adaptive stream
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        VideoQualityOptions.forEachIndexed { index, (label, height) ->
+                        VideoQualityOptions.forEach { (label, height) ->
                             val isSelected = currentQualityMaxHeight == height
-                            val buttonModifier = if (index == 0) {
-                                Modifier.focusRequester(initialFocusRequester)
-                            } else Modifier
-
                             OptionPillButton(
                                 label = label,
                                 isSelected = isSelected,
                                 onClick = { onSelectQuality(height) },
-                                modifier = buttonModifier.weight(1f)
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
 
                     val qualityDescription = when (currentQualityMaxHeight) {
-                        0 -> "Auto: Dynamically adapts video quality to your internet speed for continuous, buffer-free playback."
+                        0 -> "Auto: Dynamically adapts video quality to your internet speed for smooth playback."
                         1080 -> "1080p Full HD: Maximum crispness, recommended for high-speed Wi-Fi."
                         720 -> "720p HD: High definition with moderate bandwidth consumption."
-                        480 -> "480p SD: Data Saver mode — uses up to 80% less internet data, ideal for slow connections."
-                        360 -> "360p Low: Minimum data usage, fastest buffer on low-bandwidth networks."
-                        else -> "Adaptive video quality"
+                        480 -> "480p SD: Data Saver mode — uses up to 80% less internet data."
+                        360 -> "360p Low: Minimum data usage for low-speed connections."
+                        else -> "Adaptive streaming"
                     }
 
                     Text(
@@ -275,29 +321,68 @@ fun VideoPlayerSettingsOverlay(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                // 3. Audio Track Selection
+                if (availableAudioTracks.isNotEmpty()) {
+                    SettingsSectionHeader(
+                        icon = Icons.Default.Audiotrack,
+                        title = "Audio Track / Language"
+                    )
 
-                // 2. Playback Speed section
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Speed,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Playback Speed",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        availableAudioTracks.forEachIndexed { index, trackLabel ->
+                            val isSelected = selectedAudioTrackIndex == index
+                            OptionPillButton(
+                                label = trackLabel,
+                                isSelected = isSelected,
+                                onClick = { onSelectAudioTrack(index) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
                 }
+
+                // 4. Subtitle Selection
+                SettingsSectionHeader(
+                    icon = Icons.Default.ClosedCaption,
+                    title = "Subtitles / Captions"
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val isOffSelected = selectedSubtitleTrackIndex < 0
+                    OptionPillButton(
+                        label = "Off",
+                        isSelected = isOffSelected,
+                        onClick = { onSelectSubtitleTrack(-1) },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    val subTracks = if (availableSubtitleTracks.isEmpty()) listOf("English") else availableSubtitleTracks
+                    subTracks.forEachIndexed { index, subLabel ->
+                        val isSelected = selectedSubtitleTrackIndex == index
+                        OptionPillButton(
+                            label = subLabel,
+                            isSelected = isSelected,
+                            onClick = { onSelectSubtitleTrack(index) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // 5. Playback Speed Section
+                SettingsSectionHeader(
+                    icon = Icons.Default.Speed,
+                    title = "Playback Speed"
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     SpeedOptions.forEach { speed ->
                         val isSelected = currentSpeed == speed
@@ -312,48 +397,94 @@ fun VideoPlayerSettingsOverlay(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(2.dp))
-
-                // 3. Video Aspect Ratio / Scale section
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AspectRatio,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Screen Aspect Ratio",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                // 6. Sleep Timer (Auto Off)
+                SettingsSectionHeader(
+                    icon = Icons.Default.Timer,
+                    title = "Sleep Timer (Auto Pause)"
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val scaleModes = listOf(
-                        "Fit to Screen (Original)" to ContentScale.Fit,
-                        "Crop / Fill Screen" to ContentScale.Crop
-                    )
-
-                    scaleModes.forEach { (title, scale) ->
-                        val isSelected = currentContentScale == scale
-
+                    VideoSleepTimerOptions.forEach { (label, minutes) ->
+                        val isSelected = currentSleepTimerMinutes == minutes
                         OptionPillButton(
-                            label = title,
+                            label = label,
                             isSelected = isSelected,
-                            onClick = { onSelectContentScale(scale) },
+                            onClick = { onSelectSleepTimer(minutes) },
                             modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // 7. Stream Actions & Diagnostics
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onRestartMovie,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                            focusedContainerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Restart Movie", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    Button(
+                        onClick = onToggleStats,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (isStatsVisible) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                            contentColor = if (isStatsVisible) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurface,
+                            focusedContainerColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isStatsVisible) "Hide Stream Stats" else "Show Stream Stats",
+                            style = MaterialTheme.typography.labelMedium
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsSectionHeader(icon: ImageVector, title: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }
 

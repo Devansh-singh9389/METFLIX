@@ -24,22 +24,44 @@ import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Singleton
 class TvDataSource @Inject constructor(
     private val apiClient: MetFlixApiClient,
-    private val tmdbApiClient: TmdbApiClient
+    private val tmdbApiClient: TmdbApiClient,
+    private val diskCache: TmdbDiskCache
 ) {
-    private val mostPopularTvShowsReader = CachedDataReader {
+    private val mostPopularTvShowsReader: CachedDataReader<Movie> = CachedDataReader {
+        val cached = diskCache.loadMovies("tv_shows")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                fetchTvShowsLive()?.let { mostPopularTvShowsReader.update(it) }
+            }
+            return@CachedDataReader cached
+        }
+        fetchTvShowsLive() ?: emptyList()
+    }
+
+    private suspend fun fetchTvShowsLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
             val tmdb = tmdbApiClient.getPopularTvShows().getOrNull()
-            if (!tmdb.isNullOrEmpty()) return@CachedDataReader tmdb
+            if (!tmdb.isNullOrEmpty()) {
+                diskCache.saveMovies("tv_shows", tmdb)
+                return tmdb
+            }
         }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
             val remote = apiClient.getMovies(NetworkConfig.TV_SHOWS_ENDPOINT).getOrNull()
-            if (!remote.isNullOrEmpty()) return@CachedDataReader remote.map { it.toMovie() }
+            if (!remote.isNullOrEmpty()) {
+                val mapped = remote.map { it.toMovie() }
+                diskCache.saveMovies("tv_shows", mapped)
+                return mapped
+            }
         }
-        emptyList()
+        return null
     }
 
     suspend fun getTvShowList(): List<Movie> = mostPopularTvShowsReader.read().let { list ->

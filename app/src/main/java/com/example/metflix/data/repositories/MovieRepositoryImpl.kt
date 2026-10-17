@@ -180,6 +180,41 @@ class MovieRepositoryImpl @Inject constructor(
         emit(list)
     }.flowOn(Dispatchers.IO)
 
+    override fun getTrendingDayMovies(): Flow<MovieList> = flow {
+        val list = movieDataSource.getTrendingDayMovieList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getUpcomingMovies(): Flow<MovieList> = flow {
+        val list = movieDataSource.getUpcomingMovieList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getTopRevenueMovies(): Flow<MovieList> = flow {
+        val list = movieDataSource.getTopRevenueMovieList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getMostVotedMovies(): Flow<MovieList> = flow {
+        val list = movieDataSource.getMostVotedMovieList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getNetflixMovies(): Flow<MovieList> = flow {
+        val list = movieDataSource.getNetflixMovieList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getPrimeMovies(): Flow<MovieList> = flow {
+        val list = movieDataSource.getPrimeMovieList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getDisneyMovies(): Flow<MovieList> = flow {
+        val list = movieDataSource.getDisneyMovieList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
     override fun getTVShows(): Flow<MovieList> = flow {
         val list = tvDataSource.getTvShowList()
         emit(list)
