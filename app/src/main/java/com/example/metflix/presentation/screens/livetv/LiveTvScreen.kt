@@ -34,7 +34,11 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -119,6 +123,18 @@ private fun LiveTvCatalog(
     val gridState = rememberLazyGridState()
     var isPlaylistDialogOpen by remember { mutableStateOf(false) }
     var isTimelineGuideMode by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    var focusDebounceJob by remember { mutableStateOf<Job?>(null) }
+    val debouncedOnChannelFocus: (LiveChannel) -> Unit = remember(onChannelFocus) {
+        { channel ->
+            focusDebounceJob?.cancel()
+            focusDebounceJob = coroutineScope.launch {
+                delay(150)
+                onChannelFocus(channel)
+            }
+        }
+    }
 
     val shouldShowTopBar by remember {
         derivedStateOf {
@@ -371,7 +387,7 @@ private fun LiveTvCatalog(
                 JioTvGuideTimelineView(
                     channels = state.filteredChannels,
                     onChannelClick = onChannelClick,
-                    onChannelFocus = onChannelFocus,
+                    onChannelFocus = debouncedOnChannelFocus,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -391,7 +407,7 @@ private fun LiveTvCatalog(
                         JioTvChannelCard(
                             channel = channel,
                             onClick = { onChannelClick(channel) },
-                            onFocus = { onChannelFocus(channel) },
+                            onFocus = { debouncedOnChannelFocus(channel) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

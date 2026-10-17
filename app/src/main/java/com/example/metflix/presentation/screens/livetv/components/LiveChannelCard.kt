@@ -68,11 +68,11 @@ fun LiveChannelCard(
         shape = CardDefaults.shape(MetFlixCardShape),
         border = CardDefaults.border(
             focusedBorder = Border(
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface),
+                border = BorderStroke(2.5.dp, Color.White),
                 shape = MetFlixCardShape
             )
         ),
-        scale = CardDefaults.scale(focusedScale = 1.05f)
+        scale = CardDefaults.scale(focusedScale = 1.0f)
     ) {
         Column(
             modifier = Modifier
@@ -196,17 +196,6 @@ fun LiveChannelCard(
 
 @Composable
 fun LiveBadge(modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseAlpha"
-    )
-
     Row(
         modifier = modifier
             .background(Color(0xFFE50914).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
@@ -216,7 +205,6 @@ fun LiveBadge(modifier: Modifier = Modifier) {
         Box(
             modifier = Modifier
                 .size(6.dp)
-                .alpha(alpha)
                 .background(Color(0xFFE50914), CircleShape)
         )
         Spacer(modifier = Modifier.width(4.dp))

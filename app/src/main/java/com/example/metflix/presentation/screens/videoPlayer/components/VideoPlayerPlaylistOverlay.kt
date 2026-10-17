@@ -161,7 +161,7 @@ fun VideoPlayerPlaylistOverlay(
                             focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                             focusedContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                         ),
-                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f),
                         border = ClickableSurfaceDefaults.border(
                             focusedBorder = Border(
                                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),

@@ -65,19 +65,11 @@ fun JioTvChannelCard(
     onFocus: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Ticking clock state to keep the live progress bar and remaining minutes updated
-    var currentTimeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(15_000) // Update every 15 seconds
-            currentTimeMs = System.currentTimeMillis()
-        }
-    }
-
-    val currentProg = remember(channel, currentTimeMs) {
+    val currentTimeMs = remember { System.currentTimeMillis() }
+    val currentProg = remember(channel) {
         channel.getCurrentEpgProgram(currentTimeMs)
     }
-    val nextProg = remember(channel, currentTimeMs) {
+    val nextProg = remember(channel) {
         channel.getNextEpgProgram(currentTimeMs)
     }
     val progress = currentProg.progress(currentTimeMs)
@@ -92,11 +84,11 @@ fun JioTvChannelCard(
         shape = CardDefaults.shape(MetFlixCardShape),
         border = CardDefaults.border(
             focusedBorder = Border(
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface),
+                border = BorderStroke(2.5.dp, Color.White),
                 shape = MetFlixCardShape
             )
         ),
-        scale = CardDefaults.scale(focusedScale = 1.05f)
+        scale = CardDefaults.scale(focusedScale = 1.0f)
     ) {
         Column(
             modifier = Modifier
@@ -341,17 +333,6 @@ fun JioTvChannelCard(
 
 @Composable
 fun JioTvLiveBadge(modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "jio_pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(750),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "jioPulseAlpha"
-    )
-
     Row(
         modifier = modifier
             .background(Color(0xFFE50914).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
@@ -361,7 +342,6 @@ fun JioTvLiveBadge(modifier: Modifier = Modifier) {
         Box(
             modifier = Modifier
                 .size(6.dp)
-                .alpha(alpha)
                 .background(Color(0xFFE50914), CircleShape)
         )
         Spacer(modifier = Modifier.width(4.dp))

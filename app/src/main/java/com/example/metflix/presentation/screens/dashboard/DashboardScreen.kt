@@ -101,7 +101,11 @@ fun DashboardScreen(
     var currentDestination: String? by remember { mutableStateOf(null) }
     val currentTopBarSelectedTabIndex by remember(currentDestination) {
         derivedStateOf {
-            currentDestination?.let { TopBarTabs.indexOf(Screens.valueOf(it)) } ?: 0
+            currentDestination?.let { dest ->
+                val screenName = dest.substringBefore('/')
+                val screen = try { Screens.valueOf(screenName) } catch (_: Exception) { null }
+                screen?.let { TopBarTabs.indexOf(it).takeIf { idx -> idx >= 0 } }
+            } ?: 0
         }
     }
 
@@ -123,13 +127,14 @@ fun DashboardScreen(
         // 2. On second back press, bring focus back to the first displayed tab
         // 3. On third back press, exit the app
         onBackPressed = {
+            val focusIndex = (currentTopBarSelectedTabIndex + 1).coerceIn(TopBarFocusRequesters.indices)
             if (!isTopBarVisible) {
                 isTopBarVisible = true
-                TopBarFocusRequesters[currentTopBarSelectedTabIndex + 1].requestFocus()
+                TopBarFocusRequesters.getOrNull(focusIndex)?.requestFocus()
             } else if (currentTopBarSelectedTabIndex == 0) onBackPressed()
             else if (!isTopBarFocused) {
-                TopBarFocusRequesters[currentTopBarSelectedTabIndex + 1].requestFocus()
-            } else TopBarFocusRequesters[1].requestFocus()
+                TopBarFocusRequesters.getOrNull(focusIndex)?.requestFocus()
+            } else TopBarFocusRequesters.getOrNull(1)?.requestFocus()
         }
     ) {
         // We do not want to focus the TopBar everytime we come back from another screen e.g.

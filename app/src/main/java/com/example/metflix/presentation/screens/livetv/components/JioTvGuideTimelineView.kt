@@ -180,11 +180,11 @@ private fun JioTvChannelTimelineRow(
             shape = CardDefaults.shape(MetFlixCardShape),
             border = CardDefaults.border(
                 focusedBorder = Border(
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                    border = BorderStroke(2.5.dp, Color.White),
                     shape = MetFlixCardShape
                 )
             ),
-            scale = CardDefaults.scale(focusedScale = 1.03f)
+            scale = CardDefaults.scale(focusedScale = 1.0f)
         ) {
             Row(
                 modifier = Modifier
@@ -305,11 +305,11 @@ private fun JioTvProgramBlock(
         shape = CardDefaults.shape(RoundedCornerShape(6.dp)),
         border = CardDefaults.border(
             focusedBorder = Border(
-                border = BorderStroke(2.dp, if (isLive) Color(0xFFE50914) else MaterialTheme.colorScheme.onSurface),
+                border = BorderStroke(2.5.dp, if (isLive) Color(0xFFE50914) else Color.White),
                 shape = RoundedCornerShape(6.dp)
             )
         ),
-        scale = CardDefaults.scale(focusedScale = 1.04f)
+        scale = CardDefaults.scale(focusedScale = 1.0f)
     ) {
         Column(
             modifier = Modifier

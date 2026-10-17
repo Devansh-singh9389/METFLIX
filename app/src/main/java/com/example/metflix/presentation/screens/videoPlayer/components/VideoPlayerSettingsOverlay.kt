@@ -382,7 +382,7 @@ private fun OptionPillButton(
             focusedContainerColor = MaterialTheme.colorScheme.secondary,
             focusedContentColor = MaterialTheme.colorScheme.onSecondary
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f),
         border = ClickableSurfaceDefaults.border(
             focusedBorder = Border(
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSecondary),

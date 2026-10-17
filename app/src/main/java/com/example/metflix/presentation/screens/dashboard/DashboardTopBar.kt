@@ -97,7 +97,7 @@ fun DashboardTopBar(
             UserAvatar(
                 modifier = Modifier
                     .size(32.dp)
-                    .focusRequester(focusRequesters[0])
+                    .focusRequester(focusRequesters.getOrNull(0) ?: remember { FocusRequester() })
                     .semantics {
                         contentDescription =
                             StringConstants.Composable.ContentDescription.UserAvatar
@@ -120,7 +120,7 @@ fun DashboardTopBar(
                         },
                     selectedTabIndex = selectedTabIndex,
                     indicator = { tabPositions, _ ->
-                        if (selectedTabIndex >= 0) {
+                        if (selectedTabIndex in tabPositions.indices) {
                             DashboardTopBarItemIndicator(
                                 currentTabPosition = tabPositions[selectedTabIndex],
                                 anyTabFocused = isTabRowFocused,
@@ -135,7 +135,7 @@ fun DashboardTopBar(
                             Tab(
                                 modifier = Modifier
                                     .height(32.dp)
-                                    .focusRequester(focusRequesters[index + 1]),
+                                    .focusRequester(focusRequesters.getOrNull(index + 1) ?: remember { FocusRequester() }),
                                 selected = index == selectedTabIndex,
                                 onFocus = {
                                     if (index != selectedTabIndex) {

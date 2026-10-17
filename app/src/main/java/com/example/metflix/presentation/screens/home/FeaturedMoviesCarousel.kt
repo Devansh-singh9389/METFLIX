@@ -92,6 +92,9 @@ fun FeaturedMoviesCarousel(
     goToVideoPlayer: (movie: Movie) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (movies.isEmpty()) {
+        return
+    }
     val carouselState = rememberSaveable(saver = CarouselSaver) { CarouselState(0) }
     var isCarouselFocused by remember { mutableStateOf(false) }
     val alpha = if (isCarouselFocused) {
@@ -118,7 +121,7 @@ fun FeaturedMoviesCarousel(
                     StringConstants.Composable.ContentDescription.MoviesCarousel
             }
             .handleDPadKeyEvents(onEnter = {
-                goToVideoPlayer(movies[carouselState.activeItemIndex])
+                movies.getOrNull(carouselState.activeItemIndex)?.let(goToVideoPlayer)
             }),
         itemCount = movies.size,
         carouselState = carouselState,
@@ -129,12 +132,12 @@ fun FeaturedMoviesCarousel(
                 activeItemIndex = carouselState.activeItemIndex
             )
         },
-        contentTransformStartToEnd = fadeIn(tween(durationMillis = 350))
-            .togetherWith(fadeOut(tween(durationMillis = 350))),
-        contentTransformEndToStart = fadeIn(tween(durationMillis = 350))
-            .togetherWith(fadeOut(tween(durationMillis = 350))),
+        contentTransformStartToEnd = fadeIn(tween(durationMillis = 180))
+            .togetherWith(fadeOut(tween(durationMillis = 180))),
+        contentTransformEndToStart = fadeIn(tween(durationMillis = 180))
+            .togetherWith(fadeOut(tween(durationMillis = 180))),
         content = { index ->
-            val movie = movies[index]
+            val movie = movies.getOrNull(index) ?: return@Carousel
             // background
             CarouselItemBackground(movie = movie, modifier = Modifier.fillMaxSize())
             // foreground

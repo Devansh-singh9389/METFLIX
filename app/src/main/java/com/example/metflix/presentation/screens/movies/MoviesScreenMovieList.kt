@@ -117,10 +117,7 @@ private fun MovieListItem(
             ),
             onClick = { onMovieClick(movie) },
             image = {
-                val contentAlpha by animateFloatAsState(
-                    targetValue = if (isFocused) 1f else 0.5f,
-                    label = "",
-                )
+                val contentAlpha = if (isFocused) 1f else 0.7f
                 val context = LocalContext.current
                 val isHighQuality = PerformancePreferences.isHighQualityImagesActive
                 val imageRequest = remember(movie.posterUri, isHighQuality) {

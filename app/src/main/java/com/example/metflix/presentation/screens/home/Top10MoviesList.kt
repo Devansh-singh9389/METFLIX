@@ -18,6 +18,7 @@ package com.example.metflix.presentation.screens.home
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -68,8 +69,12 @@ fun Top10MoviesList(
     gradientColor: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
     onMovieClick: (movie: Movie) -> Unit
 ) {
+    if (movieList.isEmpty()) {
+        return
+    }
+    val initialMovie = movieList.firstOrNull() ?: return
     var isListFocused by remember { mutableStateOf(false) }
-    var selectedMovie by remember(movieList) { mutableStateOf(movieList.first()) }
+    var selectedMovie by remember(movieList) { mutableStateOf(initialMovie) }
     val coroutineScope = rememberCoroutineScope()
     var debounceJob by remember { mutableStateOf<Job?>(null) }
 
@@ -158,8 +163,8 @@ private fun Background(
 ) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically(),
+        enter = fadeIn(tween(150)),
+        exit = fadeOut(tween(150)),
         modifier = modifier
     ) {
         PosterImage(movie = movie, modifier = Modifier.fillMaxSize())

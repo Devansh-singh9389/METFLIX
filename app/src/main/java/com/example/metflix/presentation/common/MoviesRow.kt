@@ -304,24 +304,19 @@ private fun MoviesRowItemText(
     modifier: Modifier = Modifier
 ) {
     if (showItemTitle) {
-        val isLowSpec = com.example.metflix.data.settings.PerformancePreferences.isLowSpecModeActive
-        val movieNameAlpha = if (isLowSpec) {
-            if (isItemFocused) 1f else 0f
+        val textColor = if (isItemFocused) {
+            MaterialTheme.colorScheme.onSurface
         } else {
-            val animAlpha by animateFloatAsState(
-                targetValue = if (isItemFocused) 1f else 0f,
-                label = "",
-            )
-            animAlpha
+            Color.Transparent
         }
         Text(
             text = movie.name,
             style = MaterialTheme.typography.bodyMedium.copy(
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = textColor
             ),
             textAlign = TextAlign.Center,
             modifier = modifier
-                .graphicsLayer { alpha = movieNameAlpha }
                 .fillMaxWidth()
                 .padding(top = 4.dp),
             maxLines = 1,

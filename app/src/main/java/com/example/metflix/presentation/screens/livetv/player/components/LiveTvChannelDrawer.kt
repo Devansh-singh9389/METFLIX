@@ -178,7 +178,7 @@ private fun ChannelDrawerCard(
         ),
         scale = CardDefaults.scale(
             scale = 1f,
-            focusedScale = 1.03f
+            focusedScale = 1f
         ),
         border = CardDefaults.border(
             border = if (isCurrent) {

@@ -55,17 +55,22 @@ fun HomeScreen(
 
     when (val s = uiState) {
         is HomeScreenUiState.Ready -> {
-            Catalog(
-                featuredMovies = s.featuredMovieList,
-                trendingMovies = s.trendingMovieList,
-                top10Movies = s.top10MovieList,
-                nowPlayingMovies = s.nowPlayingMovieList,
-                onMovieClick = onMovieClick,
-                onScroll = onScroll,
-                goToVideoPlayer = goToVideoPlayer,
-                isTopBarVisible = isTopBarVisible,
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (s.featuredMovieList.isEmpty() && s.trendingMovieList.isEmpty() &&
+                s.top10MovieList.isEmpty() && s.nowPlayingMovieList.isEmpty()) {
+                Loading(modifier = Modifier.fillMaxSize())
+            } else {
+                Catalog(
+                    featuredMovies = s.featuredMovieList,
+                    trendingMovies = s.trendingMovieList,
+                    top10Movies = s.top10MovieList,
+                    nowPlayingMovies = s.nowPlayingMovieList,
+                    onMovieClick = onMovieClick,
+                    onScroll = onScroll,
+                    goToVideoPlayer = goToVideoPlayer,
+                    isTopBarVisible = isTopBarVisible,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         is HomeScreenUiState.Loading -> Loading(modifier = Modifier.fillMaxSize())
@@ -108,44 +113,52 @@ private fun Catalog(
         modifier = modifier,
     ) {
 
-        item(contentType = "FeaturedMoviesCarousel") {
-            FeaturedMoviesCarousel(
-                movies = featuredMovies,
-                padding = childPadding,
-                goToVideoPlayer = goToVideoPlayer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(324.dp)
-                /*
-                 Setting height for the FeaturedMovieCarousel to keep it rendered with same height,
-                 regardless of the top bar's visibility
-                 */
-            )
+        if (featuredMovies.isNotEmpty()) {
+            item(contentType = "FeaturedMoviesCarousel") {
+                FeaturedMoviesCarousel(
+                    movies = featuredMovies,
+                    padding = childPadding,
+                    goToVideoPlayer = goToVideoPlayer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(324.dp)
+                    /*
+                     Setting height for the FeaturedMovieCarousel to keep it rendered with same height,
+                     regardless of the top bar's visibility
+                     */
+                )
+            }
         }
-        item(contentType = "MoviesRow") {
-            MoviesRow(
-                modifier = Modifier.padding(top = 16.dp),
-                movieList = trendingMovies,
-                title = StringConstants.Composable.HomeScreenTrendingTitle,
-                onMovieSelected = onMovieClick
-            )
+        if (trendingMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = trendingMovies,
+                    title = StringConstants.Composable.HomeScreenTrendingTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
         }
-        item(contentType = "Top10MoviesList") {
-            Top10MoviesList(
-                movieList = top10Movies,
-                onMovieClick = onMovieClick,
-                modifier = Modifier.onFocusChanged {
-                    immersiveListHasFocus = it.hasFocus
-                },
-            )
+        if (top10Movies.isNotEmpty()) {
+            item(contentType = "Top10MoviesList") {
+                Top10MoviesList(
+                    movieList = top10Movies,
+                    onMovieClick = onMovieClick,
+                    modifier = Modifier.onFocusChanged {
+                        immersiveListHasFocus = it.hasFocus
+                    },
+                )
+            }
         }
-        item(contentType = "MoviesRow") {
-            MoviesRow(
-                modifier = Modifier.padding(top = 16.dp),
-                movieList = nowPlayingMovies,
-                title = StringConstants.Composable.HomeScreenNowPlayingMoviesTitle,
-                onMovieSelected = onMovieClick
-            )
+        if (nowPlayingMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = nowPlayingMovies,
+                    title = StringConstants.Composable.HomeScreenNowPlayingMoviesTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
         }
     }
 }

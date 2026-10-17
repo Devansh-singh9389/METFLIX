@@ -81,7 +81,7 @@ fun VideoPlayerControlsIcon(
             focusedContainerColor = MaterialTheme.colorScheme.primary,
             focusedContentColor = MaterialTheme.colorScheme.onPrimary
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.15f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f),
         border = ClickableSurfaceDefaults.border(
             focusedBorder = Border(
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.onPrimary),
