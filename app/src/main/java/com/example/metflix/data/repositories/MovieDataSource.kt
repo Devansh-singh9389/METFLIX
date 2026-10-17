@@ -93,9 +93,7 @@ class MovieDataSource @Inject constructor(
         if (nowPlaying.isNotEmpty()) {
             return@CachedDataReader nowPlaying
         }
-        popularMovieDataReader.read().map {
-            it.copy(thumbnailType = ThumbnailType.Long)
-        }
+        popularMovieDataReader.read()
     }
 
     suspend fun getMovieList(thumbnailType: ThumbnailType = ThumbnailType.Standard): List<Movie> =

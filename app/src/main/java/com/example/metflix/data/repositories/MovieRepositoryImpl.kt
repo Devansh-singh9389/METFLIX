@@ -16,6 +16,7 @@
 
 package com.example.metflix.data.repositories
 
+import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieCategoryDetails
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.entities.MovieList
@@ -27,6 +28,7 @@ import com.example.metflix.data.util.StringConstants.Movie.Reviewer.DefaultRatin
 import com.example.metflix.data.util.StringConstants.Movie.Reviewer.FreshTomatoes
 import com.example.metflix.data.util.StringConstants.Movie.Reviewer.ReviewerName
 import com.example.metflix.data.network.tmdb.TmdbApiClient
+import com.example.metflix.data.network.tmdb.TmdbConfig
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
