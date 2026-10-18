@@ -53,12 +53,13 @@ object MovieDetailsScreen {
 
 @Composable
 fun MovieDetailsScreen(
-    goToMoviePlayer: () -> Unit,
+    goToMoviePlayer: (season: Int, episode: Int) -> Unit,
     onBackPressed: () -> Unit,
     refreshScreenWithNewMovie: (Movie) -> Unit,
     movieDetailsScreenViewModel: MovieDetailsScreenViewModel = hiltViewModel()
 ) {
     val uiState by movieDetailsScreenViewModel.uiState.collectAsStateWithLifecycle()
+    val selectedSeason by movieDetailsScreenViewModel.selectedSeason.collectAsStateWithLifecycle()
 
     when (val s = uiState) {
         is MovieDetailsScreenUiState.Loading -> {
@@ -72,6 +73,8 @@ fun MovieDetailsScreen(
         is MovieDetailsScreenUiState.Done -> {
             Details(
                 movieDetails = s.movieDetails,
+                selectedSeason = selectedSeason,
+                onSeasonSelected = movieDetailsScreenViewModel::onSeasonSelected,
                 goToMoviePlayer = goToMoviePlayer,
                 onBackPressed = onBackPressed,
                 refreshScreenWithNewMovie = refreshScreenWithNewMovie,
@@ -86,7 +89,9 @@ fun MovieDetailsScreen(
 @Composable
 private fun Details(
     movieDetails: MovieDetails,
-    goToMoviePlayer: () -> Unit,
+    selectedSeason: Int,
+    onSeasonSelected: (Int) -> Unit,
+    goToMoviePlayer: (season: Int, episode: Int) -> Unit,
     onBackPressed: () -> Unit,
     refreshScreenWithNewMovie: (Movie) -> Unit,
     modifier: Modifier = Modifier,
@@ -101,14 +106,27 @@ private fun Details(
         item {
             MovieDetails(
                 movieDetails = movieDetails,
-                goToMoviePlayer = goToMoviePlayer
+                goToMoviePlayer = { goToMoviePlayer(1, 1) }
             )
+        }
+
+        if (movieDetails.isTvShow && movieDetails.seasons.isNotEmpty()) {
+            item {
+                TvSeasonsAndEpisodesSection(
+                    seasons = movieDetails.seasons,
+                    selectedSeasonNumber = selectedSeason,
+                    onSeasonSelected = onSeasonSelected,
+                    onEpisodeClick = { season, episode ->
+                        goToMoviePlayer(season, episode)
+                    }
+                )
+            }
         }
 
         item {
             WhereToWatchSection(
                 movieDetails = movieDetails,
-                onPlayInMetFlix = goToMoviePlayer
+                onPlayInMetFlix = { goToMoviePlayer(1, 1) }
             )
         }
 

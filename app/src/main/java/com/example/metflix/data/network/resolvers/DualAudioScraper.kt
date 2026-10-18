@@ -58,12 +58,16 @@ class DualAudioScraper @Inject constructor(
         tmdbId: String,
         movieTitle: String,
         releaseYear: String = "",
-        server: StreamServer
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
     ): ResolvedStream? = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Resolving Dual-Audio (Hindi + English) stream for '$movieTitle' (TMDB: $tmdbId)")
+        val mediaType = if (isTvShow) "TV S${season}E${episode}" else "Movie"
+        Log.d(TAG, "Resolving Dual-Audio (Hindi + English) stream for '$movieTitle' ($mediaType, TMDB: $tmdbId)")
 
         // 1. Try Multi-Source Engine (Stremio / TMDB-Embed aggregator)
-        tryMultiSourceEngine(tmdbId, server)?.let { return@withContext it }
+        tryMultiSourceEngine(tmdbId, server, isTvShow, season, episode)?.let { return@withContext it }
 
         // 2. Try StreamFlix Dual-Audio direct match
         tryStreamFlixDualAudio(tmdbId, movieTitle, server)?.let { return@withContext it }
@@ -76,12 +80,16 @@ class DualAudioScraper @Inject constructor(
 
     private suspend fun tryMultiSourceEngine(
         tmdbId: String,
-        server: StreamServer
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
     ): ResolvedStream? = withContext(Dispatchers.IO) {
+        val path = if (isTvShow) "tv/$tmdbId/$season/$episode" else "movie/$tmdbId"
         val endpoints = listOf(
-            "http://10.227.10.225:8787/api/streams/movie/$tmdbId",
-            "http://127.0.0.1:8787/api/streams/movie/$tmdbId",
-            "https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/movie/$tmdbId"
+            "http://10.227.10.225:8787/api/streams/$path",
+            "http://127.0.0.1:8787/api/streams/$path",
+            "https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/$path"
         )
 
         for (endpoint in endpoints) {

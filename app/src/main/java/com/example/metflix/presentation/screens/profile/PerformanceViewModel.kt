@@ -29,10 +29,12 @@ import javax.inject.Inject
 class PerformanceViewModel @Inject constructor(
     private val preferences: PerformancePreferences,
     private val tmdbApiClient: TmdbApiClient,
-    private val movieRepository: com.example.metflix.data.repositories.MovieRepository
+    private val movieRepository: com.example.metflix.data.repositories.MovieRepository,
+    private val deviceCapabilityManager: com.example.metflix.data.drm.DeviceCapabilityManager
 ) : ViewModel() {
 
     val isDeviceLowRam: Boolean = preferences.isDeviceLowRam
+    val hardwareProfile = deviceCapabilityManager.profile
 
     val lowSpecMode: StateFlow<Boolean> = preferences.lowSpecMode
     val tmdbEnabled: StateFlow<Boolean> = preferences.tmdbEnabled

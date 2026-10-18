@@ -20,6 +20,7 @@ import com.example.metflix.data.entities.MovieCategoryDetails
 import com.example.metflix.data.entities.MovieCategoryList
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.entities.MovieList
+import com.example.metflix.data.entities.TvEpisode
 import kotlinx.coroutines.flow.Flow
 
 interface MovieRepository {
@@ -30,6 +31,7 @@ interface MovieRepository {
     fun getMovieCategories(): Flow<MovieCategoryList>
     suspend fun getMovieCategoryDetails(categoryId: String): MovieCategoryDetails
     suspend fun getMovieDetails(movieId: String): MovieDetails
+    suspend fun getTvSeasonEpisodes(seriesId: String, seasonNumber: Int): List<TvEpisode>
     suspend fun searchMovies(query: String): MovieList
     fun getMoviesWithLongThumbnail(): Flow<MovieList>
     fun getMovies(): Flow<MovieList>

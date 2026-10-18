@@ -41,4 +41,30 @@ data class MovieDetails(
     val similarMovies: MovieList,
     val reviewsAndRatings: List<MovieReviewsAndRatings>,
     val watchProviders: WatchProvidersInfo? = null,
+    val isTvShow: Boolean = false,
+    val seasons: List<TvSeason> = emptyList(),
+    val totalSeasons: Int = 0,
+    val totalEpisodes: Int = 0
+)
+
+@Immutable
+data class TvSeason(
+    val id: String,
+    val name: String,
+    val seasonNumber: Int,
+    val episodeCount: Int,
+    val posterUri: String? = null,
+    val episodes: List<TvEpisode> = emptyList()
+)
+
+@Immutable
+data class TvEpisode(
+    val id: String,
+    val name: String,
+    val episodeNumber: Int,
+    val seasonNumber: Int,
+    val overview: String = "",
+    val stillUri: String? = null,
+    val duration: String = "",
+    val rating: String = ""
 )

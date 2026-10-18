@@ -36,6 +36,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
@@ -319,7 +320,76 @@ fun LiveTvSettingsOverlay(
                     }
                 }
 
-                // 4. Sleep Timer
+                // 4. Device Hardware & DRM Capabilities
+                SettingsSectionHeader(
+                    icon = Icons.Default.Info,
+                    title = "Device Hardware & DRM Capabilities"
+                )
+
+                val hwProfile = remember {
+                    com.example.metflix.data.drm.DeviceCapabilityManager().profile
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val drmColor = when (hwProfile.widevineLevel) {
+                        com.example.metflix.data.drm.WidevineLevel.L1 -> Color(0xFF66BB6A)
+                        com.example.metflix.data.drm.WidevineLevel.L3 -> Color(0xFFFFA726)
+                        com.example.metflix.data.drm.WidevineLevel.UNSUPPORTED -> Color(0xFFEF5350)
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(drmColor.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Widevine: ${hwProfile.widevineLevel.name}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = drmColor
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = if (hwProfile.supportsHevc) "HEVC: Yes" else "HEVC: Software",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (hwProfile.supportsHevc) Color.White else Color.Gray
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = if (hwProfile.supportsEac3 || hwProfile.supportsAc3) "Dolby Audio: Supported" else "Dolby: Software",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (hwProfile.supportsEac3 || hwProfile.supportsAc3) Color(0xFF64B5F6) else Color.Gray
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Max Safe: ${hwProfile.maxDecodableHeight}p",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.LightGray
+                        )
+                    }
+                }
+
+                // 5. Sleep Timer
                 SettingsSectionHeader(
                     icon = Icons.Default.Timer,
                     title = "Sleep Timer (Auto Off)"

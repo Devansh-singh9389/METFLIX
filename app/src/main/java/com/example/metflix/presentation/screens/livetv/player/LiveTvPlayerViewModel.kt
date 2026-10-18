@@ -57,6 +57,17 @@ class LiveTvPlayerViewModel @Inject constructor(
         currentChannelIdFlow.value = channel.id
     }
 
+    fun selectChannelByNumber(channelNumber: Int): Boolean {
+        val state = uiState.value as? LiveTvPlayerUiState.Ready ?: return false
+        val matchedChannel = state.channels.firstOrNull { it.channelNumber == channelNumber }
+        return if (matchedChannel != null) {
+            currentChannelIdFlow.value = matchedChannel.id
+            true
+        } else {
+            false
+        }
+    }
+
     fun nextChannel() {
         val state = uiState.value as? LiveTvPlayerUiState.Ready ?: return
         if (state.channels.isNotEmpty()) {

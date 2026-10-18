@@ -22,6 +22,8 @@ import com.example.metflix.data.entities.MovieCategory
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.entities.MovieReviewsAndRatings
 import com.example.metflix.data.entities.ThumbnailType
+import com.example.metflix.data.entities.TvEpisode
+import com.example.metflix.data.entities.TvSeason
 import com.example.metflix.data.entities.WatchOptionType
 import com.example.metflix.data.entities.WatchProvider
 import com.example.metflix.data.entities.WatchProvidersInfo
@@ -61,6 +63,61 @@ data class TmdbTvItem(
     val first_air_date: String = "",
     val vote_average: Double = 0.0,
     val vote_count: Int = 0
+)
+
+@Serializable
+data class TmdbSeasonSummaryItem(
+    val id: Long = 0,
+    val name: String = "",
+    val season_number: Int = 1,
+    val episode_count: Int = 0,
+    val poster_path: String? = null,
+    val overview: String? = null,
+    val air_date: String? = null
+)
+
+@Serializable
+data class TmdbTvDetailsResponse(
+    val id: Long = 0,
+    val name: String = "",
+    val overview: String = "",
+    val poster_path: String? = null,
+    val backdrop_path: String? = null,
+    val first_air_date: String = "",
+    val number_of_seasons: Int = 1,
+    val number_of_episodes: Int = 0,
+    val seasons: List<TmdbSeasonSummaryItem> = emptyList(),
+    val genres: List<TmdbGenreItem> = emptyList(),
+    val vote_average: Double = 0.0,
+    val vote_count: Int = 0,
+    val status: String = "Returning Series",
+    val original_language: String = "en",
+    val credits: TmdbCreditsResponse? = null,
+    val similar: TmdbPageResponse<TmdbTvItem>? = null,
+    @SerialName("watch/providers") val watchProviders: TmdbWatchProvidersResponse? = null
+)
+
+@Serializable
+data class TmdbSeasonDetailsResponse(
+    val id: Long = 0,
+    val season_number: Int = 1,
+    val name: String = "",
+    val overview: String = "",
+    val poster_path: String? = null,
+    val episodes: List<TmdbEpisodeItem> = emptyList()
+)
+
+@Serializable
+data class TmdbEpisodeItem(
+    val id: Long = 0,
+    val name: String = "",
+    val overview: String = "",
+    val episode_number: Int = 1,
+    val season_number: Int = 1,
+    val still_path: String? = null,
+    val air_date: String? = null,
+    val runtime: Int? = null,
+    val vote_average: Double = 0.0
 )
 
 @Serializable
@@ -306,4 +363,89 @@ fun TmdbMovieDetailsResponse.toMovieDetails(): MovieDetails {
         ),
         watchProviders = watchProviders?.toWatchProvidersInfo()
     )
+}
+
+fun TmdbTvDetailsResponse.toMovieDetails(): MovieDetails {
+    val backdropUrl = backdrop_path?.let { "${TmdbConfig.IMAGE_BASE_URL_BACKDROP}$it" }
+        ?: poster_path?.let { "${TmdbConfig.IMAGE_BASE_URL_POSTER}$it" }
+        ?: ""
+
+    val creatorName = credits?.crew?.find {
+        it.job.equals("Executive Producer", ignoreCase = true) || it.job.equals("Creator", ignoreCase = true)
+    }?.name ?: "MetFlix TV"
+
+    val castList = credits?.cast?.take(10)?.map { it.toMovieCast() } ?: emptyList()
+    val similarList = similar?.results?.take(10)?.map { it.toMovie(ThumbnailType.Standard) } ?: emptyList()
+
+    val seasonList = seasons.filter { it.season_number > 0 }.map { s ->
+        TvSeason(
+            id = s.id.toString(),
+            name = s.name.ifBlank { "Season ${s.season_number}" },
+            seasonNumber = s.season_number,
+            episodeCount = s.episode_count,
+            posterUri = s.poster_path?.let { "${TmdbConfig.IMAGE_BASE_URL_POSTER}$it" }
+        )
+    }.ifEmpty {
+        listOf(
+            TvSeason(
+                id = "${id}_s1",
+                name = "Season 1",
+                seasonNumber = 1,
+                episodeCount = number_of_episodes.coerceAtLeast(1)
+            )
+        )
+    }
+
+    return MovieDetails(
+        id = id.toString(),
+        videoUri = TmdbConfig.DEFAULT_STREAM_URL,
+        subtitleUri = TmdbConfig.DEFAULT_SUBTITLE_URL,
+        posterUri = backdropUrl,
+        name = name,
+        description = overview.ifBlank { "No overview available." },
+        pgRating = if (vote_average > 0) "Rating: ${String.format("%.1f", vote_average)}/10" else "TV-MA",
+        releaseDate = first_air_date.take(4).ifBlank { "2024" },
+        categories = genres.map { it.name }.ifEmpty { listOf("Drama", "TV Series") },
+        duration = "$number_of_seasons Seasons",
+        director = creatorName,
+        screenplay = creatorName,
+        music = "Original Series Soundtrack",
+        castAndCrew = castList,
+        status = status,
+        originalLanguage = original_language.uppercase(),
+        budget = "TV Series",
+        revenue = "$number_of_episodes Episodes",
+        similarMovies = similarList,
+        reviewsAndRatings = listOf(
+            MovieReviewsAndRatings(
+                reviewerName = "TMDB Users (${vote_count} votes)",
+                reviewerIconUri = "",
+                reviewCount = vote_count.toString(),
+                reviewRating = String.format("%.1f", vote_average)
+            )
+        ),
+        watchProviders = watchProviders?.toWatchProvidersInfo(),
+        isTvShow = true,
+        seasons = seasonList,
+        totalSeasons = number_of_seasons,
+        totalEpisodes = number_of_episodes
+    )
+}
+
+fun TmdbSeasonDetailsResponse.toTvEpisodes(): List<TvEpisode> {
+    return episodes.map { ep ->
+        val still = ep.still_path?.let { "${TmdbConfig.IMAGE_BASE_URL_BACKDROP}$it" }
+        val durationStr = ep.runtime?.let { "${it}m" } ?: "45m"
+        val ratingStr = if (ep.vote_average > 0) String.format("%.1f", ep.vote_average) else "8.0"
+        TvEpisode(
+            id = ep.id.toString(),
+            name = ep.name.ifBlank { "Episode ${ep.episode_number}" },
+            episodeNumber = ep.episode_number,
+            seasonNumber = ep.season_number,
+            overview = ep.overview.ifBlank { "No episode description available." },
+            stillUri = still,
+            duration = durationStr,
+            rating = ratingStr
+        )
+    }
 }

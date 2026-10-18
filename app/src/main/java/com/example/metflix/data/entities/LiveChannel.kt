@@ -19,6 +19,11 @@ data class LiveChannel(
     val programDescription: String = "",
     val isFavorite: Boolean = false,
     val epgId: String? = null,
+    val drmScheme: String? = null,
+    val requiredSecurityLevel: String = "NONE", // "NONE", "L3", "L1"
+    val videoCodec: String? = null,
+    val audioCodec: String? = null,
+    val isFta: Boolean = true,
     val schedule: List<EpgProgram> = emptyList()
 ) {
     fun getCurrentEpgProgram(nowMs: Long = System.currentTimeMillis()): EpgProgram {

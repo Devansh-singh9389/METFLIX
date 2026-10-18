@@ -55,6 +55,18 @@ class VideoPlayerScreenViewModel @Inject constructor(
     private val _resolvedStream = MutableStateFlow<ResolvedStream?>(null)
     val resolvedStream: StateFlow<ResolvedStream?> = _resolvedStream.asStateFlow()
 
+    private val _isTvShow = MutableStateFlow(false)
+    val isTvShow: StateFlow<Boolean> = _isTvShow.asStateFlow()
+
+    private val _seasonNumber = MutableStateFlow(1)
+    val seasonNumber: StateFlow<Int> = _seasonNumber.asStateFlow()
+
+    private val _episodeNumber = MutableStateFlow(1)
+    val episodeNumber: StateFlow<Int> = _episodeNumber.asStateFlow()
+
+    private val _episodeTitle = MutableStateFlow("")
+    val episodeTitle: StateFlow<String> = _episodeTitle.asStateFlow()
+
     private val movieIdFlow = savedStateHandle.getStateFlow<String?>(VideoPlayerScreen.MovieIdBundleKey, null)
     private val movieDetailsFlow = MutableStateFlow<MovieDetails?>(null)
     private val isUserExplicitSelection = MutableStateFlow(false)
@@ -62,17 +74,54 @@ class VideoPlayerScreenViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            movieIdFlow.collect { id ->
-                if (!id.isNullOrBlank()) {
-                    val details = repository.getMovieDetails(movieId = id)
+            movieIdFlow.collect { rawId ->
+                if (!rawId.isNullOrBlank()) {
+                    val parts = rawId.split(":")
+                    val mediaId = parts[0]
+                    val parsedSeason = parts.getOrNull(1)?.toIntOrNull() ?: 1
+                    val parsedEpisode = parts.getOrNull(2)?.toIntOrNull() ?: 1
+
+                    var details = repository.getMovieDetails(movieId = mediaId)
+                    val isTv = details.isTvShow
+
+                    _isTvShow.value = isTv
+                    _seasonNumber.value = parsedSeason
+                    _episodeNumber.value = parsedEpisode
+
+                    if (isTv) {
+                        // If requested season is not season 1 or episodes aren't loaded, fetch season episodes
+                        val currentSeason = details.seasons.firstOrNull { it.seasonNumber == parsedSeason }
+                        if (currentSeason == null || currentSeason.episodes.isEmpty()) {
+                            val epList = repository.getTvSeasonEpisodes(details.id, parsedSeason)
+                            val updatedSeasons = details.seasons.map { s ->
+                                if (s.seasonNumber == parsedSeason) s.copy(episodes = epList) else s
+                            }
+                            details = details.copy(seasons = updatedSeasons)
+                        }
+
+                        val foundEpisode = details.seasons
+                            .firstOrNull { it.seasonNumber == parsedSeason }
+                            ?.episodes
+                            ?.firstOrNull { it.episodeNumber == parsedEpisode }
+
+                        _episodeTitle.value = foundEpisode?.name.orEmpty()
+                    } else {
+                        _episodeTitle.value = ""
+                    }
+
                     movieDetailsFlow.value = details
-                    startServerRace(details)
+                    startServerRace(
+                        details = details,
+                        isTv = isTv,
+                        season = parsedSeason,
+                        episode = parsedEpisode
+                    )
                 }
             }
         }
     }
 
-    private fun startServerRace(details: MovieDetails) {
+    private fun startServerRace(details: MovieDetails, isTv: Boolean, season: Int, episode: Int) {
         raceJob?.cancel()
         raceJob = viewModelScope.launch {
             _isResolvingStream.value = true
@@ -82,11 +131,14 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 tmdbId = details.id,
                 movieTitle = details.name,
                 releaseYear = details.releaseDate.take(4),
-                originalLanguage = details.originalLanguage
+                originalLanguage = details.originalLanguage,
+                isTvShow = isTv,
+                season = season,
+                episode = episode
             ).collect { result ->
                 _availableServers.value = result.rankedServers
 
-                // If user hasn't explicitly selected another server, pit the fastest/best stream
+                // If user hasn't explicitly selected another server, pick the fastest/best stream
                 if (!isUserExplicitSelection.value && result.bestStream != null) {
                     _selectedServer.value = result.bestStream.server
                     _resolvedStream.value = result.bestStream
@@ -106,7 +158,10 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 tmdbId = details.id,
                 movieTitle = details.name,
                 releaseYear = details.releaseDate.take(4),
-                server = server
+                server = server,
+                isTvShow = _isTvShow.value,
+                season = _seasonNumber.value,
+                episode = _episodeNumber.value
             )
             _resolvedStream.value = resolved
             _isResolvingStream.value = false
@@ -156,7 +211,11 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 resolvedStream = resolved,
                 currentServer = currentServer,
                 availableServers = servers,
-                isResolving = resolving
+                isResolving = resolving,
+                isTvShow = _isTvShow.value,
+                seasonNumber = _seasonNumber.value,
+                episodeNumber = _episodeNumber.value,
+                episodeTitle = _episodeTitle.value
             )
         }
     }.stateIn(
@@ -175,6 +234,10 @@ sealed class VideoPlayerScreenUiState {
         val resolvedStream: ResolvedStream?,
         val currentServer: StreamServer,
         val availableServers: List<StreamServer>,
-        val isResolving: Boolean = false
+        val isResolving: Boolean = false,
+        val isTvShow: Boolean = false,
+        val seasonNumber: Int = 1,
+        val episodeNumber: Int = 1,
+        val episodeTitle: String = ""
     ) : VideoPlayerScreenUiState()
 }

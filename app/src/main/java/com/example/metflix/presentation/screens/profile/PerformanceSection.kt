@@ -18,6 +18,7 @@ package com.example.metflix.presentation.screens.profile
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -79,6 +80,8 @@ fun PerformanceSection(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        val hwProfile = viewModel.hardwareProfile
+
         // Hardware Profile Summary Card
         Box(
             modifier = Modifier
@@ -89,25 +92,89 @@ fun PerformanceSection(
                 )
                 .padding(16.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Memory,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text(
-                        text = if (isDeviceLowRam) "Hardware: Low-RAM Device (<=1GB RAM)" else "Hardware: High-Performance Device (>1GB RAM)",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Memory,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (lowSpecMode) "Current Status: Low-Spec Mode (Instant local fallback, 16-bit RGB_565, Zero-Lag)" else "Current Status: High-Performance Mode (Full quality ARGB_8888, Live TMDB sync)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (lowSpecMode) Color(0xFF66BB6A) else MaterialTheme.colorScheme.primary
-                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = if (isDeviceLowRam) "Hardware: Low-RAM Device (<=1GB RAM)" else "Hardware: High-Performance Device (>1GB RAM)",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (lowSpecMode) "Current Status: Low-Spec Mode (Instant local fallback, 16-bit RGB_565, Zero-Lag)" else "Current Status: High-Performance Mode (Full quality ARGB_8888, Live TMDB sync)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (lowSpecMode) Color(0xFF66BB6A) else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Device Specs & DRM Inspection Badges
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val drmColor = when (hwProfile.widevineLevel) {
+                        com.example.metflix.data.drm.WidevineLevel.L1 -> Color(0xFF66BB6A)
+                        com.example.metflix.data.drm.WidevineLevel.L3 -> Color(0xFFFFA726)
+                        com.example.metflix.data.drm.WidevineLevel.UNSUPPORTED -> Color(0xFFEF5350)
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(drmColor.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Widevine: ${hwProfile.widevineLevel.name}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = drmColor
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (hwProfile.supportsHevc) "HEVC (H.265): Supported" else "HEVC: Software",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (hwProfile.supportsHevc) Color.White else Color.Gray
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (hwProfile.supportsEac3 || hwProfile.supportsAc3) "Dolby Audio: Yes" else "Dolby Audio: No",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (hwProfile.supportsEac3 || hwProfile.supportsAc3) Color(0xFF64B5F6) else Color.Gray
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Max Safe Live: ${hwProfile.maxDecodableHeight}p",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.LightGray
+                        )
+                    }
                 }
             }
         }

@@ -20,6 +20,8 @@ import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieCategoryDetails
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.entities.MovieList
+import com.example.metflix.data.entities.TvEpisode
+import com.example.metflix.data.entities.TvSeason
 import com.example.metflix.data.entities.MovieReviewsAndRatings
 import com.example.metflix.data.entities.ThumbnailType
 import com.example.metflix.data.util.StringConstants
@@ -49,6 +51,7 @@ class MovieRepositoryImpl @Inject constructor(
 
     private val movieDetailsCache = ConcurrentHashMap<String, MovieDetails>()
     private val categoryDetailsCache = ConcurrentHashMap<String, MovieCategoryDetails>()
+    private val tvEpisodesCache = ConcurrentHashMap<String, List<TvEpisode>>()
 
     override fun getFeaturedMovies() = flow {
         val list = movieDataSource.getFeaturedMovieList()
@@ -103,11 +106,62 @@ class MovieRepositoryImpl @Inject constructor(
     override suspend fun getMovieDetails(movieId: String): MovieDetails {
         movieDetailsCache[movieId]?.let { return it }
 
-        // Try live TMDB first
+        // 1. Try live TMDB movie details first
         val tmdbDetails = tmdbApiClient.getMovieDetails(movieId).getOrNull()
         if (tmdbDetails != null) {
             movieDetailsCache[movieId] = tmdbDetails
             return tmdbDetails
+        }
+
+        // 2. If movie details failed or returned 404, try live TMDB TV show details!
+        val tmdbTvDetails = tmdbApiClient.getTvShowDetails(movieId).getOrNull()
+        if (tmdbTvDetails != null) {
+            // Pre-fetch Season 1 episodes so they are available immediately
+            val season1Episodes = tmdbApiClient.getTvSeasonDetails(movieId, 1).getOrNull().orEmpty()
+            val enrichedSeasons = tmdbTvDetails.seasons.map { s ->
+                if (s.seasonNumber == 1 && season1Episodes.isNotEmpty()) {
+                    s.copy(episodes = season1Episodes)
+                } else {
+                    s
+                }
+            }
+            val finalDetails = tmdbTvDetails.copy(seasons = enrichedSeasons)
+            movieDetailsCache[movieId] = finalDetails
+            return finalDetails
+        }
+
+        // 3. Check TV data source before fallback
+        val tvList = tvDataSource.getTvShowList()
+        val matchedTv = tvList.find { it.id == movieId }
+        if (matchedTv != null) {
+            val tvDetails = MovieDetails(
+                id = matchedTv.id,
+                videoUri = matchedTv.videoUri,
+                subtitleUri = matchedTv.subtitleUri,
+                posterUri = matchedTv.posterUri,
+                name = matchedTv.name,
+                description = matchedTv.description,
+                pgRating = "TV-MA",
+                releaseDate = "2024",
+                categories = listOf("Drama", "TV Series"),
+                duration = "1 Season",
+                director = "MetFlix TV",
+                screenplay = "Original Series",
+                music = "Original Score",
+                castAndCrew = emptyList(),
+                status = "Returning Series",
+                originalLanguage = "ENGLISH",
+                budget = "TV Series",
+                revenue = "Series",
+                similarMovies = emptyList(),
+                reviewsAndRatings = emptyList(),
+                isTvShow = true,
+                seasons = listOf(TvSeason(id = "${matchedTv.id}_s1", name = "Season 1", seasonNumber = 1, episodeCount = 10)),
+                totalSeasons = 1,
+                totalEpisodes = 10
+            )
+            movieDetailsCache[movieId] = tvDetails
+            return tvDetails
         }
 
         // Fallback if TMDB details unavailable
@@ -233,10 +287,22 @@ class MovieRepositoryImpl @Inject constructor(
         emit(list)
     }.flowOn(Dispatchers.IO)
 
+    override suspend fun getTvSeasonEpisodes(seriesId: String, seasonNumber: Int): List<TvEpisode> {
+        val cacheKey = "${seriesId}_s${seasonNumber}"
+        tvEpisodesCache[cacheKey]?.let { return it }
+
+        val episodes = tmdbApiClient.getTvSeasonDetails(seriesId, seasonNumber).getOrNull().orEmpty()
+        if (episodes.isNotEmpty()) {
+            tvEpisodesCache[cacheKey] = episodes
+        }
+        return episodes
+    }
+
     override suspend fun refreshAllCatalogs(): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
         diskCache.clearAll()
         categoryDetailsCache.clear()
         movieDetailsCache.clear()
+        tvEpisodesCache.clear()
         movieDataSource.clearAllReaders()
         true
     }

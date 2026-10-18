@@ -24,13 +24,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+import com.example.metflix.data.drm.DeviceCapabilityManager
 import com.example.metflix.data.epg.EpgEngine
 
 @Singleton
 class LiveTvRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val performancePreferences: PerformancePreferences,
-    private val epgEngine: EpgEngine
+    private val epgEngine: EpgEngine,
+    private val deviceCapabilityManager: DeviceCapabilityManager
 ) : LiveTvRepository {
 
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -47,11 +49,20 @@ class LiveTvRepositoryImpl @Inject constructor(
     )
     private val rawChannelsFlow = MutableStateFlow<List<LiveChannel>>(emptyList())
 
-    // Combined channels stream taking favorite state into account
+    // Combined channels stream taking favorite state and hardware/DRM capability into account
     private val channelsFlow: Flow<List<LiveChannel>> = combine(rawChannelsFlow, favoriteIdsFlow) { channels, favIds ->
-        channels.map { ch ->
-            ch.copy(isFavorite = favIds.contains(ch.id))
-        }
+        channels
+            .filter { ch ->
+                // Filter out streams requiring DRM levels beyond hardware capabilities
+                deviceCapabilityManager.isStreamPlayable(
+                    drmRequired = ch.requiredSecurityLevel,
+                    videoCodec = ch.videoCodec,
+                    audioCodec = ch.audioCodec
+                )
+            }
+            .map { ch ->
+                ch.copy(isFavorite = favIds.contains(ch.id))
+            }
     }
 
     init {

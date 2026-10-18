@@ -66,6 +66,12 @@ object M3uParser {
                         val id = generateId(currentTvgId, name, streamUrl)
                         val cleanName = cleanChannelName(name)
 
+                        // Detect DRM from URL or tags
+                        val isDrm = streamUrl.contains(".mpd", ignoreCase = true) &&
+                                (streamUrl.contains("widevine", ignoreCase = true) || streamUrl.contains("license", ignoreCase = true))
+                        val requiredSecurity = if (isDrm) "L3" else "NONE"
+                        val isFta = !isDrm
+
                         channels.add(
                             LiveChannel(
                                 id = id,
@@ -79,7 +85,10 @@ object M3uParser {
                                 currentProgram = "Live Broadcast",
                                 programDescription = "Streaming live on $cleanName ($category)",
                                 isFavorite = false,
-                                epgId = currentTvgId
+                                epgId = currentTvgId,
+                                drmScheme = if (isDrm) "widevine" else null,
+                                requiredSecurityLevel = requiredSecurity,
+                                isFta = isFta
                             )
                         )
                     }

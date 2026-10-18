@@ -101,11 +101,13 @@ import com.example.metflix.presentation.common.Loading
 import com.example.metflix.presentation.screens.livetv.components.LiveBadge
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvAspectRatio
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvChannelDrawer
+import com.example.metflix.presentation.screens.livetv.player.components.LiveTvNumberInputOverlay
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvSettingsOverlay
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvStatsOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerBufferingSpinner
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberPlayer
 import com.example.metflix.presentation.theme.MetFlixCardShape
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -136,6 +138,7 @@ fun LiveTvPlayerScreen(
                 onNextChannel = viewModel::nextChannel,
                 onPreviousChannel = viewModel::previousChannel,
                 onSelectChannel = viewModel::selectChannel,
+                onSelectChannelByNumber = viewModel::selectChannelByNumber,
                 onToggleFavorite = viewModel::toggleFavorite,
                 onBackPressed = onBackPressed,
                 modifier = modifier
@@ -151,6 +154,7 @@ private fun LiveTvPlayerContent(
     onNextChannel: () -> Unit,
     onPreviousChannel: () -> Unit,
     onSelectChannel: (LiveChannel) -> Unit,
+    onSelectChannelByNumber: (Int) -> Boolean,
     onToggleFavorite: () -> Unit,
     onBackPressed: () -> Unit,
     modifier: Modifier = Modifier
@@ -207,6 +211,58 @@ private fun LiveTvPlayerContent(
     val rootFocusRequester = remember { FocusRequester() }
     val firstActionButtonFocusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
+
+    // Number Dialing (Set-Top-Box Remote Keypad) States
+    var dialedDigits by remember { mutableStateOf("") }
+    var isInvalidChannelNumber by remember { mutableStateOf(false) }
+    var digitTimeoutJob by remember { mutableStateOf<Job?>(null) }
+    var invalidDismissJob by remember { mutableStateOf<Job?>(null) }
+
+    fun commitChannelNumber() {
+        digitTimeoutJob?.cancel()
+        digitTimeoutJob = null
+        if (dialedDigits.isBlank()) return
+
+        val targetNum = dialedDigits.toIntOrNull()
+        if (targetNum != null) {
+            val matchedChannel = state.channels.firstOrNull { it.channelNumber == targetNum }
+            if (matchedChannel != null) {
+                dialedDigits = ""
+                isInvalidChannelNumber = false
+                invalidDismissJob?.cancel()
+                onSelectChannel(matchedChannel)
+            } else {
+                isInvalidChannelNumber = true
+                invalidDismissJob?.cancel()
+                invalidDismissJob = scope.launch {
+                    delay(1500)
+                    isInvalidChannelNumber = false
+                    dialedDigits = ""
+                }
+            }
+        } else {
+            dialedDigits = ""
+        }
+    }
+
+    fun onDigitEntered(digitChar: Char) {
+        if (isDrawerOpen || isSettingsOpen) return
+        invalidDismissJob?.cancel()
+        isInvalidChannelNumber = false
+
+        if (dialedDigits.length >= 4) {
+            dialedDigits = digitChar.toString()
+        } else {
+            dialedDigits += digitChar
+        }
+
+        lastUserInteraction = System.currentTimeMillis()
+        digitTimeoutJob?.cancel()
+        digitTimeoutJob = scope.launch {
+            delay(2000) // Standard 2-second STB tuning delay
+            commitChannelNumber()
+        }
+    }
 
     // Auto-hide OSD banner after 7 seconds of inactivity (5 to 10 seconds requirement)
     LaunchedEffect(lastUserInteraction, isOsdVisible, isDrawerOpen, isSettingsOpen) {
@@ -472,7 +528,13 @@ private fun LiveTvPlayerContent(
     }
 
     BackHandler {
-        if (isSettingsOpen) {
+        if (dialedDigits.isNotEmpty() || isInvalidChannelNumber) {
+            digitTimeoutJob?.cancel()
+            invalidDismissJob?.cancel()
+            dialedDigits = ""
+            isInvalidChannelNumber = false
+            runCatching { rootFocusRequester.requestFocus() }
+        } else if (isSettingsOpen) {
             isSettingsOpen = false
             runCatching { rootFocusRequester.requestFocus() }
         } else if (isDrawerOpen) {
@@ -500,8 +562,23 @@ private fun LiveTvPlayerContent(
                         lastUserInteraction = System.currentTimeMillis()
                     }
                     when (event.key) {
+                        // Remote Numeric Keypad (STB Direct Channel Tuning)
+                        Key.Zero, Key.NumPad0 -> { onDigitEntered('0'); true }
+                        Key.One, Key.NumPad1 -> { onDigitEntered('1'); true }
+                        Key.Two, Key.NumPad2 -> { onDigitEntered('2'); true }
+                        Key.Three, Key.NumPad3 -> { onDigitEntered('3'); true }
+                        Key.Four, Key.NumPad4 -> { onDigitEntered('4'); true }
+                        Key.Five, Key.NumPad5 -> { onDigitEntered('5'); true }
+                        Key.Six, Key.NumPad6 -> { onDigitEntered('6'); true }
+                        Key.Seven, Key.NumPad7 -> { onDigitEntered('7'); true }
+                        Key.Eight, Key.NumPad8 -> { onDigitEntered('8'); true }
+                        Key.Nine, Key.NumPad9 -> { onDigitEntered('9'); true }
+
                         Key.DirectionUp, Key.ChannelUp, Key.PageUp -> {
-                            if (!isDrawerOpen && !isSettingsOpen) {
+                            if (dialedDigits.isNotEmpty()) {
+                                commitChannelNumber()
+                                true
+                            } else if (!isDrawerOpen && !isSettingsOpen) {
                                 isOsdVisible = true
                                 onNextChannel()
                                 true
@@ -509,7 +586,10 @@ private fun LiveTvPlayerContent(
                         }
 
                         Key.DirectionDown, Key.ChannelDown, Key.PageDown -> {
-                            if (!isDrawerOpen && !isSettingsOpen) {
+                            if (dialedDigits.isNotEmpty()) {
+                                commitChannelNumber()
+                                true
+                            } else if (!isDrawerOpen && !isSettingsOpen) {
                                 isOsdVisible = true
                                 onPreviousChannel()
                                 true
@@ -525,7 +605,14 @@ private fun LiveTvPlayerContent(
                         }
 
                         Key.Back, Key.Escape -> {
-                            if (isSettingsOpen) {
+                            if (dialedDigits.isNotEmpty() || isInvalidChannelNumber) {
+                                digitTimeoutJob?.cancel()
+                                invalidDismissJob?.cancel()
+                                dialedDigits = ""
+                                isInvalidChannelNumber = false
+                                runCatching { rootFocusRequester.requestFocus() }
+                                true
+                            } else if (isSettingsOpen) {
                                 isSettingsOpen = false
                                 runCatching { rootFocusRequester.requestFocus() }
                                 true
@@ -545,7 +632,10 @@ private fun LiveTvPlayerContent(
                         }
 
                         Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                            if (!isOsdVisible && !isDrawerOpen && !isSettingsOpen) {
+                            if (dialedDigits.isNotEmpty()) {
+                                commitChannelNumber()
+                                true
+                            } else if (!isOsdVisible && !isDrawerOpen && !isSettingsOpen) {
                                 // When OSD is hidden, pressing OK opens the channel list drawer
                                 isDrawerOpen = true
                                 isOsdVisible = false
@@ -583,19 +673,30 @@ private fun LiveTvPlayerContent(
                     }
                 } else if (event.type == KeyEventType.KeyUp) {
                     when (event.key) {
+                        Key.Zero, Key.NumPad0,
+                        Key.One, Key.NumPad1,
+                        Key.Two, Key.NumPad2,
+                        Key.Three, Key.NumPad3,
+                        Key.Four, Key.NumPad4,
+                        Key.Five, Key.NumPad5,
+                        Key.Six, Key.NumPad6,
+                        Key.Seven, Key.NumPad7,
+                        Key.Eight, Key.NumPad8,
+                        Key.Nine, Key.NumPad9 -> true
+
                         Key.DirectionUp, Key.ChannelUp, Key.PageUp,
                         Key.DirectionDown, Key.ChannelDown, Key.PageDown -> {
-                            !isDrawerOpen && !isSettingsOpen
+                            dialedDigits.isNotEmpty() || (!isDrawerOpen && !isSettingsOpen)
                         }
 
                         Key.Menu, Key.Settings -> !isDrawerOpen
 
                         Key.Back, Key.Escape -> {
-                            isSettingsOpen || isDrawerOpen || isOsdVisible
+                            dialedDigits.isNotEmpty() || isInvalidChannelNumber || isSettingsOpen || isDrawerOpen || isOsdVisible
                         }
 
                         Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                            !isOsdVisible && !isDrawerOpen && !isSettingsOpen
+                            dialedDigits.isNotEmpty() || (!isOsdVisible && !isDrawerOpen && !isSettingsOpen)
                         }
 
                         Key.DirectionLeft, Key.DirectionRight -> {
@@ -635,6 +736,15 @@ private fun LiveTvPlayerContent(
                 modifier = Modifier.align(Alignment.TopEnd)
             )
         }
+
+        // Set-Top-Box Remote Numeric Channel Dialer Overlay
+        LiveTvNumberInputOverlay(
+            digits = dialedDigits,
+            isInvalid = isInvalidChannelNumber,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 40.dp, end = 48.dp)
+        )
 
         // Video Buffering Spinner (during regular buffering)
         if (isBuffering && !isReconnecting && !isManualError) {

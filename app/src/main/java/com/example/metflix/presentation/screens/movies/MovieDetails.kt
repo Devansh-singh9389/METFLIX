@@ -117,6 +117,7 @@ fun MovieDetails(
                         }
                     },
                     movieTitle = movieDetails.name,
+                    isTvShow = movieDetails.isTvShow,
                     goToMoviePlayer = goToMoviePlayer
                 )
             }
@@ -127,6 +128,7 @@ fun MovieDetails(
 @Composable
 private fun PlaybackActionButtonsRow(
     movieTitle: String,
+    isTvShow: Boolean = false,
     modifier: Modifier = Modifier,
     goToMoviePlayer: () -> Unit
 ) {
@@ -151,7 +153,7 @@ private fun PlaybackActionButtonsRow(
             )
             Spacer(Modifier.size(8.dp))
             Text(
-                text = "Play Movie",
+                text = if (isTvShow) "Play S1 E1" else "Play Movie",
                 style = MaterialTheme.typography.titleSmall
             )
         }

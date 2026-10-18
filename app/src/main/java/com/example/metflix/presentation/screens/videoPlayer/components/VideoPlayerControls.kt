@@ -49,6 +49,10 @@ fun VideoPlayerControls(
     settingsButtonFocusRequester: FocusRequester = remember { FocusRequester() },
     isSubtitlesEnabled: Boolean = false,
     isSettingsOpen: Boolean = false,
+    isTvShow: Boolean = false,
+    seasonNumber: Int = 1,
+    episodeNumber: Int = 1,
+    episodeTitle: String = "",
     onShowSettings: () -> Unit = {},
     onShowPlaylist: () -> Unit = {},
     onToggleSubtitles: () -> Unit = {},
@@ -76,8 +80,20 @@ fun VideoPlayerControls(
     val actionButtonsFocusRequester = remember { FocusRequester() }
 
     // Dynamic title and metadata based on playlist index
-    val (displayTitle, displaySecondary, displayTertiary) = remember(currentMediaIndex, movieDetails) {
-        if (currentMediaIndex == 0 || movieDetails.similarMovies.isEmpty()) {
+    val (displayTitle, displaySecondary, displayTertiary) = remember(
+        currentMediaIndex,
+        movieDetails,
+        isTvShow,
+        seasonNumber,
+        episodeNumber,
+        episodeTitle
+    ) {
+        if (isTvShow) {
+            val epPrefix = "S${seasonNumber} E${episodeNumber}"
+            val subText = if (episodeTitle.isNotBlank()) "$epPrefix • $episodeTitle" else epPrefix
+            val tertText = movieDetails.categories.firstOrNull() ?: movieDetails.releaseDate
+            Triple(movieDetails.name, subText, tertText)
+        } else if (currentMediaIndex == 0 || movieDetails.similarMovies.isEmpty()) {
             Triple(movieDetails.name, movieDetails.releaseDate, movieDetails.director)
         } else {
             val similar = movieDetails.similarMovies.getOrNull(currentMediaIndex - 1)

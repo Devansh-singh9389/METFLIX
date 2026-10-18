@@ -77,8 +77,9 @@ fun App(
             ) { backStackEntry ->
                 val movieId = backStackEntry.arguments?.getString(MovieDetailsScreen.MovieIdBundleKey) ?: ""
                 MovieDetailsScreen(
-                    goToMoviePlayer = {
-                        navController.navigate(Screens.VideoPlayer.withArgs(movieId))
+                    goToMoviePlayer = { season, episode ->
+                        val targetArg = if (season > 0 && episode > 0) "$movieId:$season:$episode" else movieId
+                        navController.navigate(Screens.VideoPlayer.withArgs(targetArg))
                     },
                     refreshScreenWithNewMovie = { movie ->
                         navController.navigate(

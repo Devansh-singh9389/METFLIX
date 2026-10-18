@@ -21,6 +21,7 @@ import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieCategory
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.entities.ThumbnailType
+import com.example.metflix.data.entities.TvEpisode
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -189,6 +190,22 @@ class TmdbApiClient @Inject constructor(
         return fetchJson("${TmdbConfig.BASE_URL}/movie/$movieId?append_to_response=credits,similar,watch/providers") { raw ->
             val response = json.decodeFromString<TmdbMovieDetailsResponse>(raw)
             response.toMovieDetails()
+        }
+    }
+
+    suspend fun getTvShowDetails(seriesId: String): Result<MovieDetails> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        return fetchJson("${TmdbConfig.BASE_URL}/tv/$seriesId?append_to_response=credits,similar,watch/providers") { raw ->
+            val response = json.decodeFromString<TmdbTvDetailsResponse>(raw)
+            response.toMovieDetails()
+        }
+    }
+
+    suspend fun getTvSeasonDetails(seriesId: String, seasonNumber: Int): Result<List<TvEpisode>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        return fetchJson("${TmdbConfig.BASE_URL}/tv/$seriesId/season/$seasonNumber") { raw ->
+            val response = json.decodeFromString<TmdbSeasonDetailsResponse>(raw)
+            response.toTvEpisodes()
         }
     }
 

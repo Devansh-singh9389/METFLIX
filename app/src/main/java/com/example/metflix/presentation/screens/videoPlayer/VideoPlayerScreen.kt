@@ -149,6 +149,10 @@ fun VideoPlayerScreen(
                 currentServer = s.currentServer,
                 availableServers = s.availableServers,
                 isResolving = s.isResolving,
+                isTvShow = s.isTvShow,
+                seasonNumber = s.seasonNumber,
+                episodeNumber = s.episodeNumber,
+                episodeTitle = s.episodeTitle,
                 onSelectServer = { videoPlayerScreenViewModel.selectServer(it) },
                 onRetryNextServer = { videoPlayerScreenViewModel.retryNextServer() },
                 onCapturedDirectStream = { url, headers ->
@@ -168,6 +172,10 @@ fun VideoPlayerScreenContent(
     currentServer: StreamServer,
     availableServers: List<StreamServer>,
     isResolving: Boolean,
+    isTvShow: Boolean = false,
+    seasonNumber: Int = 1,
+    episodeNumber: Int = 1,
+    episodeTitle: String = "",
     onSelectServer: (StreamServer) -> Unit,
     onRetryNextServer: () -> Unit,
     onCapturedDirectStream: (String, Map<String, String>) -> Unit = { _, _ -> },
@@ -565,6 +573,10 @@ fun VideoPlayerScreenContent(
                 VideoPlayerControls(
                     player = exoPlayer,
                     movieDetails = movieDetails,
+                    isTvShow = isTvShow,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
                     focusRequester = focusRequester,
                     settingsButtonFocusRequester = settingsButtonFocusRequester,
                     isSubtitlesEnabled = isSubtitlesEnabled,
@@ -685,8 +697,13 @@ fun VideoPlayerScreenContent(
 
         // Real-Time Stream Diagnostics (Stats for Nerds)
         if (isStatsVisible && !isSettingsOpen && !isPlaylistOpen) {
+            val statsTitle = if (isTvShow) {
+                "${movieDetails.name} • S${seasonNumber}E${episodeNumber}" + if (episodeTitle.isNotBlank()) ": $episodeTitle" else ""
+            } else {
+                movieDetails.name
+            }
             VideoPlayerStatsOverlay(
-                movieTitle = movieDetails.name,
+                movieTitle = statsTitle,
                 videoResolution = sourceResolutionLabel,
                 videoBitrate = videoBitrate,
                 audioInfo = audioInfo,

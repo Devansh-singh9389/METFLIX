@@ -22,30 +22,77 @@ import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 
 @HiltViewModel
 class MovieDetailsScreenViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    repository: MovieRepository,
+    private val repository: MovieRepository,
 ) : ViewModel() {
-    val uiState = savedStateHandle
-        .getStateFlow<String?>(MovieDetailsScreen.MovieIdBundleKey, null)
-        .map { id ->
-            if (id == null) {
-                MovieDetailsScreenUiState.Error
-            } else {
+    private val movieId = savedStateHandle.get<String>(MovieDetailsScreen.MovieIdBundleKey)
+
+    private val _uiState = MutableStateFlow<MovieDetailsScreenUiState>(MovieDetailsScreenUiState.Loading)
+    val uiState: StateFlow<MovieDetailsScreenUiState> = _uiState.asStateFlow()
+
+    private val _selectedSeason = MutableStateFlow(1)
+    val selectedSeason: StateFlow<Int> = _selectedSeason.asStateFlow()
+
+    init {
+        loadDetails()
+    }
+
+    private fun loadDetails() {
+        val id = movieId
+        if (id == null) {
+            _uiState.value = MovieDetailsScreenUiState.Error
+            return
+        }
+        viewModelScope.launch {
+            try {
                 val details = repository.getMovieDetails(movieId = id)
-                MovieDetailsScreenUiState.Done(movieDetails = details)
+                val initialSeason = details.seasons.firstOrNull()?.seasonNumber ?: 1
+                _selectedSeason.value = initialSeason
+                _uiState.value = MovieDetailsScreenUiState.Done(movieDetails = details)
+            } catch (e: Exception) {
+                _uiState.value = MovieDetailsScreenUiState.Error
             }
-        }.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = MovieDetailsScreenUiState.Loading
-        )
+        }
+    }
+
+    fun onSeasonSelected(seasonNumber: Int) {
+        _selectedSeason.value = seasonNumber
+        val currentState = _uiState.value
+        if (currentState !is MovieDetailsScreenUiState.Done) return
+        val currentDetails = currentState.movieDetails
+        if (!currentDetails.isTvShow) return
+
+        val targetSeason = currentDetails.seasons.firstOrNull { it.seasonNumber == seasonNumber }
+        if (targetSeason != null && targetSeason.episodes.isNotEmpty()) {
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val episodes = repository.getTvSeasonEpisodes(seriesId = currentDetails.id, seasonNumber = seasonNumber)
+                val updatedSeasons = currentDetails.seasons.map { s ->
+                    if (s.seasonNumber == seasonNumber) {
+                        s.copy(episodes = episodes)
+                    } else {
+                        s
+                    }
+                }
+                _uiState.value = MovieDetailsScreenUiState.Done(
+                    movieDetails = currentDetails.copy(seasons = updatedSeasons)
+                )
+            } catch (e: Exception) {
+                // Keep current state on error
+            }
+        }
+    }
 }
 
 sealed class MovieDetailsScreenUiState {

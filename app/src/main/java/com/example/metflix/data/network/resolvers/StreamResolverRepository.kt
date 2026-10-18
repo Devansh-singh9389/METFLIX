@@ -124,22 +124,26 @@ class StreamResolverRepository @Inject constructor(
         tmdbId: String,
         movieTitle: String,
         releaseYear: String = "",
-        server: StreamServer? = null
+        server: StreamServer? = null,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
     ): ResolvedStream = withContext(Dispatchers.IO) {
         val targetServer = server ?: availableServers.first()
-        Log.d(TAG, "Resolving stream for '$movieTitle' (TMDB: $tmdbId) on ${targetServer.name}")
+        val mediaType = if (isTvShow) "TV S${season}E${episode}" else "Movie"
+        Log.d(TAG, "Resolving stream for '$movieTitle' ($mediaType, TMDB: $tmdbId) on ${targetServer.name}")
 
         when (targetServer.id) {
-            "dualaudio" -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer)
-            "vidlink" -> resolveVidLink(tmdbId, targetServer)
+            "dualaudio" -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode)
+            "vidlink" -> resolveVidLink(tmdbId, targetServer, isTvShow, season, episode)
             "streamflix" -> resolveStreamFlix(tmdbId, movieTitle, targetServer)
-            "stremio" -> resolveStremioMultiSource(tmdbId, movieTitle, releaseYear, targetServer)
-            "superembed" -> resolveSuperEmbed(tmdbId, targetServer)
+            "stremio" -> resolveStremioMultiSource(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode)
+            "superembed" -> resolveSuperEmbed(tmdbId, targetServer, isTvShow, season, episode)
             "iptv" -> resolveIptvMatch(movieTitle, releaseYear, targetServer)
-            "autoembed" -> resolveAutoEmbed(tmdbId, targetServer)
-            "twoembed" -> resolve2Embed(tmdbId, targetServer)
-            "vidsrc" -> resolveVidSrc(tmdbId, targetServer)
-            else -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer)
+            "autoembed" -> resolveAutoEmbed(tmdbId, targetServer, isTvShow, season, episode)
+            "twoembed" -> resolve2Embed(tmdbId, targetServer, isTvShow, season, episode)
+            "vidsrc" -> resolveVidSrc(tmdbId, targetServer, isTvShow, season, episode)
+            else -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode)
         }
     }
 
@@ -153,7 +157,10 @@ class StreamResolverRepository @Inject constructor(
         tmdbId: String,
         movieTitle: String,
         releaseYear: String = "",
-        originalLanguage: String = ""
+        originalLanguage: String = "",
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
     ): Flow<ServerRaceResult> = channelFlow {
         val isRegional = originalLanguage.isNotBlank() && originalLanguage.lowercase() !in listOf("en", "eng")
         Log.d(TAG, "Starting parallel server race for '$movieTitle' (TMDB: $tmdbId, Lang: $originalLanguage, isRegional: $isRegional)")
@@ -196,7 +203,7 @@ class StreamResolverRepository @Inject constructor(
                             latencyMs = System.currentTimeMillis() - startTime
                         }
                     } else {
-                        val stream = resolveMovieStream(tmdbId, movieTitle, releaseYear, server)
+                        val stream = resolveMovieStream(tmdbId, movieTitle, releaseYear, server, isTvShow, season, episode)
                         val probeResult = probeServer(stream)
                         isAvailable = probeResult.first
                         latencyMs = probeResult.second ?: (System.currentTimeMillis() - startTime)
@@ -292,7 +299,7 @@ class StreamResolverRepository @Inject constructor(
         val finalBestStream = finalTopServer?.let { s ->
             val pair = resolvedResults[s.id]
             pair?.second?.copy(server = pair.first)
-        } ?: resolveVidLink(tmdbId, servers.first())
+        } ?: resolveVidLink(tmdbId, servers.first(), isTvShow, season, episode)
 
         Log.d(TAG, "Server race finished. Top ranked server: ${finalRanked.firstOrNull()?.name}")
         send(
@@ -308,35 +315,49 @@ class StreamResolverRepository @Inject constructor(
         tmdbId: String,
         movieTitle: String,
         releaseYear: String,
-        server: StreamServer
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
     ): ResolvedStream = withContext(Dispatchers.IO) {
-        val dualStream = dualAudioScraper.resolveDualAudioStream(tmdbId, movieTitle, releaseYear, server)
+        val dualStream = dualAudioScraper.resolveDualAudioStream(tmdbId, movieTitle, releaseYear, server, isTvShow, season, episode)
         if (dualStream != null) {
             Log.d(TAG, "DualAudioScraper successfully resolved dual-audio stream: ${dualStream.streamUrl}")
             return@withContext dualStream
         }
         Log.d(TAG, "DualAudioScraper found no direct dual-audio match, falling back to VidLink")
-        resolveVidLink(tmdbId, server.copy(audioLanguages = listOf("English", "Original")))
+        resolveVidLink(tmdbId, server.copy(audioLanguages = listOf("English", "Original")), isTvShow, season, episode)
     }
 
-    private suspend fun resolveVidLink(tmdbId: String, server: StreamServer): ResolvedStream {
-        val embedUrl = "https://vidlink.pro/movie/$tmdbId"
+    private suspend fun resolveVidLink(
+        tmdbId: String,
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
+    ): ResolvedStream {
+        val embedUrl = if (isTvShow) {
+            "https://vidlink.pro/tv/$tmdbId/$season/$episode"
+        } else {
+            "https://vidlink.pro/movie/$tmdbId"
+        }
         val headers = mapOf(
             "User-Agent" to BROWSER_USER_AGENT,
             "Referer" to "https://vidlink.pro/"
         )
 
         // 1. Native standalone decryption (No laptop, backend server, or tunnel needed!)
-        val nativeStream = fetchNativeVidlinkStream(tmdbId, server)
+        val nativeStream = fetchNativeVidlinkStream(tmdbId, server, isTvShow, season, episode)
         if (nativeStream != null) {
             Log.d(TAG, "Successfully resolved direct stream natively on-device: ${nativeStream.streamUrl}")
             return nativeStream
         }
 
         // 2. Fallback to external decryptor endpoints (if running)
+        val path = if (isTvShow) "tv/$tmdbId/$season/$episode" else "movie/$tmdbId"
         val decryptorEndpoints = listOf(
-            "$LOCAL_DECRYPTOR_BASE/movie/$tmdbId",
-            "$TUNNEL_DECRYPTOR_BASE/movie/$tmdbId"
+            "$LOCAL_DECRYPTOR_BASE/$path",
+            "$TUNNEL_DECRYPTOR_BASE/$path"
         )
 
         for (endpoint in decryptorEndpoints) {
@@ -353,7 +374,7 @@ class StreamResolverRepository @Inject constructor(
             streamUrl = embedUrl,
             isHls = false,
             headers = headers,
-            backupUrls = listOf("https://vidlink.pro/movie/$tmdbId?autoplay=true")
+            backupUrls = listOf(if (isTvShow) "https://vidlink.pro/tv/$tmdbId/$season/$episode?autoplay=true" else "https://vidlink.pro/movie/$tmdbId?autoplay=true")
         )
     }
 
@@ -394,12 +415,20 @@ class StreamResolverRepository @Inject constructor(
 
     private fun fetchNativeVidlinkStream(
         tmdbId: String,
-        server: StreamServer
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
     ): ResolvedStream? {
-        val token = generateVidlinkToken(tmdbId)
+        val mediaId = if (isTvShow) "$tmdbId/$season/$episode" else tmdbId
+        val token = generateVidlinkToken(mediaId)
         if (token.isBlank()) return null
 
-        val apiUrl = "https://vidlink.pro/api/b/movie/$token?multiLang=1"
+        val apiUrl = if (isTvShow) {
+            "https://vidlink.pro/api/b/tv/$token?multiLang=1"
+        } else {
+            "https://vidlink.pro/api/b/movie/$token?multiLang=1"
+        }
         return try {
             val request = Request.Builder()
                 .url(apiUrl)
@@ -519,24 +548,50 @@ class StreamResolverRepository @Inject constructor(
         }
     }
 
-    private suspend fun resolveSuperEmbed(tmdbId: String, server: StreamServer): ResolvedStream {
-        val embedUrl = "https://multiembed.mov/?video_id=$tmdbId&tmdb=1"
+    private suspend fun resolveSuperEmbed(
+        tmdbId: String,
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
+    ): ResolvedStream {
+        val embedUrl = if (isTvShow) {
+            "https://multiembed.mov/?video_id=$tmdbId&tmdb=1&s=$season&e=$episode"
+        } else {
+            "https://multiembed.mov/?video_id=$tmdbId&tmdb=1"
+        }
         val headers = mapOf(
             "User-Agent" to BROWSER_USER_AGENT,
             "Referer" to "https://multiembed.mov/"
         )
+
+        val backup = if (isTvShow) {
+            "https://multiembed.mov/directstream.php?video_id=$tmdbId&tmdb=1&s=$season&e=$episode"
+        } else {
+            "https://multiembed.mov/directstream.php?video_id=$tmdbId&tmdb=1"
+        }
 
         return ResolvedStream(
             server = server,
             streamUrl = embedUrl,
             isHls = false,
             headers = headers,
-            backupUrls = listOf("https://multiembed.mov/directstream.php?video_id=$tmdbId&tmdb=1")
+            backupUrls = listOf(backup)
         )
     }
 
-    private suspend fun resolveAutoEmbed(tmdbId: String, server: StreamServer): ResolvedStream {
-        val embedUrl = "https://player.autoembed.cc/embed/movie/$tmdbId"
+    private suspend fun resolveAutoEmbed(
+        tmdbId: String,
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
+    ): ResolvedStream {
+        val embedUrl = if (isTvShow) {
+            "https://player.autoembed.cc/embed/tv/$tmdbId/$season/$episode"
+        } else {
+            "https://player.autoembed.cc/embed/movie/$tmdbId"
+        }
         val headers = mapOf(
             "User-Agent" to BROWSER_USER_AGENT,
             "Referer" to "https://player.autoembed.cc/"
@@ -551,25 +606,55 @@ class StreamResolverRepository @Inject constructor(
         )
     }
 
-    private suspend fun resolve2Embed(tmdbId: String, server: StreamServer): ResolvedStream {
-        val embedUrl = "https://www.2embed.cc/embed/$tmdbId"
+    private suspend fun resolve2Embed(
+        tmdbId: String,
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
+    ): ResolvedStream {
+        val embedUrl = if (isTvShow) {
+            "https://www.2embed.cc/embedtv/$tmdbId&s=$season&e=$episode"
+        } else {
+            "https://www.2embed.cc/embed/$tmdbId"
+        }
         val headers = mapOf(
             "User-Agent" to BROWSER_USER_AGENT,
             "Referer" to "https://www.2embed.cc/"
         )
+
+        val backup = if (isTvShow) {
+            "https://www.2embed.to/embed/imdb/tv?id=$tmdbId&s=$season&e=$episode"
+        } else {
+            "https://www.2embed.to/embed/imdb/movie?id=$tmdbId"
+        }
 
         return ResolvedStream(
             server = server,
             streamUrl = embedUrl,
             isHls = false,
             headers = headers,
-            backupUrls = listOf("https://www.2embed.to/embed/imdb/movie?id=$tmdbId")
+            backupUrls = listOf(backup)
         )
     }
 
-    private suspend fun resolveVidSrc(tmdbId: String, server: StreamServer): ResolvedStream {
-        val embedUrl = "https://vidsrc.xyz/embed/movie/$tmdbId"
-        val altEmbedUrl = "https://vidsrc.to/embed/movie/$tmdbId"
+    private suspend fun resolveVidSrc(
+        tmdbId: String,
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
+    ): ResolvedStream {
+        val embedUrl = if (isTvShow) {
+            "https://vidsrc.xyz/embed/tv/$tmdbId/$season-$episode"
+        } else {
+            "https://vidsrc.xyz/embed/movie/$tmdbId"
+        }
+        val altEmbedUrl = if (isTvShow) {
+            "https://vidsrc.to/embed/tv/$tmdbId/$season/$episode"
+        } else {
+            "https://vidsrc.to/embed/movie/$tmdbId"
+        }
         val headers = mapOf(
             "User-Agent" to BROWSER_USER_AGENT,
             "Referer" to "https://vidsrc.xyz/"
@@ -922,12 +1007,16 @@ class StreamResolverRepository @Inject constructor(
         tmdbId: String,
         movieTitle: String,
         releaseYear: String,
-        server: StreamServer
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1
     ): ResolvedStream = withContext(Dispatchers.IO) {
+        val path = if (isTvShow) "tv/$tmdbId/$season/$episode" else "movie/$tmdbId"
         val endpoints = listOf(
-            "http://10.227.10.225:8787/api/streams/movie/$tmdbId",
-            "http://127.0.0.1:8787/api/streams/movie/$tmdbId",
-            "https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/movie/$tmdbId"
+            "http://10.227.10.225:8787/api/streams/$path",
+            "http://127.0.0.1:8787/api/streams/$path",
+            "https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/$path"
         )
 
         for (endpoint in endpoints) {
@@ -996,6 +1085,6 @@ class StreamResolverRepository @Inject constructor(
             }
         }
 
-        resolveVidLink(tmdbId, server)
+        resolveVidLink(tmdbId, server, isTvShow, season, episode)
     }
 }
