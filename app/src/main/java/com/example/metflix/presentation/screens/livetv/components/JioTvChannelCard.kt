@@ -54,18 +54,25 @@ import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.presentation.theme.MetFlixCardShape
 import kotlinx.coroutines.delay
 
+private val CardBackgroundBrush = Brush.verticalGradient(
+    colors = listOf(
+        Color(0xFF222428),
+        Color(0xFF16181B)
+    )
+)
+
 @Composable
 fun JioTvChannelCard(
     channel: LiveChannel,
     onClick: () -> Unit,
     onFocus: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentTimeMs: Long = System.currentTimeMillis()
 ) {
-    val currentTimeMs = remember { System.currentTimeMillis() }
-    val currentProg = remember(channel) {
+    val currentProg = remember(channel, currentTimeMs) {
         channel.getCurrentEpgProgram(currentTimeMs)
     }
-    val nextProg = remember(channel) {
+    val nextProg = remember(channel, currentTimeMs) {
         channel.getNextEpgProgram(currentTimeMs)
     }
     val progress = currentProg.progress(currentTimeMs)
@@ -90,14 +97,7 @@ fun JioTvChannelCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF222428),
-                            Color(0xFF16181B)
-                        )
-                    )
-                )
+                .background(CardBackgroundBrush)
                 .padding(14.dp)
         ) {
             // Header Row: Channel Badge, LIVE indicator, Category and Favorite

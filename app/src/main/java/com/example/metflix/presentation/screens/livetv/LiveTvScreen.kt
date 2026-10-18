@@ -119,7 +119,7 @@ private fun LiveTvCatalog(
         { channel ->
             focusDebounceJob?.cancel()
             focusDebounceJob = coroutineScope.launch {
-                delay(30)
+                delay(150)
                 onChannelFocus(channel)
             }
         }
@@ -381,6 +381,7 @@ private fun LiveTvCatalog(
                             channel = channel,
                             onClick = { onChannelClick(channel) },
                             onFocus = { debouncedOnChannelFocus(channel) },
+                            currentTimeMs = state.currentTimeMs,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

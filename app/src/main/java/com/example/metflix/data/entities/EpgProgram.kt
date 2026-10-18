@@ -42,22 +42,13 @@ data class EpgProgram(
         get() = ((endEpochMs - startEpochMs) / 60000L).coerceAtLeast(1L)
 
     val formattedTimeSlot: String
-        get() {
-            val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
-            return "${sdf.format(Date(startEpochMs))} - ${sdf.format(Date(endEpochMs))}"
-        }
+        get() = EpgTimeFormatter.formatTimeSlot(startEpochMs, endEpochMs)
 
     val formattedStartTime: String
-        get() {
-            val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
-            return sdf.format(Date(startEpochMs))
-        }
+        get() = EpgTimeFormatter.formatTime(startEpochMs)
 
     val formattedEndTime: String
-        get() {
-            val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
-            return sdf.format(Date(endEpochMs))
-        }
+        get() = EpgTimeFormatter.formatTime(endEpochMs)
 
     fun getFormattedRemainingText(nowMs: Long = System.currentTimeMillis()): String {
         val rem = remainingMinutes(nowMs)

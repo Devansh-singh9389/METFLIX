@@ -15,17 +15,17 @@ object M3uParser {
     private val TVG_COUNTRY_REGEX = Regex("""tvg-country="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val TVG_LANGUAGE_REGEX = Regex("""tvg-language="([^"]*)"""", RegexOption.IGNORE_CASE)
 
-    fun parse(inputStream: InputStream, defaultCategory: String = "General", maxChannels: Int = 300): List<LiveChannel> {
+    fun parse(inputStream: InputStream, defaultCategory: String = "General", maxChannels: Int = 3500): List<LiveChannel> {
         val reader = BufferedReader(InputStreamReader(inputStream))
         return parseReader(reader, defaultCategory, maxChannels)
     }
 
-    fun parse(content: String, defaultCategory: String = "General", maxChannels: Int = 300): List<LiveChannel> {
+    fun parse(content: String, defaultCategory: String = "General", maxChannels: Int = 3500): List<LiveChannel> {
         val reader = BufferedReader(content.reader())
         return parseReader(reader, defaultCategory, maxChannels)
     }
 
-    private fun parseReader(reader: BufferedReader, defaultCategory: String, maxChannels: Int = 300): List<LiveChannel> {
+    private fun parseReader(reader: BufferedReader, defaultCategory: String, maxChannels: Int = 3500): List<LiveChannel> {
         val channels = mutableListOf<LiveChannel>()
         var currentTvgId: String? = null
         var currentTvgName: String? = null

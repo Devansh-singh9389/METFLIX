@@ -84,7 +84,7 @@ class PerformancePreferences @Inject constructor(
     val reduceAnimations: StateFlow<Boolean> = _reduceAnimations.asStateFlow()
 
     private val _maxChannels = MutableStateFlow(
-        prefs.getInt(KEY_MAX_CHANNELS, if (defaultLowSpecMode) 300 else 1500)
+        prefs.getInt(KEY_MAX_CHANNELS, if (defaultLowSpecMode) 3500 else 5000)
     )
     val maxChannels: StateFlow<Int> = _maxChannels.asStateFlow()
 
@@ -99,14 +99,14 @@ class PerformancePreferences @Inject constructor(
             .putBoolean(KEY_TMDB_ENABLED, !enabled)
             .putBoolean(KEY_HIGH_QUALITY_IMAGES, !enabled)
             .putBoolean(KEY_REDUCE_ANIMATIONS, enabled)
-            .putInt(KEY_MAX_CHANNELS, if (enabled) 300 else 1500)
+            .putInt(KEY_MAX_CHANNELS, if (enabled) 3500 else 5000)
             .apply()
 
         _lowSpecMode.value = enabled
         _tmdbEnabled.value = !enabled
         _highQualityImages.value = !enabled
         _reduceAnimations.value = enabled
-        _maxChannels.value = if (enabled) 300 else 1500
+        _maxChannels.value = if (enabled) 3500 else 5000
 
         syncConfig()
     }

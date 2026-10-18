@@ -48,6 +48,13 @@ import coil.size.Precision
 import com.example.metflix.data.entities.LiveChannel
 import kotlinx.coroutines.delay
 
+private val HeaderBackgroundBrush = Brush.horizontalGradient(
+    colors = listOf(
+        Color(0xFF1E2126),
+        Color(0xFF141619)
+    )
+)
+
 @Composable
 fun JioTvHeaderPreview(
     channel: LiveChannel?,
@@ -83,14 +90,7 @@ fun JioTvHeaderPreview(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        Color(0xFF1E2126),
-                        Color(0xFF141619)
-                    )
-                )
-            )
+            .background(HeaderBackgroundBrush)
             .padding(20.dp)
     ) {
         Row(

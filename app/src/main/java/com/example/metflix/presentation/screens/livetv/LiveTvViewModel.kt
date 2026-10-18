@@ -7,11 +7,13 @@ import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.data.repositories.LiveTvRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -32,6 +34,14 @@ class LiveTvViewModel @Inject constructor(
     private val isRefreshing = MutableStateFlow(false)
     private val statusMessage = MutableStateFlow<String?>(null)
     private val sortOrder = MutableStateFlow(LiveTvSortOrder.ChannelNumber)
+
+    // Ticks every 30s to smoothly update live progress bars without full-screen reloads
+    private val currentTimeFlow = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(30_000)
+        }
+    }
 
     val currentPlaylistUrl: StateFlow<String> = repository.getCurrentPlaylistUrl()
         .stateIn(
@@ -64,7 +74,8 @@ class LiveTvViewModel @Inject constructor(
         selectedCategory,
         isRefreshing,
         sortOrder,
-        repository.getCurrentPlaylistUrl()
+        repository.getCurrentPlaylistUrl(),
+        currentTimeFlow
     ) { args ->
         @Suppress("UNCHECKED_CAST")
         val channels = args[0] as List<LiveChannel>
@@ -76,6 +87,7 @@ class LiveTvViewModel @Inject constructor(
         val refreshing = args[4] as Boolean
         val sort = args[5] as LiveTvSortOrder
         val playlistUrl = args[6] as String
+        val nowMs = args[7] as Long
 
         if (channels.isEmpty() && refreshing) {
             LiveTvUiState.Loading
@@ -95,7 +107,8 @@ class LiveTvViewModel @Inject constructor(
                 totalCount = channels.size,
                 searchQuery = "",
                 sortOrder = sort,
-                currentPlaylistUrl = playlistUrl
+                currentPlaylistUrl = playlistUrl,
+                currentTimeMs = nowMs
             )
         }
     }.stateIn(
@@ -162,6 +175,7 @@ sealed interface LiveTvUiState {
         val totalCount: Int,
         val searchQuery: String,
         val sortOrder: LiveTvSortOrder,
-        val currentPlaylistUrl: String
+        val currentPlaylistUrl: String,
+        val currentTimeMs: Long = System.currentTimeMillis()
     ) : LiveTvUiState
 }

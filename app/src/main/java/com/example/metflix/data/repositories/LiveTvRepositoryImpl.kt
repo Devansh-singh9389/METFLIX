@@ -93,8 +93,13 @@ class LiveTvRepositoryImpl @Inject constructor(
 
     override suspend fun getChannelById(channelId: String): LiveChannel? = withContext(Dispatchers.Default) {
         val favs = favoriteIdsFlow.value
-        rawChannelsFlow.value.firstOrNull { it.id == channelId }?.let {
-            it.copy(isFavorite = favs.contains(it.id))
+        rawChannelsFlow.value.firstOrNull { it.id == channelId }?.let { ch ->
+            val favCh = ch.copy(isFavorite = favs.contains(ch.id))
+            if (favCh.schedule.isEmpty()) {
+                epgEngine.enrichChannelWithSchedule(favCh)
+            } else {
+                favCh
+            }
         }
     }
 
@@ -125,8 +130,8 @@ class LiveTvRepositoryImpl @Inject constructor(
             val url = URL(targetUrl)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 12000
-                readTimeout = 15000
+                connectTimeout = 25000
+                readTimeout = 30000
                 setRequestProperty("User-Agent", "Mozilla/5.0 (Android TV; MetFlix)")
             }
 
@@ -179,9 +184,8 @@ class LiveTvRepositoryImpl @Inject constructor(
         // 1. Try cache file first
         val cached = loadChannelsFromCache()
         if (cached.isNotEmpty()) {
-            val enriched = cached.map { epgEngine.enrichChannelWithSchedule(it) }
-            rawChannelsFlow.value = enriched
-            Log.d(TAG, "Loaded ${enriched.size} channels from local cache with EPG")
+            rawChannelsFlow.value = cached
+            Log.d(TAG, "Loaded ${cached.size} channels from local cache")
             return@withContext
         }
 
@@ -220,7 +224,9 @@ class LiveTvRepositoryImpl @Inject constructor(
     private fun saveChannelsToCache(channels: List<LiveChannel>) {
         try {
             val cacheFile = File(context.filesDir, CACHE_FILE_NAME)
-            val text = json.encodeToString(channels)
+            // Strip large schedules to keep cache size ~300KB instead of 25MB
+            val lightweightChannels = channels.map { it.copy(schedule = emptyList()) }
+            val text = json.encodeToString(lightweightChannels)
             cacheFile.writeText(text)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to save channels to cache", e)
