@@ -16,8 +16,13 @@
 
 package com.example.metflix.presentation.screens.shows
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,10 +31,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieList
 import com.example.metflix.data.util.StringConstants
@@ -52,14 +62,18 @@ fun ShowsScreen(
         }
 
         is ShowScreenUiState.Ready -> {
-            Catalog(
-                tvShowList = currentState.tvShowList,
-                bingeWatchDramaList = currentState.bingeWatchDramaList,
-                onTVShowClick = onTVShowClick,
-                onScroll = onScroll,
-                isTopBarVisible = isTopBarVisible,
-                modifier = Modifier.fillMaxSize()
-            )
+            if (currentState.tvShowList.isEmpty() && currentState.bingeWatchDramaList.isEmpty()) {
+                ShowsEmptyState(modifier = Modifier.fillMaxSize())
+            } else {
+                Catalog(
+                    tvShowList = currentState.tvShowList,
+                    bingeWatchDramaList = currentState.bingeWatchDramaList,
+                    onTVShowClick = onTVShowClick,
+                    onScroll = onScroll,
+                    isTopBarVisible = isTopBarVisible,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -78,7 +92,7 @@ private fun Catalog(
     val shouldShowTopBar by remember {
         derivedStateOf {
             lazyListState.firstVisibleItemIndex == 0 &&
-                lazyListState.firstVisibleItemScrollOffset == 0
+                lazyListState.firstVisibleItemScrollOffset < 300
         }
     }
 
@@ -91,18 +105,64 @@ private fun Catalog(
         state = lazyListState,
         contentPadding = PaddingValues(top = childPadding.top, bottom = 104.dp)
     ) {
-        item(contentType = "movie_list") {
-            MoviesScreenMovieList(
-                movieList = tvShowList,
-                onMovieClick = onTVShowClick
-            )
+        if (tvShowList.isNotEmpty()) {
+            item(contentType = "shows_header") {
+                Text(
+                    text = "📺 Popular TV Shows & Series",
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 30.sp
+                    ),
+                    modifier = Modifier.padding(start = childPadding.start, top = 8.dp, bottom = 16.dp)
+                )
+            }
+            item(contentType = "movie_list") {
+                MoviesScreenMovieList(
+                    movieList = tvShowList,
+                    onMovieClick = onTVShowClick
+                )
+            }
         }
-        item(contentType = "movies_row") {
-            MoviesRow(
-                modifier = Modifier.padding(top = childPadding.top),
-                title = StringConstants.Composable.BingeWatchDramasTitle,
-                movieList = bingeWatchDramaList,
-                onMovieSelected = onTVShowClick
+        if (bingeWatchDramaList.isNotEmpty()) {
+            item(contentType = "movies_row") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = childPadding.top),
+                    title = StringConstants.Composable.BingeWatchDramasTitle,
+                    movieList = bingeWatchDramaList,
+                    onMovieSelected = onTVShowClick
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShowsEmptyState(
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.padding(horizontal = 48.dp, vertical = 64.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "📺",
+                style = MaterialTheme.typography.displayMedium
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "No TV Shows Available",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Please check your network connection or try again later.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

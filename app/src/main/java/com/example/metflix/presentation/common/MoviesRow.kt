@@ -78,9 +78,10 @@ fun MoviesRow(
     ),
     showItemTitle: Boolean = true,
     showIndexOverImage: Boolean = false,
+    onLoadMore: (() -> Unit)? = null,
     onMovieSelected: (movie: Movie) -> Unit = {}
 ) {
-    val (lazyRow, firstItem) = remember { FocusRequester.createRefs() }
+    val lazyRow = remember { FocusRequester() }
 
     Column(
         modifier = modifier.focusGroup()
@@ -102,22 +103,20 @@ fun MoviesRow(
             horizontalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier
                 .focusRequester(lazyRow)
-                .focusRestorer {
-                    firstItem
-                }
+                .focusRestorer()
         ) {
             itemsIndexed(
                 movieList,
                 key = { _, movie -> movie.id },
                 contentType = { _, _ -> "movie_item" }
             ) { index, movie ->
-                val itemModifier = if (index == 0) {
-                    Modifier.focusRequester(firstItem)
-                } else {
-                    Modifier
+                if (onLoadMore != null && index >= movieList.size - 4) {
+                    androidx.compose.runtime.LaunchedEffect(movieList.size) {
+                        onLoadMore()
+                    }
                 }
                 MoviesRowItem(
-                    modifier = itemModifier
+                    modifier = Modifier
                         .weight(1f)
                         .graphicsLayer { },
                     index = index,
@@ -153,7 +152,7 @@ fun ImmersiveListMoviesRow(
     onMovieSelected: (Movie) -> Unit = {},
     onMovieFocused: (Movie) -> Unit = {}
 ) {
-    val (lazyRow, firstItem) = remember { FocusRequester.createRefs() }
+    val lazyRow = remember { FocusRequester() }
 
     Column(
         modifier = modifier.focusGroup()
@@ -173,9 +172,7 @@ fun ImmersiveListMoviesRow(
             horizontalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier
                 .focusRequester(lazyRow)
-                .focusRestorer {
-                    firstItem
-                }
+                .focusRestorer()
         ) {
             itemsIndexed(
                 movieList,
@@ -184,13 +181,8 @@ fun ImmersiveListMoviesRow(
                 },
                 contentType = { _, _ -> "movie_item" }
             ) { index, movie ->
-                val itemModifier = if (index == 0) {
-                    Modifier.focusRequester(firstItem)
-                } else {
-                    Modifier
-                }
                 MoviesRowItem(
-                    modifier = itemModifier
+                    modifier = Modifier
                         .weight(1f)
                         .graphicsLayer { },
                     index = index,
@@ -237,13 +229,6 @@ private fun MoviesRowItem(
                 isFocused = it.isFocused
                 if (it.isFocused) {
                     onMovieFocused(movie)
-                }
-            }
-            .focusProperties {
-                left = if (index == 0) {
-                    FocusRequester.Cancel
-                } else {
-                    FocusRequester.Default
                 }
             }
             .then(modifier)

@@ -189,6 +189,7 @@ fun DashboardScreen(
         ) { screen ->
             val targetRoute = screen()
             if (currentDestination != targetRoute) {
+                isTopBarVisible = true
                 navController.navigate(targetRoute) {
                     popUpTo(navController.graph.findStartDestination().id) {
                         saveState = true

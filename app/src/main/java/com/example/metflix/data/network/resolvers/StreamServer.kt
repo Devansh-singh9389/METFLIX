@@ -30,7 +30,8 @@ data class StreamServer(
     val isRegionalMatch: Boolean = false,
     val isDirect: Boolean = false,
     val rank: Int = 0,
-    val isAvailable: Boolean = true
+    val isAvailable: Boolean = true,
+    val audioLanguages: List<String> = emptyList()
 )
 
 @Immutable
@@ -64,7 +65,8 @@ data class ResolvedStream(
     val qualities: List<QualityTrack> = emptyList(),
     val backupUrls: List<String> = emptyList(),
     val isRegional: Boolean = false,
-    val latencyMs: Long? = null
+    val latencyMs: Long? = null,
+    val audioLanguages: List<String> = emptyList()
 ) {
     val isDirectStream: Boolean
         get() {

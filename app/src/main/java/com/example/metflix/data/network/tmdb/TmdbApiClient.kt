@@ -74,91 +74,97 @@ class TmdbApiClient @Inject constructor(
     private val isConfigured: Boolean
         get() = TmdbConfig.USE_TMDB && TmdbConfig.API_KEY.isNotBlank() && !isCircuitOpen()
 
-    suspend fun getTrendingMovies(): Result<List<Movie>> {
+    private fun appendPage(url: String, page: Int): String {
+        if (page <= 1) return url
+        val sep = if (url.contains("?")) "&" else "?"
+        return "$url${sep}page=$page"
+    }
+
+    suspend fun getTrendingMovies(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API disabled or circuit breaker active"))
-        return fetchJson("${TmdbConfig.BASE_URL}/trending/movie/week") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/trending/movie/week", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
-    suspend fun getTrendingMoviesDay(): Result<List<Movie>> {
+    suspend fun getTrendingMoviesDay(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API disabled or circuit breaker active"))
-        return fetchJson("${TmdbConfig.BASE_URL}/trending/movie/day") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/trending/movie/day", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
-    suspend fun getUpcomingMovies(): Result<List<Movie>> {
+    suspend fun getUpcomingMovies(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/movie/upcoming") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/movie/upcoming", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
-    suspend fun getTopRevenueMovies(): Result<List<Movie>> {
+    suspend fun getTopRevenueMovies(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/discover/movie?sort_by=revenue.desc") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/discover/movie?sort_by=revenue.desc", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
-    suspend fun getMostVotedMovies(): Result<List<Movie>> {
+    suspend fun getMostVotedMovies(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/discover/movie?sort_by=vote_count.desc") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/discover/movie?sort_by=vote_count.desc", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
-    suspend fun getMoviesByWatchProvider(providerId: Int, region: String = "IN"): Result<List<Movie>> {
+    suspend fun getMoviesByWatchProvider(providerId: Int, region: String = "IN", page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/discover/movie?with_watch_providers=$providerId&watch_region=$region&sort_by=popularity.desc") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/discover/movie?with_watch_providers=$providerId&watch_region=$region&sort_by=popularity.desc", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
-    suspend fun getNowPlayingMovies(): Result<List<Movie>> {
+    suspend fun getNowPlayingMovies(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/movie/now_playing") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Long) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/movie/now_playing", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Long) }
         }
     }
 
-    suspend fun getTopRatedMovies(): Result<List<Movie>> {
+    suspend fun getTopRatedMovies(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/movie/top_rated") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Long) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/movie/top_rated", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Long) }
         }
     }
 
-    suspend fun getPopularMovies(): Result<List<Movie>> {
+    suspend fun getPopularMovies(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/movie/popular") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/movie/popular", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
-    suspend fun getPopularTvShows(): Result<List<Movie>> {
+    suspend fun getPopularTvShows(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/tv/popular") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbTvItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Long) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/tv/popular", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbTvItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Long) }
         }
     }
 
-    suspend fun getTopRatedTvShows(): Result<List<Movie>> {
+    suspend fun getTopRatedTvShows(page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/tv/top_rated") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbTvItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/tv/top_rated", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbTvItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
@@ -170,11 +176,11 @@ class TmdbApiClient @Inject constructor(
         }
     }
 
-    suspend fun getMoviesByCategory(genreId: String): Result<List<Movie>> {
+    suspend fun getMoviesByCategory(genreId: String, page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/discover/movie?with_genres=$genreId") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/discover/movie?with_genres=$genreId", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 
@@ -186,12 +192,12 @@ class TmdbApiClient @Inject constructor(
         }
     }
 
-    suspend fun searchMovies(query: String): Result<List<Movie>> {
+    suspend fun searchMovies(query: String, page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        return fetchJson("${TmdbConfig.BASE_URL}/search/movie?query=$encodedQuery") { raw ->
-            val page = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
-            page.results.map { it.toMovie(ThumbnailType.Standard) }
+        return fetchJson(appendPage("${TmdbConfig.BASE_URL}/search/movie?query=$encodedQuery", page)) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 

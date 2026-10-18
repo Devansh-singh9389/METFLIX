@@ -26,6 +26,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 @HiltViewModel
@@ -72,80 +73,102 @@ class HomeScreeViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            movieRepository.getFeaturedMovies().collect { list ->
-                featured = list
-                emitState()
-            }
+            movieRepository.getFeaturedMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    featured = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getTrendingMovies().collect { list ->
-                trending = list
-                emitState()
-            }
+            movieRepository.getTrendingMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    trending = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getTop10Movies().collect { list ->
-                top10 = list
-                emitState()
-            }
+            movieRepository.getTop10Movies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    top10 = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getNowPlayingMovies().collect { list ->
-                nowPlaying = list
-                emitState()
-            }
+            movieRepository.getNowPlayingMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    nowPlaying = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getPopularFilmsThisWeek().collect { list ->
-                popularThisWeek = list
-                emitState()
-            }
+            movieRepository.getPopularFilmsThisWeek()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    popularThisWeek = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getNetflixMovies().collect { list ->
-                netflix = list
-                emitState()
-            }
+            movieRepository.getNetflixMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    netflix = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getPrimeMovies().collect { list ->
-                prime = list
-                emitState()
-            }
+            movieRepository.getPrimeMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    prime = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getDisneyMovies().collect { list ->
-                disney = list
-                emitState()
-            }
+            movieRepository.getDisneyMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    disney = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getUpcomingMovies().collect { list ->
-                upcoming = list
-                emitState()
-            }
+            movieRepository.getUpcomingMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    upcoming = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getMostVotedMovies().collect { list ->
-                topRated = list
-                emitState()
-            }
+            movieRepository.getMostVotedMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    topRated = list
+                    emitState()
+                }
         }
 
         viewModelScope.launch {
-            movieRepository.getBingeWatchDramas().collect { list ->
-                bingeDramas = list
-                emitState()
-            }
+            movieRepository.getBingeWatchDramas()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    bingeDramas = list
+                    emitState()
+                }
         }
     }
 }

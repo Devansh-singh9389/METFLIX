@@ -44,4 +44,5 @@ interface MovieRepository {
     fun getTVShows(): Flow<MovieList>
     fun getBingeWatchDramas(): Flow<MovieList>
     fun getFavouriteMovies(): Flow<MovieList>
+    suspend fun refreshAllCatalogs(): Boolean
 }

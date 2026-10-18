@@ -21,19 +21,27 @@ import android.util.Log
 import com.example.metflix.data.entities.Movie
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * High-speed local disk cache for TMDB movie catalog.
- * Guarantees 0ms instant startup rendering on app launch / cold boots.
+ * High-speed local in-memory and disk cache for TMDB movie catalog.
+ * Guarantees 0ms instant startup rendering on app launch / cold boots,
+ * with zero-cost repeated lookups via memory cache, and automatic TTL expiration.
  */
 @Singleton
 class TmdbDiskCache @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
+    companion object {
+        const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours TTL
+    }
+
+    private val memoryCache = ConcurrentHashMap<String, List<Movie>>()
+
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -43,6 +51,7 @@ class TmdbDiskCache @Inject constructor(
 
     fun saveMovies(key: String, movies: List<Movie>) {
         if (movies.isEmpty()) return
+        memoryCache[key] = movies
         runCatching {
             val file = File(context.filesDir, "tmdb_cache_${key}.json")
             val serialized = json.encodeToString(movies)
@@ -53,13 +62,42 @@ class TmdbDiskCache @Inject constructor(
     }
 
     fun loadMovies(key: String): List<Movie> {
+        memoryCache[key]?.let { return it }
+
         return runCatching {
             val file = File(context.filesDir, "tmdb_cache_${key}.json")
             if (file.exists() && file.length() > 0) {
-                json.decodeFromString<List<Movie>>(file.readText())
+                val parsed = json.decodeFromString<List<Movie>>(file.readText())
+                memoryCache[key] = parsed
+                parsed
             } else {
                 emptyList()
             }
         }.getOrDefault(emptyList())
+    }
+
+    fun isCacheStale(key: String, ttlMs: Long = CACHE_TTL_MS): Boolean {
+        val file = File(context.filesDir, "tmdb_cache_${key}.json")
+        if (!file.exists() || file.length() == 0L) return true
+        val age = System.currentTimeMillis() - file.lastModified()
+        return age > ttlMs
+    }
+
+    fun invalidate(key: String) {
+        memoryCache.remove(key)
+        runCatching {
+            val file = File(context.filesDir, "tmdb_cache_${key}.json")
+            if (file.exists()) file.delete()
+        }
+    }
+
+    fun clearAll() {
+        memoryCache.clear()
+        runCatching {
+            context.filesDir.listFiles { _, name -> name.startsWith("tmdb_cache_") && name.endsWith(".json") }
+                ?.forEach { it.delete() }
+        }.onFailure {
+            Log.w("TmdbDiskCache", "Failed to clear disk cache: ${it.message}")
+        }
     }
 }

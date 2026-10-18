@@ -45,12 +45,25 @@ class TvDataSource @Inject constructor(
         fetchTvShowsLive() ?: emptyList()
     }
 
+    private val topRatedTvShowsReader: CachedDataReader<Movie> = CachedDataReader {
+        val cached = diskCache.loadMovies("tv_shows_top_rated")
+        if (cached.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                fetchTopRatedTvShowsLive()?.let { topRatedTvShowsReader.update(it) }
+            }
+            return@CachedDataReader cached
+        }
+        fetchTopRatedTvShowsLive() ?: emptyList()
+    }
+
     private suspend fun fetchTvShowsLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val tmdb = tmdbApiClient.getPopularTvShows().getOrNull()
-            if (!tmdb.isNullOrEmpty()) {
-                diskCache.saveMovies("tv_shows", tmdb)
-                return tmdb
+            val p1 = tmdbApiClient.getPopularTvShows(page = 1).getOrNull().orEmpty()
+            val p2 = tmdbApiClient.getPopularTvShows(page = 2).getOrNull().orEmpty()
+            val combined = (p1 + p2).distinctBy { it.id }
+            if (combined.isNotEmpty()) {
+                diskCache.saveMovies("tv_shows", combined)
+                return combined
             }
         }
         if (NetworkConfig.USE_REMOTE_BACKEND) {
@@ -64,16 +77,23 @@ class TvDataSource @Inject constructor(
         return null
     }
 
-    suspend fun getTvShowList(): List<Movie> = mostPopularTvShowsReader.read().let { list ->
-        val count = list.size.coerceAtMost(10)
-        list.subList(0, count)
+    private suspend fun fetchTopRatedTvShowsLive(): List<Movie>? {
+        if (TmdbConfig.USE_TMDB) {
+            val p1 = tmdbApiClient.getTopRatedTvShows(page = 1).getOrNull().orEmpty()
+            val p2 = tmdbApiClient.getTopRatedTvShows(page = 2).getOrNull().orEmpty()
+            val combined = (p1 + p2).distinctBy { it.id }
+            if (combined.isNotEmpty()) {
+                diskCache.saveMovies("tv_shows_top_rated", combined)
+                return combined
+            }
+        }
+        return null
     }
 
-    suspend fun getBingeWatchDramaList(): List<Movie> = mostPopularTvShowsReader.read().let { list ->
-        if (list.size >= 15) {
-            list.subList(5, 15)
-        } else {
-            list
-        }
+    suspend fun getTvShowList(): List<Movie> = mostPopularTvShowsReader.read()
+
+    suspend fun getBingeWatchDramaList(): List<Movie> {
+        val topRated = topRatedTvShowsReader.read()
+        return if (topRated.isNotEmpty()) topRated else mostPopularTvShowsReader.read()
     }
 }

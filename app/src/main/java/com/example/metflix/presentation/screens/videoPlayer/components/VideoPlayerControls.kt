@@ -46,7 +46,9 @@ fun VideoPlayerControls(
     player: Player,
     movieDetails: MovieDetails,
     focusRequester: FocusRequester,
+    settingsButtonFocusRequester: FocusRequester = remember { FocusRequester() },
     isSubtitlesEnabled: Boolean = false,
+    isSettingsOpen: Boolean = false,
     onShowSettings: () -> Unit = {},
     onShowPlaylist: () -> Unit = {},
     onToggleSubtitles: () -> Unit = {},
@@ -98,11 +100,7 @@ fun VideoPlayerControls(
         },
         mediaActions = {
             Row(
-                modifier = Modifier
-                    .padding(bottom = 16.dp)
-                    .focusProperties {
-                        down = focusRequester
-                    },
+                modifier = Modifier.padding(bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -147,6 +145,8 @@ fun VideoPlayerControls(
                 VideoPlayerControlsIcon(
                     icon = Icons.Default.Settings,
                     isPlaying = isPlaying,
+                    isActive = isSettingsOpen,
+                    modifier = Modifier.focusRequester(settingsButtonFocusRequester),
                     contentDescription =
                     StringConstants.Composable.VideoPlayerControlSettingsButton,
                     onShowControls = onShowControls,

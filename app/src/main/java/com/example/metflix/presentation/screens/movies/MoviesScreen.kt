@@ -42,9 +42,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MovieFilter
+import androidx.compose.ui.Alignment
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
+import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.example.metflix.data.entities.Movie
@@ -89,7 +94,7 @@ private fun Catalog(
     val shouldShowTopBar by remember {
         derivedStateOf {
             lazyListState.firstVisibleItemIndex == 0 &&
-                lazyListState.firstVisibleItemScrollOffset == 0
+                lazyListState.firstVisibleItemScrollOffset < 300
         }
     }
 
@@ -97,268 +102,390 @@ private fun Catalog(
         onScroll(shouldShowTopBar)
     }
 
-    LazyColumn(
-        modifier = modifier,
-        state = lazyListState,
-        contentPadding = PaddingValues(top = childPadding.top, bottom = 104.dp)
-    ) {
-        // 1. TMDb Helper Category Filter Chips
-        item(contentType = "filter_chips") {
-            MovieCategoryFilterChips(
-                selectedFilter = state.selectedFilter,
-                onFilterSelected = onFilterSelected,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-        }
+    LaunchedEffect(state.selectedFilter) {
+        lazyListState.scrollToItem(0)
+    }
 
-        when (state.selectedFilter) {
-            "All" -> {
-                // Featured In Theatres Hero Row
-                if (state.heroMovieList.isNotEmpty()) {
-                    item(contentType = "hero_row") {
-                        Column {
-                            Text(
-                                text = "🎬 In Theatres & Featured",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                modifier = Modifier.padding(start = childPadding.start, bottom = 12.dp)
-                            )
+    Column(
+        modifier = modifier
+    ) {
+        // Pinned Category Filter Chips
+        MovieCategoryFilterChips(
+            selectedFilter = state.selectedFilter,
+            onFilterSelected = onFilterSelected,
+            modifier = Modifier.padding(top = childPadding.top, bottom = 12.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = lazyListState,
+            contentPadding = PaddingValues(bottom = 104.dp)
+        ) {
+            when (state.selectedFilter) {
+                "All" -> {
+                    val allEmpty = state.heroMovieList.isEmpty() &&
+                        state.trendingTodayList.isEmpty() &&
+                        state.trendingThisWeekList.isEmpty() &&
+                        state.popularMoviesList.isEmpty() &&
+                        state.topRatedList.isEmpty() &&
+                        state.upcomingList.isEmpty() &&
+                        state.boxOfficeHitsList.isEmpty() &&
+                        state.mostVotedList.isEmpty() &&
+                        state.netflixList.isEmpty() &&
+                        state.primeList.isEmpty() &&
+                        state.disneyList.isEmpty()
+
+                    if (allEmpty) {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Movies")
+                        }
+                    } else {
+                        // Featured In Theatres Hero Row
+                        if (state.heroMovieList.isNotEmpty()) {
+                            item(contentType = "hero_row") {
+                                Column {
+                                    Text(
+                                        text = "🎬 In Theatres & Featured",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        modifier = Modifier.padding(start = childPadding.start, bottom = 12.dp)
+                                    )
+                                    MoviesScreenMovieList(
+                                        movieList = state.heroMovieList,
+                                        onMovieClick = onMovieClick
+                                    )
+                                }
+                            }
+                        }
+
+                        // TMDb Helper Standard Rows
+                        if (state.trendingTodayList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "🔥 Trending Today",
+                                    movieList = state.trendingTodayList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.trendingThisWeekList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "📈 Trending This Week",
+                                    movieList = state.trendingThisWeekList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.popularMoviesList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "🍿 Popular Movies",
+                                    movieList = state.popularMoviesList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.topRatedList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "🌟 Top Rated Classics",
+                                    movieList = state.topRatedList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.upcomingList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "🗓️ Upcoming Releases",
+                                    movieList = state.upcomingList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.boxOfficeHitsList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "💰 Top Box Office & Revenue",
+                                    movieList = state.boxOfficeHitsList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.mostVotedList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "⭐ Fan Favorites (Most Voted)",
+                                    movieList = state.mostVotedList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        // Streaming Provider Rows (TMDb Helper Watch Providers)
+                        if (state.netflixList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "🔴 Trending on Netflix",
+                                    movieList = state.netflixList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.primeList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "🔷 Streaming on Prime Video",
+                                    movieList = state.primeList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.disneyList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "✨ Disney+ Hotstar Hits",
+                                    movieList = state.disneyList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+                    }
+                }
+
+                "In Theatres" -> {
+                    if (state.heroMovieList.isNotEmpty()) {
+                        item(contentType = "hero_row") {
                             MoviesScreenMovieList(
                                 movieList = state.heroMovieList,
                                 onMovieClick = onMovieClick
                             )
                         }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "In Theatres")
+                        }
                     }
                 }
 
-                // TMDb Helper Standard Rows
-                if (state.trendingTodayList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "🔥 Trending Today",
-                            movieList = state.trendingTodayList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Trending Today" -> {
+                    if (state.trendingTodayList.isNotEmpty() || state.trendingThisWeekList.isNotEmpty()) {
+                        if (state.trendingTodayList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "🔥 Trending Today",
+                                    movieList = state.trendingTodayList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+                        if (state.trendingThisWeekList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "📈 Trending This Week",
+                                    movieList = state.trendingThisWeekList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Trending Today")
+                        }
                     }
                 }
 
-                if (state.trendingThisWeekList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "📈 Trending This Week",
-                            movieList = state.trendingThisWeekList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Trending Week" -> {
+                    if (state.trendingThisWeekList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "📈 Trending This Week",
+                                movieList = state.trendingThisWeekList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Trending Week")
+                        }
                     }
                 }
 
-                if (state.popularMoviesList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "🍿 Popular Movies",
-                            movieList = state.popularMoviesList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Top Rated" -> {
+                    if (state.topRatedList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "🌟 Top Rated Movies",
+                                movieList = state.topRatedList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Top Rated")
+                        }
                     }
                 }
 
-                if (state.topRatedList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "🌟 Top Rated Classics",
-                            movieList = state.topRatedList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Upcoming" -> {
+                    if (state.upcomingList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "🗓️ Upcoming Cinema Releases",
+                                movieList = state.upcomingList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Upcoming Releases")
+                        }
                     }
                 }
 
-                if (state.upcomingList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "🗓️ Upcoming Releases",
-                            movieList = state.upcomingList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Box Office" -> {
+                    if (state.boxOfficeHitsList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "💰 Top Box Office Hits",
+                                movieList = state.boxOfficeHitsList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Box Office")
+                        }
                     }
                 }
 
-                if (state.boxOfficeHitsList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "💰 Top Box Office & Revenue",
-                            movieList = state.boxOfficeHitsList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Most Voted" -> {
+                    if (state.mostVotedList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "⭐ Highly Rated & Most Voted",
+                                movieList = state.mostVotedList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Most Voted")
+                        }
                     }
                 }
 
-                if (state.mostVotedList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "⭐ Fan Favorites (Most Voted)",
-                            movieList = state.mostVotedList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Netflix" -> {
+                    if (state.netflixList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "🔴 Popular on Netflix",
+                                movieList = state.netflixList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Netflix")
+                        }
                     }
                 }
 
-                // Streaming Provider Rows (TMDb Helper Watch Providers)
-                if (state.netflixList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "🔴 Trending on Netflix",
-                            movieList = state.netflixList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Prime Video" -> {
+                    if (state.primeList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "🔷 Popular on Amazon Prime Video",
+                                movieList = state.primeList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Prime Video")
+                        }
                     }
                 }
 
-                if (state.primeList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "🔷 Streaming on Prime Video",
-                            movieList = state.primeList,
-                            onMovieSelected = onMovieClick
-                        )
+                "Disney+" -> {
+                    if (state.disneyList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "✨ Disney+ Hotstar Specials",
+                                movieList = state.disneyList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Disney+")
+                        }
                     }
-                }
-
-                if (state.disneyList.isNotEmpty()) {
-                    item(contentType = "movies_row") {
-                        MoviesRow(
-                            modifier = Modifier.padding(top = childPadding.top),
-                            title = "✨ Disney+ Hotstar Hits",
-                            movieList = state.disneyList,
-                            onMovieSelected = onMovieClick
-                        )
-                    }
-                }
-            }
-
-            "In Theatres" -> {
-                item(contentType = "hero_row") {
-                    MoviesScreenMovieList(
-                        movieList = state.heroMovieList,
-                        onMovieClick = onMovieClick
-                    )
-                }
-            }
-
-            "Trending Today" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "🔥 Trending Today",
-                        movieList = state.trendingTodayList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "📈 Trending This Week",
-                        movieList = state.trendingThisWeekList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-            }
-
-            "Trending Week" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "📈 Trending This Week",
-                        movieList = state.trendingThisWeekList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-            }
-
-            "Top Rated" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "🌟 Top Rated Movies",
-                        movieList = state.topRatedList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-            }
-
-            "Upcoming" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "🗓️ Upcoming Cinema Releases",
-                        movieList = state.upcomingList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-            }
-
-            "Box Office" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "💰 Top Box Office Hits",
-                        movieList = state.boxOfficeHitsList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-            }
-
-            "Most Voted" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "⭐ Highly Rated & Most Voted",
-                        movieList = state.mostVotedList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-            }
-
-            "Netflix" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "🔴 Popular on Netflix",
-                        movieList = state.netflixList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-            }
-
-            "Prime Video" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "🔷 Popular on Amazon Prime Video",
-                        movieList = state.primeList,
-                        onMovieSelected = onMovieClick
-                    )
-                }
-            }
-
-            "Disney+" -> {
-                item(contentType = "movies_row") {
-                    MoviesRow(
-                        modifier = Modifier.padding(top = childPadding.top),
-                        title = "✨ Disney+ Hotstar Specials",
-                        movieList = state.disneyList,
-                        onMovieSelected = onMovieClick
-                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MoviesEmptyCategoryState(
+    categoryName: String,
+    modifier: Modifier = Modifier
+) {
+    val childPadding = rememberChildPadding()
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = childPadding.start, vertical = 64.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.MovieFilter,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+            modifier = Modifier.size(56.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "No movies currently found in \"$categoryName\"",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Try selecting another category or check back later.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+        )
     }
 }
 

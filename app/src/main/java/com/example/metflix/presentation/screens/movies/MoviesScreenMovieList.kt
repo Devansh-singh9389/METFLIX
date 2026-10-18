@@ -17,6 +17,9 @@
 package com.example.metflix.presentation.screens.movies
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -36,6 +39,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -69,7 +73,8 @@ fun MoviesScreenMovieList(
 ) {
     LazyRow(
         modifier = modifier.focusRestorer(),
-        contentPadding = PaddingValues(start = startPadding, end = endPadding)
+        contentPadding = PaddingValues(start = startPadding, end = endPadding),
+        horizontalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         items(
             movieList,
@@ -77,7 +82,7 @@ fun MoviesScreenMovieList(
             contentType = { "movie_list_item" }
         ) {
             MovieListItem(
-                itemWidth = 432.dp,
+                itemWidth = 380.dp,
                 onMovieClick = onMovieClick,
                 movie = it,
             )
@@ -98,8 +103,7 @@ private fun MovieListItem(
         CompactCard(
             modifier = modifier
                 .width(itemWidth)
-                .aspectRatio(2f)
-                .padding(end = 32.dp)
+                .aspectRatio(16 / 9f)
                 .onFocusChanged { isFocused = it.isFocused || it.hasFocus }
                 .graphicsLayer { },
             scale = CardDefaults.scale(focusedScale = 1f),
@@ -121,31 +125,49 @@ private fun MovieListItem(
             ),
             onClick = { onMovieClick(movie) },
             image = {
-                val contentAlpha = if (isFocused) 1f else 0.7f
+                val contentAlpha = if (isFocused) 1f else 0.75f
                 val context = LocalContext.current
                 val isHighQuality = PerformancePreferences.isHighQualityImagesActive
                 val imageRequest = remember(movie.posterUri, isHighQuality) {
                     ImageRequest.Builder(context)
                         .data(movie.posterUri)
-                        .size(if (isHighQuality) 864 else 432, if (isHighQuality) 432 else 216)
+                        .size(if (isHighQuality) 760 else 380, if (isHighQuality) 428 else 214)
                         .bitmapConfig(if (isHighQuality) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565)
                         .allowRgb565(!isHighQuality)
                         .precision(Precision.INEXACT)
                         .crossfade(false)
                         .build()
                 }
-                AsyncImage(
-                    model = imageRequest,
-                    contentDescription = StringConstants
-                        .Composable
-                        .ContentDescription
-                        .moviePoster(movie.name),
-                    contentScale = ContentScale.Crop,
-                    clipToBounds = true,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = contentAlpha }
-                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AsyncImage(
+                        model = imageRequest,
+                        contentDescription = StringConstants
+                            .Composable
+                            .ContentDescription
+                            .moviePoster(movie.name),
+                        contentScale = ContentScale.Crop,
+                        clipToBounds = true,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = contentAlpha }
+                    )
+                    // High-contrast vertical scrim gradient for text legibility
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.35f),
+                                        Color.Black.copy(alpha = 0.90f)
+                                    ),
+                                    startY = 0f,
+                                    endY = Float.POSITIVE_INFINITY
+                                )
+                            )
+                    )
+                }
             },
             title = {
                 Column {
@@ -155,18 +177,17 @@ private fun MovieListItem(
                             fontWeight = FontWeight.Normal
                         ),
                         modifier = Modifier
-                            .graphicsLayer { alpha = 0.6f }
-                            .padding(start = 24.dp)
+                            .graphicsLayer { alpha = 0.8f }
+                            .padding(start = 20.dp, end = 20.dp)
                     )
                     Text(
                         text = movie.name,
                         style = MaterialTheme.typography.headlineSmall,
                         modifier = Modifier.padding(
-                            start = 24.dp,
-                            end = 24.dp,
-                            bottom = 24.dp
+                            start = 20.dp,
+                            end = 20.dp,
+                            bottom = 20.dp
                         ),
-                        // TODO: Remove this when CardContent is not overriding contentColor anymore
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }

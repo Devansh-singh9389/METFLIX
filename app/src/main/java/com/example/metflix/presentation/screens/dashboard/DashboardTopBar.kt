@@ -145,7 +145,7 @@ fun DashboardTopBar(
                                     if (index != selectedTabIndex) {
                                         pendingTabSwitchJob?.cancel()
                                         pendingTabSwitchJob = coroutineScope.launch {
-                                            delay(900)
+                                            delay(150)
                                             runCatching { onScreenSelection(screen) }
                                         }
                                     }

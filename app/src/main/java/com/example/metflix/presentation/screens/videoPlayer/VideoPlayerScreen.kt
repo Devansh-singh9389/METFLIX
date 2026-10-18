@@ -64,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.util.Log
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -73,6 +74,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
@@ -108,6 +110,17 @@ import com.example.metflix.presentation.screens.videoPlayer.components.rememberV
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberVideoPlayerState
 import com.example.metflix.presentation.utils.handleDPadKeyEvents
 import kotlinx.coroutines.delay
+
+@androidx.compose.runtime.Immutable
+data class ExoAudioTrack(
+    val index: Int,
+    val label: String,
+    val languageCode: String,
+    val group: Tracks.Group,
+    val trackIndexInGroup: Int,
+    val isHindi: Boolean,
+    val isSelected: Boolean
+)
 
 object VideoPlayerScreen {
     const val MovieIdBundleKey = "movieId"
@@ -174,6 +187,7 @@ fun VideoPlayerScreenContent(
     var currentCues by remember { mutableStateOf<List<Cue>>(emptyList()) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isPlaylistOpen by remember { mutableStateOf(false) }
+    val settingsButtonFocusRequester = remember { FocusRequester() }
 
     var isWebPlayerForced by remember { mutableStateOf<Boolean?>(null) }
     val isDirectStream = resolvedStream?.isDirectStream == true
@@ -189,6 +203,8 @@ fun VideoPlayerScreenContent(
 
     var availableAudioTracks by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedAudioTrackIndex by remember { mutableIntStateOf(0) }
+    var playerAudioTracks by remember { mutableStateOf<List<ExoAudioTrack>>(emptyList()) }
+    var hasAutoSelectedHindi by remember { mutableStateOf(false) }
     var availableSubtitleTracks by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSubtitleTrackIndex by remember { mutableIntStateOf(-1) }
     var currentSleepTimerMinutes by remember { mutableIntStateOf(0) }
@@ -215,9 +231,11 @@ fun VideoPlayerScreenContent(
             override fun onTracksChanged(tracks: Tracks) {
                 val heights = mutableSetOf<Int>()
                 var highestFormat: Format? = null
-                val audioNames = mutableListOf<String>()
+                val audioTrackList = mutableListOf<ExoAudioTrack>()
                 val subNames = mutableListOf<String>()
                 var currentAudio: Format? = null
+                var currentlySelectedIndex = 0
+                var foundHindiIndex: Int? = null
 
                 for (group in tracks.groups) {
                     when (group.type) {
@@ -236,23 +254,28 @@ fun VideoPlayerScreenContent(
                             for (i in 0 until group.length) {
                                 val format = group.getTrackFormat(i)
                                 val langCode = format.language.orEmpty()
-                                val langName = when (langCode.lowercase()) {
-                                    "en", "eng" -> "English"
-                                    "hi", "hin" -> "Hindi"
-                                    "es", "spa" -> "Spanish"
-                                    "fr", "fra", "fre" -> "French"
-                                    "de", "deu", "ger" -> "German"
-                                    "it", "ita" -> "Italian"
-                                    "ja", "jpn" -> "Japanese"
-                                    "ko", "kor" -> "Korean"
-                                    "zh", "zho", "chi" -> "Chinese"
-                                    "ta", "tam" -> "Tamil"
-                                    "te", "tel" -> "Telugu"
-                                    "ml", "mal" -> "Malayalam"
-                                    "ar", "ara" -> "Arabic"
-                                    "ru", "rus" -> "Russian"
-                                    "pt", "por" -> "Portuguese"
-                                    else -> if (langCode.isNotBlank()) langCode.uppercase() else "Audio ${audioNames.size + 1}"
+                                val formatLabel = format.label.orEmpty()
+                                val isHindi = langCode.lowercase() in listOf("hi", "hin") ||
+                                        formatLabel.contains("hindi", ignoreCase = true)
+                                val langName = when {
+                                    isHindi -> "Hindi"
+                                    langCode.lowercase() in listOf("en", "eng") || formatLabel.contains("english", ignoreCase = true) -> "English"
+                                    langCode.lowercase() in listOf("ta", "tam") || formatLabel.contains("tamil", ignoreCase = true) -> "Tamil"
+                                    langCode.lowercase() in listOf("te", "tel") || formatLabel.contains("telugu", ignoreCase = true) -> "Telugu"
+                                    langCode.lowercase() in listOf("ml", "mal") || formatLabel.contains("malayalam", ignoreCase = true) -> "Malayalam"
+                                    langCode.lowercase() in listOf("es", "spa") -> "Spanish"
+                                    langCode.lowercase() in listOf("fr", "fra", "fre") -> "French"
+                                    langCode.lowercase() in listOf("de", "deu", "ger") -> "German"
+                                    langCode.lowercase() in listOf("it", "ita") -> "Italian"
+                                    langCode.lowercase() in listOf("ja", "jpn") -> "Japanese"
+                                    langCode.lowercase() in listOf("ko", "kor") -> "Korean"
+                                    langCode.lowercase() in listOf("zh", "zho", "chi") -> "Chinese"
+                                    langCode.lowercase() in listOf("ar", "ara") -> "Arabic"
+                                    langCode.lowercase() in listOf("ru", "rus") -> "Russian"
+                                    langCode.lowercase() in listOf("pt", "por") -> "Portuguese"
+                                    formatLabel.isNotBlank() -> formatLabel
+                                    langCode.isNotBlank() -> langCode.uppercase()
+                                    else -> "Audio ${audioTrackList.size + 1}"
                                 }
                                 val channelText = when (format.channelCount) {
                                     6 -> "5.1 Surround"
@@ -262,10 +285,27 @@ fun VideoPlayerScreenContent(
                                     else -> if (format.channelCount > 0) "${format.channelCount}ch" else ""
                                 }
                                 val label = if (channelText.isNotBlank()) "$langName ($channelText)" else langName
-                                audioNames.add(label)
-                                if (group.isTrackSelected(i)) {
+                                val isTrackSelected = group.isTrackSelected(i)
+                                val currentIdx = audioTrackList.size
+                                if (isTrackSelected) {
+                                    currentlySelectedIndex = currentIdx
                                     currentAudio = format
                                 }
+                                if (isHindi && foundHindiIndex == null) {
+                                    foundHindiIndex = currentIdx
+                                }
+
+                                audioTrackList.add(
+                                    ExoAudioTrack(
+                                        index = currentIdx,
+                                        label = label,
+                                        languageCode = langCode,
+                                        group = group,
+                                        trackIndexInGroup = i,
+                                        isHindi = isHindi,
+                                        isSelected = isTrackSelected
+                                    )
+                                )
                             }
                         }
                         C.TRACK_TYPE_TEXT -> {
@@ -285,11 +325,32 @@ fun VideoPlayerScreenContent(
                     "$p$fps".trim()
                 } ?: resolvedStream?.qualities?.firstOrNull()?.quality ?: ""
 
-                if (audioNames.isNotEmpty()) {
-                    availableAudioTracks = audioNames
+                if (audioTrackList.isNotEmpty()) {
+                    playerAudioTracks = audioTrackList
+                    availableAudioTracks = audioTrackList.map { it.label }
+                    selectedAudioTrackIndex = currentlySelectedIndex
+
+                    // Auto-select Hindi audio track if available on stream startup
+                    if (!hasAutoSelectedHindi && foundHindiIndex != null) {
+                        val hindiTrack = audioTrackList[foundHindiIndex]
+                        if (!hindiTrack.isSelected) {
+                            val override = TrackSelectionOverride(
+                                hindiTrack.group.mediaTrackGroup,
+                                listOf(hindiTrack.trackIndexInGroup)
+                            )
+                            exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+                                .setOverrideForType(override)
+                                .build()
+                            selectedAudioTrackIndex = foundHindiIndex
+                            Log.d("VideoPlayerScreen", "Auto-switched to Hindi audio: ${hindiTrack.label}")
+                        }
+                        hasAutoSelectedHindi = true
+                    }
                 }
-                if (subNames.isNotEmpty()) {
-                    availableSubtitleTracks = subNames
+                availableSubtitleTracks = subNames
+                if (subNames.isEmpty()) {
+                    selectedSubtitleTrackIndex = -1
+                    isSubtitlesEnabled = false
                 }
                 audioInfo = currentAudio?.let { fmt ->
                     val lang = fmt.language?.uppercase() ?: "STEREO"
@@ -335,6 +396,7 @@ fun VideoPlayerScreenContent(
 
     LaunchedEffect(exoPlayer, movieDetails, resolvedStream, isWebPlayerActive) {
         playbackError = null
+        hasAutoSelectedHindi = false
         if (isWebPlayerActive) {
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
@@ -360,6 +422,8 @@ fun VideoPlayerScreenContent(
     BackHandler(onBack = {
         if (isSettingsOpen) {
             isSettingsOpen = false
+            videoPlayerState.showControls(isPlaying)
+            runCatching { settingsButtonFocusRequester.requestFocus() }
         } else if (isPlaylistOpen) {
             isPlaylistOpen = false
         } else {
@@ -390,8 +454,14 @@ fun VideoPlayerScreenContent(
                 videoPlayerState = videoPlayerState,
                 pulseState = pulseState,
                 onToggleSettings = {
-                    isSettingsOpen = !isSettingsOpen
-                    isPlaylistOpen = false
+                    val target = !isSettingsOpen
+                    isSettingsOpen = target
+                    if (target) {
+                        isPlaylistOpen = false
+                    } else {
+                        videoPlayerState.showControls(isPlaying)
+                        runCatching { settingsButtonFocusRequester.requestFocus() }
+                    }
                 }
             )
             .focusable()
@@ -402,6 +472,24 @@ fun VideoPlayerScreenContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp) {
+                    when (event.key) {
+                        Key.Menu, Key.Settings -> {
+                            val target = !isSettingsOpen
+                            isSettingsOpen = target
+                            if (target) {
+                                isPlaylistOpen = false
+                            } else {
+                                videoPlayerState.showControls(isPlaying)
+                                runCatching { settingsButtonFocusRequester.requestFocus() }
+                            }
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
             .then(rootModifier)
     ) {
         if (isWebPlayerActive) {
@@ -478,7 +566,9 @@ fun VideoPlayerScreenContent(
                     player = exoPlayer,
                     movieDetails = movieDetails,
                     focusRequester = focusRequester,
+                    settingsButtonFocusRequester = settingsButtonFocusRequester,
                     isSubtitlesEnabled = isSubtitlesEnabled,
+                    isSettingsOpen = isSettingsOpen,
                     onShowSettings = {
                         isSettingsOpen = true
                         isPlaylistOpen = false
@@ -488,11 +578,24 @@ fun VideoPlayerScreenContent(
                         isSettingsOpen = false
                     },
                     onToggleSubtitles = {
-                        isSubtitlesEnabled = !isSubtitlesEnabled
+                        val newEnabled = !isSubtitlesEnabled
+                        isSubtitlesEnabled = newEnabled
+                        selectedSubtitleTrackIndex = if (newEnabled) {
+                            if (availableSubtitleTracks.isNotEmpty()) 0 else 0
+                        } else {
+                            -1
+                        }
                         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                             .buildUpon()
-                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !isSubtitlesEnabled)
-                            .setPreferredTextLanguage(if (isSubtitlesEnabled) "en" else null)
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !newEnabled)
+                            .apply {
+                                if (newEnabled) {
+                                    val lang = availableSubtitleTracks.firstOrNull()?.lowercase() ?: "en"
+                                    setPreferredTextLanguage(lang)
+                                } else {
+                                    setPreferredTextLanguage(null)
+                                }
+                            }
                             .build()
                     },
                     onShowControls = { videoPlayerState.showControls(isPlaying) },
@@ -609,6 +712,8 @@ fun VideoPlayerScreenContent(
                 isWebPlayerForced = null
                 onSelectServer(server)
                 isSettingsOpen = false
+                videoPlayerState.showControls(isPlaying)
+                runCatching { settingsButtonFocusRequester.requestFocus() }
             },
             currentQualityMaxHeight = currentQualityMaxHeight,
             availableQualityHeights = availableQualityHeights,
@@ -655,9 +760,23 @@ fun VideoPlayerScreenContent(
             },
             onSelectAudioTrack = { index ->
                 selectedAudioTrackIndex = index
-                if (index < availableAudioTracks.size) {
+                val targetTrack = playerAudioTracks.getOrNull(index)
+                if (targetTrack != null) {
+                    val override = TrackSelectionOverride(
+                        targetTrack.group.mediaTrackGroup,
+                        listOf(targetTrack.trackIndexInGroup)
+                    )
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+                        .setOverrideForType(override)
+                        .build()
+                    Log.d("VideoPlayerScreen", "User switched audio track to: ${targetTrack.label}")
+                } else if (index < availableAudioTracks.size) {
                     val trackName = availableAudioTracks[index]
-                    val lang = trackName.split(" ").firstOrNull()?.lowercase()
+                    val lang = when {
+                        trackName.contains("hindi", ignoreCase = true) -> "hi"
+                        trackName.contains("english", ignoreCase = true) -> "en"
+                        else -> trackName.split(" ").firstOrNull()?.lowercase()
+                    }
                     if (!lang.isNullOrBlank()) {
                         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                             .buildUpon()
@@ -690,10 +809,13 @@ fun VideoPlayerScreenContent(
                 exoPlayer.seekTo(0L)
                 exoPlayer.play()
                 isSettingsOpen = false
+                videoPlayerState.showControls(isPlaying)
+                runCatching { settingsButtonFocusRequester.requestFocus() }
             },
             onDismiss = {
                 isSettingsOpen = false
                 videoPlayerState.showControls(isPlaying)
+                runCatching { settingsButtonFocusRequester.requestFocus() }
             }
         )
 

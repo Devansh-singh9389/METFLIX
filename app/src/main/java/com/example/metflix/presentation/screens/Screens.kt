@@ -30,7 +30,7 @@ enum class Screens(
     val tabIcon: ImageVector? = null,
     val tabTitle: String? = null
 ) {
-    Profile,
+    Profile(isTabItem = true, tabTitle = "Settings"),
     Home(isTabItem = true),
     Movies(isTabItem = true),
     Shows(isTabItem = true),

@@ -17,8 +17,10 @@
 package com.example.metflix.data.network.resolvers
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.example.metflix.data.repositories.LiveTvRepository
+import java.nio.ByteBuffer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -40,7 +42,8 @@ import javax.inject.Singleton
 class StreamResolverRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val okHttpClient: OkHttpClient,
-    private val liveTvRepository: LiveTvRepository
+    private val liveTvRepository: LiveTvRepository,
+    private val dualAudioScraper: DualAudioScraper
 ) {
     companion object {
         private const val TAG = "StreamResolverRepo"
@@ -52,44 +55,62 @@ class StreamResolverRepository @Inject constructor(
 
     val availableServers: List<StreamServer> = listOf(
         StreamServer(
-            id = "vidlink",
-            name = "Server 1 (VidLink Pro)",
-            description = "Multi-Language Subtitles & Audio • 1080p FHD",
-            badge = "VIP",
+            id = "dualaudio",
+            name = "Server 1 (Dual-Audio • Hindi + English)",
+            description = "Hollywood & Regional Blockbusters • Hindi + English Dual-Audio",
+            badge = "Hindi+Eng",
             speed = "Ultra",
-            isPrimary = true
+            isPrimary = true,
+            audioLanguages = listOf("Hindi", "English")
         ),
         StreamServer(
-            id = "superembed",
-            name = "Server 2 (SuperEmbed)",
-            description = "High Bandwidth Mirror • 1080p/720p",
-            badge = "HD",
-            speed = "Fast"
+            id = "vidlink",
+            name = "Server 2 (VidLink Pro)",
+            description = "Direct On-Device Decryption • 1080p FHD",
+            badge = "VIP",
+            speed = "Ultra",
+            audioLanguages = listOf("Original")
+        ),
+        StreamServer(
+            id = "streamflix",
+            name = "Server 3 (StreamFlix Direct)",
+            description = "Direct High-Speed CDN • 5,000+ Direct MKV/MP4",
+            badge = "Direct",
+            speed = "Ultra",
+            audioLanguages = listOf("English", "Original")
+        ),
+        StreamServer(
+            id = "stremio",
+            name = "Server 4 (Multi-Source Engine)",
+            description = "TMDB-Embed Multi-Source • Hindi + English Dual-Audio",
+            badge = "Dual-Audio",
+            speed = "Fast",
+            audioLanguages = listOf("Hindi", "English")
         ),
         StreamServer(
             id = "iptv",
-            name = "Server 3 (IPTV VOD Match)",
+            name = "Server 5 (Regional IPTV VOD)",
             description = "Direct stream matched from loaded M3U playlist",
             badge = "IPTV",
             speed = "Direct"
         ),
         StreamServer(
+            id = "superembed",
+            name = "Server 6 (SuperEmbed Direct)",
+            description = "High Bandwidth Mirror • 1080p/720p HLS",
+            badge = "HD",
+            speed = "Fast"
+        ),
+        StreamServer(
             id = "autoembed",
-            name = "Server 4 (AutoEmbed)",
+            name = "Server 7 (AutoEmbed)",
             description = "Global Edge Mirror • 1080p",
             badge = "CDN",
             speed = "Fast"
         ),
         StreamServer(
-            id = "twoembed",
-            name = "Server 5 (2Embed Mirror)",
-            description = "Stable Fallback Server • 720p/1080p",
-            badge = "Backup",
-            speed = "Normal"
-        ),
-        StreamServer(
             id = "vidsrc",
-            name = "Server 6 (VidSrc Cloud)",
+            name = "Server 8 (VidSrc Cloud)",
             description = "Alternative Cloud Mirror • 1080p",
             badge = "Cloud",
             speed = "Normal"
@@ -109,13 +130,16 @@ class StreamResolverRepository @Inject constructor(
         Log.d(TAG, "Resolving stream for '$movieTitle' (TMDB: $tmdbId) on ${targetServer.name}")
 
         when (targetServer.id) {
+            "dualaudio" -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer)
             "vidlink" -> resolveVidLink(tmdbId, targetServer)
+            "streamflix" -> resolveStreamFlix(tmdbId, movieTitle, targetServer)
+            "stremio" -> resolveStremioMultiSource(tmdbId, movieTitle, releaseYear, targetServer)
             "superembed" -> resolveSuperEmbed(tmdbId, targetServer)
             "iptv" -> resolveIptvMatch(movieTitle, releaseYear, targetServer)
             "autoembed" -> resolveAutoEmbed(tmdbId, targetServer)
             "twoembed" -> resolve2Embed(tmdbId, targetServer)
             "vidsrc" -> resolveVidSrc(tmdbId, targetServer)
-            else -> resolveVidLink(tmdbId, availableServers.first())
+            else -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer)
         }
     }
 
@@ -205,9 +229,12 @@ class StreamResolverRepository @Inject constructor(
                 val updatedServer = server.copy(
                     latencyMs = latencyMs,
                     isAvailable = isAvailable,
-                    isRegionalMatch = isRegional && (isRealIptvMatch || server.id == "vidlink" || server.id == "superembed"),
+                    isRegionalMatch = isRegional && (isRealIptvMatch || server.id == "dualaudio" || server.id == "vidlink" || server.id == "stremio" || server.id == "superembed"),
                     isDirect = resolved?.isDirectStream == true,
+                    audioLanguages = resolved?.audioLanguages?.takeIf { it.isNotEmpty() } ?: server.audioLanguages,
                     badge = when {
+                        resolved?.audioLanguages?.any { it.equals("Hindi", ignoreCase = true) } == true -> "Hindi+Eng"
+                        resolved?.audioLanguages?.size ?: 0 > 1 -> "Multi-Audio"
                         isRegional && isRealIptvMatch -> "Regional"
                         resolved?.isDirectStream == true -> "Direct"
                         latencyMs != null && latencyMs < 350 -> "${latencyMs}ms"
@@ -277,6 +304,21 @@ class StreamResolverRepository @Inject constructor(
         )
     }
 
+    private suspend fun resolveDualAudio(
+        tmdbId: String,
+        movieTitle: String,
+        releaseYear: String,
+        server: StreamServer
+    ): ResolvedStream = withContext(Dispatchers.IO) {
+        val dualStream = dualAudioScraper.resolveDualAudioStream(tmdbId, movieTitle, releaseYear, server)
+        if (dualStream != null) {
+            Log.d(TAG, "DualAudioScraper successfully resolved dual-audio stream: ${dualStream.streamUrl}")
+            return@withContext dualStream
+        }
+        Log.d(TAG, "DualAudioScraper found no direct dual-audio match, falling back to VidLink")
+        resolveVidLink(tmdbId, server.copy(audioLanguages = listOf("English", "Original")))
+    }
+
     private suspend fun resolveVidLink(tmdbId: String, server: StreamServer): ResolvedStream {
         val embedUrl = "https://vidlink.pro/movie/$tmdbId"
         val headers = mapOf(
@@ -284,10 +326,17 @@ class StreamResolverRepository @Inject constructor(
             "Referer" to "https://vidlink.pro/"
         )
 
-        // Try decryptor endpoints: Cloudflare tunnel first, then local LAN
+        // 1. Native standalone decryption (No laptop, backend server, or tunnel needed!)
+        val nativeStream = fetchNativeVidlinkStream(tmdbId, server)
+        if (nativeStream != null) {
+            Log.d(TAG, "Successfully resolved direct stream natively on-device: ${nativeStream.streamUrl}")
+            return nativeStream
+        }
+
+        // 2. Fallback to external decryptor endpoints (if running)
         val decryptorEndpoints = listOf(
-            "$TUNNEL_DECRYPTOR_BASE/movie/$tmdbId",
-            "$LOCAL_DECRYPTOR_BASE/movie/$tmdbId"
+            "$LOCAL_DECRYPTOR_BASE/movie/$tmdbId",
+            "$TUNNEL_DECRYPTOR_BASE/movie/$tmdbId"
         )
 
         for (endpoint in decryptorEndpoints) {
@@ -298,7 +347,7 @@ class StreamResolverRepository @Inject constructor(
             }
         }
 
-        Log.w(TAG, "Decryptor could not find direct stream for $tmdbId; falling back to web embed")
+        Log.w(TAG, "Could not find direct stream for $tmdbId; falling back to web embed")
         return ResolvedStream(
             server = server,
             streamUrl = embedUrl,
@@ -306,6 +355,139 @@ class StreamResolverRepository @Inject constructor(
             headers = headers,
             backupUrls = listOf("https://vidlink.pro/movie/$tmdbId?autoplay=true")
         )
+    }
+
+    /**
+     * Natively encrypts the media ID into a VidLink authorization token using XSalsa20-Poly1305.
+     * Runs 100% locally on the Android TV with zero external backend or laptop required.
+     */
+    private fun generateVidlinkToken(mediaId: String): String {
+        return try {
+            val keyHex = "c75136c5668bbfe65a7ecad431a745db68b5f381555b38d8f6c699449cf11fcd"
+            val key = ByteArray(32) { i ->
+                keyHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+            }
+            val nonce = ByteArray(24) // 24 zero bytes
+            val timestamp = (System.currentTimeMillis() / 1000L) + 480L
+            val mediaBytes = mediaId.toByteArray(Charsets.UTF_8)
+            val buffer = ByteBuffer.allocate(mediaBytes.size + 8)
+            buffer.put(mediaBytes)
+            buffer.putLong(timestamp) // Big-endian 64-bit integer
+            val message = buffer.array()
+
+            val box = TweetNaclFast.SecretBox(key)
+            val ciphertext = box.box(message, nonce) ?: return ""
+
+            val fullPayload = ByteArray(nonce.size + ciphertext.size)
+            System.arraycopy(nonce, 0, fullPayload, 0, nonce.size)
+            System.arraycopy(ciphertext, 0, fullPayload, nonce.size, ciphertext.size)
+
+            Base64.encodeToString(
+                fullPayload,
+                Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to generate native VidLink token: ${e.message}")
+            ""
+        }
+    }
+
+    private fun fetchNativeVidlinkStream(
+        tmdbId: String,
+        server: StreamServer
+    ): ResolvedStream? {
+        val token = generateVidlinkToken(tmdbId)
+        if (token.isBlank()) return null
+
+        val apiUrl = "https://vidlink.pro/api/b/movie/$token?multiLang=1"
+        return try {
+            val request = Request.Builder()
+                .url(apiUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
+                .header("Origin", "https://vidlink.pro")
+                .header("Referer", "https://vidlink.pro/")
+                .build()
+
+            val fastClient = okHttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofMillis(3500))
+                .readTimeout(java.time.Duration.ofMillis(4000))
+                .build()
+
+            fastClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Native Vidlink API returned HTTP ${response.code} for $apiUrl")
+                    return null
+                }
+                val bodyString = response.body?.string() ?: return null
+                parseVidlinkStreamJson(bodyString, server)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to fetch native Vidlink stream: ${e.message}")
+            null
+        }
+    }
+
+    private fun parseVidlinkStreamJson(
+        bodyString: String,
+        server: StreamServer
+    ): ResolvedStream? {
+        return try {
+            val rootJson = JSONObject(bodyString)
+            val streamObj = rootJson.optJSONObject("stream") ?: return null
+            val qualitiesObj = streamObj.optJSONObject("qualities") ?: return null
+
+            // Parse available qualities in priority order
+            val qualityList = mutableListOf<QualityTrack>()
+            val qualityOrder = listOf("1080", "720", "480", "360")
+            for (q in qualityOrder) {
+                val qItem = qualitiesObj.optJSONObject(q) ?: continue
+                val url = qItem.optString("url")
+                if (!url.isNullOrBlank()) {
+                    val height = q.toIntOrNull() ?: 0
+                    qualityList.add(QualityTrack(quality = "${q}p", height = height, url = url))
+                }
+            }
+
+            if (qualityList.isEmpty()) {
+                return null
+            }
+
+            val bestQuality = qualityList.first()
+            val backupUrls = qualityList.drop(1).map { it.url }
+
+            // Parse captions
+            val subtitles = mutableListOf<SubtitleTrack>()
+            val captionsArray = streamObj.optJSONArray("captions")
+            if (captionsArray != null) {
+                for (i in 0 until captionsArray.length()) {
+                    val cap = captionsArray.optJSONObject(i) ?: continue
+                    val capUrl = cap.optString("url")
+                    val lang = cap.optString("language")
+                    if (!capUrl.isNullOrBlank() && !lang.isNullOrBlank()) {
+                        subtitles.add(
+                            SubtitleTrack(
+                                label = lang,
+                                language = lang,
+                                uri = capUrl
+                            )
+                        )
+                    }
+                }
+            }
+
+            ResolvedStream(
+                server = server,
+                streamUrl = bestQuality.url,
+                isHls = false,
+                headers = emptyMap(), // Direct CDN streams must NOT have Referer
+                subtitles = subtitles,
+                qualities = qualityList,
+                backupUrls = backupUrls
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse VidLink stream JSON: ${e.message}")
+            null
+        }
     }
 
     private fun fetchFromDecryptor(
@@ -329,58 +511,7 @@ class StreamResolverRepository @Inject constructor(
                     return null
                 }
                 val bodyString = response.body?.string() ?: return null
-                val rootJson = JSONObject(bodyString)
-                val streamObj = rootJson.optJSONObject("stream") ?: return null
-                val qualitiesObj = streamObj.optJSONObject("qualities") ?: return null
-
-                // Parse available qualities in priority order
-                val qualityList = mutableListOf<QualityTrack>()
-                val qualityOrder = listOf("1080", "720", "480", "360")
-                for (q in qualityOrder) {
-                    val qItem = qualitiesObj.optJSONObject(q) ?: continue
-                    val url = qItem.optString("url")
-                    if (!url.isNullOrBlank()) {
-                        val height = q.toIntOrNull() ?: 0
-                        qualityList.add(QualityTrack(quality = "${q}p", height = height, url = url))
-                    }
-                }
-
-                if (qualityList.isEmpty()) {
-                    return null
-                }
-
-                val bestQuality = qualityList.first()
-                val backupUrls = qualityList.drop(1).map { it.url }
-
-                // Parse captions
-                val subtitles = mutableListOf<SubtitleTrack>()
-                val captionsArray = streamObj.optJSONArray("captions")
-                if (captionsArray != null) {
-                    for (i in 0 until captionsArray.length()) {
-                        val cap = captionsArray.optJSONObject(i) ?: continue
-                        val capUrl = cap.optString("url")
-                        val lang = cap.optString("language")
-                        if (!capUrl.isNullOrBlank() && !lang.isNullOrBlank()) {
-                            subtitles.add(
-                                SubtitleTrack(
-                                    label = lang,
-                                    language = lang,
-                                    uri = capUrl
-                                )
-                            )
-                        }
-                    }
-                }
-
-                ResolvedStream(
-                    server = server,
-                    streamUrl = bestQuality.url,
-                    isHls = false,
-                    headers = emptyMap(), // Direct CDN streams must NOT have Referer
-                    subtitles = subtitles,
-                    qualities = qualityList,
-                    backupUrls = backupUrls
-                )
+                parseVidlinkStreamJson(bodyString, server)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to resolve from decryptor at $endpointUrl: ${e.message}")
@@ -564,17 +695,41 @@ class StreamResolverRepository @Inject constructor(
             score += 350L
         }
 
+        // Multi-Audio bonus: Massive boost for streams with Hindi Dual-Audio
+        if (resolved?.audioLanguages?.any { it.equals("Hindi", ignoreCase = true) } == true) {
+            score += 600L
+        } else if (resolved?.audioLanguages?.isNotEmpty() == true) {
+            score += 250L
+        }
+
+        // Priority weighting for the Dual-Audio Engine
+        if (server.id == "dualaudio") {
+            score += 400L
+        }
+
         if (isRegional) {
             if (server.id == "iptv" && isRealIptvMatch) {
                 score += 850L
+            } else if (server.id == "dualaudio") {
+                score += 650L
+            } else if (server.id == "stremio") {
+                score += 550L
+            } else if (server.id == "streamflix") {
+                score += 480L
             } else if (server.id == "vidlink") {
                 score += 450L
             } else if (server.id == "superembed") {
                 score += 300L
             }
         } else {
-            if (server.id == "vidlink") {
+            if (server.id == "dualaudio") {
+                score += 400L
+            } else if (server.id == "vidlink") {
                 score += 350L
+            } else if (server.id == "streamflix") {
+                score += 340L
+            } else if (server.id == "stremio") {
+                score += 320L
             } else if (server.id == "superembed") {
                 score += 250L
             } else if (server.id == "autoembed") {
@@ -637,5 +792,210 @@ class StreamResolverRepository @Inject constructor(
             Log.w(TAG, "Stream extraction error for $url: ${e.message}")
             null
         }
+    }
+
+    @Volatile
+    private var streamflixCache: Pair<Long, org.json.JSONArray>? = null
+    @Volatile
+    private var streamflixBaseCache: Pair<Long, String>? = null
+
+    private suspend fun fetchStreamflixData(): org.json.JSONArray? = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val cached = streamflixCache
+        if (cached != null && (now - cached.first) < 30 * 60 * 1000L) {
+            return@withContext cached.second
+        }
+
+        try {
+            val req = Request.Builder()
+                .url("https://api.streamflix.app/data.json")
+                .header("User-Agent", BROWSER_USER_AGENT)
+                .build()
+            val resp = okHttpClient.newCall(req).execute()
+            resp.use { r ->
+                if (!r.isSuccessful) return@withContext null
+                val body = r.body?.string() ?: return@withContext null
+                val json = JSONObject(body)
+                val items = json.optJSONArray("data")
+                if (items != null) {
+                    streamflixCache = Pair(now, items)
+                }
+                items
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "StreamFlix data fetch failed: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun fetchStreamflixBase(): String = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val cached = streamflixBaseCache
+        if (cached != null && (now - cached.first) < 30 * 60 * 1000L) {
+            return@withContext cached.second
+        }
+
+        val defaultBase = "https://cf.streamflixserver.site"
+        try {
+            val req = Request.Builder()
+                .url("https://api.streamflix.app/config/config-streamflixapp.json")
+                .header("User-Agent", BROWSER_USER_AGENT)
+                .build()
+            val resp = okHttpClient.newCall(req).execute()
+            resp.use { r ->
+                if (!r.isSuccessful) return@withContext defaultBase
+                val body = r.body?.string() ?: return@withContext defaultBase
+                val json = JSONObject(body)
+                val downloadArr = json.optJSONArray("download")
+                val base = downloadArr?.optString(0) ?: defaultBase
+                streamflixBaseCache = Pair(now, base)
+                base
+            }
+        } catch (e: Exception) {
+            defaultBase
+        }
+    }
+
+    private suspend fun resolveStreamFlix(
+        tmdbId: String,
+        movieTitle: String,
+        server: StreamServer
+    ): ResolvedStream = withContext(Dispatchers.IO) {
+        try {
+            val items = fetchStreamflixData()
+            val base = fetchStreamflixBase()
+
+            var matchItem: JSONObject? = null
+            if (items != null) {
+                for (i in 0 until items.length()) {
+                    val it = items.optJSONObject(i) ?: continue
+                    if (it.optString("tmdb") == tmdbId) {
+                        matchItem = it
+                        break
+                    }
+                }
+                if (matchItem == null) {
+                    val cleanTitle = movieTitle.trim().lowercase()
+                    for (i in 0 until items.length()) {
+                        val it = items.optJSONObject(i) ?: continue
+                        val name = it.optString("moviename").lowercase()
+                        if (name.contains(cleanTitle) || cleanTitle.contains(name)) {
+                            matchItem = it
+                            break
+                        }
+                    }
+                }
+            }
+
+            if (matchItem != null) {
+                val movieLink = matchItem.optString("movielink")
+                val movieName = matchItem.optString("moviename")
+                if (movieLink.isNotBlank()) {
+                    val directUrl = if (movieLink.startsWith("http")) movieLink else "$base$movieLink"
+                    val isHindi = movieLink.contains("hin", ignoreCase = true) || movieName.contains("hindi", ignoreCase = true)
+                    val isDual = movieLink.contains("dual", ignoreCase = true) || movieLink.contains("multi", ignoreCase = true)
+                    val audioLangs = when {
+                        isHindi && isDual -> listOf("Hindi", "English")
+                        isHindi -> listOf("Hindi")
+                        isDual -> listOf("Dual-Audio")
+                        else -> listOf("English", "Original")
+                    }
+
+                    Log.d(TAG, "StreamFlix resolved direct stream for '$movieTitle': $directUrl")
+                    return@withContext ResolvedStream(
+                        server = server.copy(audioLanguages = audioLangs),
+                        streamUrl = directUrl,
+                        isHls = directUrl.contains(".m3u8"),
+                        headers = mapOf("User-Agent" to BROWSER_USER_AGENT),
+                        audioLanguages = audioLangs
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error resolving StreamFlix: ${e.message}")
+        }
+
+        resolveVidLink(tmdbId, server)
+    }
+
+    private suspend fun resolveStremioMultiSource(
+        tmdbId: String,
+        movieTitle: String,
+        releaseYear: String,
+        server: StreamServer
+    ): ResolvedStream = withContext(Dispatchers.IO) {
+        val endpoints = listOf(
+            "http://10.227.10.225:8787/api/streams/movie/$tmdbId",
+            "http://127.0.0.1:8787/api/streams/movie/$tmdbId",
+            "https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/movie/$tmdbId"
+        )
+
+        for (endpoint in endpoints) {
+            try {
+                val req = Request.Builder()
+                    .url(endpoint)
+                    .header("User-Agent", BROWSER_USER_AGENT)
+                    .build()
+                val fastClient = okHttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofMillis(3000))
+                    .readTimeout(java.time.Duration.ofMillis(3500))
+                    .build()
+
+                val resp = fastClient.newCall(req).execute()
+                resp.use { r ->
+                    if (r.isSuccessful) {
+                        val body = r.body?.string() ?: return@use
+                        val json = JSONObject(body)
+                        val streamsArr = json.optJSONArray("streams")
+                        if (streamsArr != null && streamsArr.length() > 0) {
+                            var bestStreamObj: JSONObject? = null
+                            var bestLangs = listOf("Original")
+                            for (i in 0 until streamsArr.length()) {
+                                val sObj = streamsArr.optJSONObject(i) ?: continue
+                                val title = sObj.optString("title")
+                                val isHindi = title.contains("hin", ignoreCase = true)
+                                val isDual = title.contains("dual", ignoreCase = true) || title.contains("multi", ignoreCase = true)
+                                if (isHindi || isDual) {
+                                    bestStreamObj = sObj
+                                    bestLangs = listOf("Hindi", "English")
+                                    break
+                                }
+                            }
+                            if (bestStreamObj == null) {
+                                bestStreamObj = streamsArr.optJSONObject(0)
+                            }
+
+                            if (bestStreamObj != null) {
+                                val url = bestStreamObj.optString("url")
+                                val headersMap = mutableMapOf<String, String>()
+                                val headersObj = bestStreamObj.optJSONObject("headers")
+                                if (headersObj != null) {
+                                    val keys = headersObj.keys()
+                                    while (keys.hasNext()) {
+                                        val k = keys.next()
+                                        headersMap[k] = headersObj.optString(k)
+                                    }
+                                }
+
+                                if (url.isNotBlank()) {
+                                    Log.d(TAG, "Multi-Source Engine resolved stream from $endpoint: $url")
+                                    return@withContext ResolvedStream(
+                                        server = server.copy(audioLanguages = bestLangs),
+                                        streamUrl = url,
+                                        isHls = url.contains(".m3u8"),
+                                        headers = headersMap,
+                                        audioLanguages = bestLangs
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Try next endpoint
+            }
+        }
+
+        resolveVidLink(tmdbId, server)
     }
 }

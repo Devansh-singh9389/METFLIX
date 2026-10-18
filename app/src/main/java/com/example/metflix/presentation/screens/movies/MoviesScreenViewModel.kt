@@ -24,10 +24,10 @@ import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.launch
 
 @HiltViewModel
 class MoviesScreenViewModel @Inject constructor(
@@ -35,73 +35,154 @@ class MoviesScreenViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _selectedFilter = MutableStateFlow("All")
-    val selectedFilter = _selectedFilter.asStateFlow()
+    val selectedFilter: StateFlow<String> = _selectedFilter.asStateFlow()
+
+    private val _uiState = MutableStateFlow<MoviesScreenUiState>(MoviesScreenUiState.Loading)
+    val uiState: StateFlow<MoviesScreenUiState> = _uiState.asStateFlow()
+
+    private var nowPlaying: MovieList = emptyList()
+    private var trendingDay: MovieList = emptyList()
+    private var trendingWeek: MovieList = emptyList()
+    private var topRated: MovieList = emptyList()
+    private var popular: MovieList = emptyList()
+    private var upcoming: MovieList = emptyList()
+    private var boxOffice: MovieList = emptyList()
+    private var mostVoted: MovieList = emptyList()
+    private var netflix: MovieList = emptyList()
+    private var prime: MovieList = emptyList()
+    private var disney: MovieList = emptyList()
+
+    init {
+        loadData()
+    }
 
     fun setFilter(filter: String) {
         _selectedFilter.value = filter
+        val current = _uiState.value
+        if (current is MoviesScreenUiState.Ready) {
+            _uiState.value = current.copy(selectedFilter = filter)
+        } else {
+            emitState()
+        }
     }
 
-    private data class TMDbCoreLists(
-        val nowPlaying: MovieList,
-        val trendingDay: MovieList,
-        val trendingWeek: MovieList,
-        val topRated: MovieList,
-        val popular: MovieList
-    )
-
-    private data class TMDbExtendedLists(
-        val upcoming: MovieList,
-        val boxOffice: MovieList,
-        val mostVoted: MovieList,
-        val netflix: MovieList,
-        val prime: MovieList,
-        val disney: MovieList,
-        val filter: String
-    )
-
-    val uiState = combine(
-        combine(
-            movieRepository.getNowPlayingMovies(),
-            movieRepository.getTrendingDayMovies(),
-            movieRepository.getTrendingMovies(),
-            movieRepository.getTop10Movies(),
-            movieRepository.getPopularFilmsThisWeek()
-        ) { nowPlaying, trendingDay, trendingWeek, topRated, popular ->
-            TMDbCoreLists(nowPlaying, trendingDay, trendingWeek, topRated, popular)
-        },
-        combine(
-            movieRepository.getUpcomingMovies(),
-            movieRepository.getTopRevenueMovies(),
-            movieRepository.getMostVotedMovies(),
-            movieRepository.getNetflixMovies(),
-            combine(
-                movieRepository.getPrimeMovies(),
-                movieRepository.getDisneyMovies(),
-                _selectedFilter
-            ) { prime, disney, filter -> Triple(prime, disney, filter) }
-        ) { upcoming, boxOffice, mostVoted, netflix, (prime, disney, filter) ->
-            TMDbExtendedLists(upcoming, boxOffice, mostVoted, netflix, prime, disney, filter)
-        }
-    ) { core, ext ->
-        MoviesScreenUiState.Ready(
-            heroMovieList = core.nowPlaying.ifEmpty { core.popular },
-            trendingTodayList = core.trendingDay.ifEmpty { core.trendingWeek },
-            trendingThisWeekList = core.trendingWeek,
-            topRatedList = core.topRated,
-            popularMoviesList = core.popular,
-            upcomingList = ext.upcoming,
-            boxOfficeHitsList = ext.boxOffice,
-            mostVotedList = ext.mostVoted,
-            netflixList = ext.netflix,
-            primeList = ext.prime,
-            disneyList = ext.disney,
-            selectedFilter = ext.filter
+    private fun emitState() {
+        _uiState.value = MoviesScreenUiState.Ready(
+            heroMovieList = nowPlaying.ifEmpty { popular },
+            trendingTodayList = trendingDay.ifEmpty { trendingWeek },
+            trendingThisWeekList = trendingWeek,
+            topRatedList = topRated,
+            popularMoviesList = popular,
+            upcomingList = upcoming,
+            boxOfficeHitsList = boxOffice,
+            mostVotedList = mostVoted,
+            netflixList = netflix,
+            primeList = prime,
+            disneyList = disney,
+            selectedFilter = _selectedFilter.value
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Lazily,
-        initialValue = MoviesScreenUiState.Loading
-    )
+    }
+
+    private fun loadData() {
+        viewModelScope.launch {
+            movieRepository.getNowPlayingMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    nowPlaying = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getTrendingDayMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    trendingDay = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getTrendingMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    trendingWeek = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getTop10Movies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    topRated = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getPopularFilmsThisWeek()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    popular = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getUpcomingMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    upcoming = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getTopRevenueMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    boxOffice = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getMostVotedMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    mostVoted = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getNetflixMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    netflix = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getPrimeMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    prime = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getDisneyMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    disney = list
+                    emitState()
+                }
+        }
+    }
 }
 
 @Immutable

@@ -23,25 +23,53 @@ import com.example.metflix.data.entities.MovieList
 import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.launch
 
 @HiltViewModel
 class ShowScreenViewModel @Inject constructor(
-    movieRepository: MovieRepository
+    private val movieRepository: MovieRepository
 ) : ViewModel() {
 
-    val uiState = combine(
-        movieRepository.getBingeWatchDramas(),
-        movieRepository.getTVShows()
-    ) { (bingeWatchDramaList, tvShowList) ->
-        ShowScreenUiState.Ready(bingeWatchDramaList = bingeWatchDramaList, tvShowList = tvShowList)
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Lazily,
-        initialValue = ShowScreenUiState.Loading
-    )
+    private val _uiState = MutableStateFlow<ShowScreenUiState>(ShowScreenUiState.Loading)
+    val uiState: StateFlow<ShowScreenUiState> = _uiState.asStateFlow()
+
+    private var bingeWatchDramaList: MovieList = emptyList()
+    private var tvShowList: MovieList = emptyList()
+
+    init {
+        loadData()
+    }
+
+    private fun emitState() {
+        _uiState.value = ShowScreenUiState.Ready(
+            bingeWatchDramaList = bingeWatchDramaList,
+            tvShowList = tvShowList
+        )
+    }
+
+    private fun loadData() {
+        viewModelScope.launch {
+            movieRepository.getTVShows()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    tvShowList = list
+                    emitState()
+                }
+        }
+
+        viewModelScope.launch {
+            movieRepository.getBingeWatchDramas()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    bingeWatchDramaList = list
+                    emitState()
+                }
+        }
+    }
 }
 
 @Immutable

@@ -28,7 +28,8 @@ import javax.inject.Inject
 @HiltViewModel
 class PerformanceViewModel @Inject constructor(
     private val preferences: PerformancePreferences,
-    private val tmdbApiClient: TmdbApiClient
+    private val tmdbApiClient: TmdbApiClient,
+    private val movieRepository: com.example.metflix.data.repositories.MovieRepository
 ) : ViewModel() {
 
     val isDeviceLowRam: Boolean = preferences.isDeviceLowRam
@@ -64,6 +65,7 @@ class PerformanceViewModel @Inject constructor(
         viewModelScope.launch {
             preferences.clearCaches()
             tmdbApiClient.resetCircuit()
+            movieRepository.refreshAllCatalogs()
         }
     }
 }

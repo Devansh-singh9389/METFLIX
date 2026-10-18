@@ -44,6 +44,7 @@ class MovieRepositoryImpl @Inject constructor(
     private val movieCastDataSource: MovieCastDataSource,
     private val movieCategoryDataSource: MovieCategoryDataSource,
     private val tmdbApiClient: TmdbApiClient,
+    private val diskCache: TmdbDiskCache
 ) : MovieRepository {
 
     private val movieDetailsCache = ConcurrentHashMap<String, MovieDetails>()
@@ -80,8 +81,10 @@ class MovieRepositoryImpl @Inject constructor(
         val categoryList = movieCategoryDataSource.getMovieCategoryList()
         val category = categoryList.find { categoryId == it.id } ?: categoryList.firstOrNull()
 
-        val tmdbMovies = tmdbApiClient.getMoviesByCategory(categoryId).getOrNull()
-        val movieList = if (!tmdbMovies.isNullOrEmpty()) {
+        val p1 = tmdbApiClient.getMoviesByCategory(categoryId, page = 1).getOrNull().orEmpty()
+        val p2 = tmdbApiClient.getMoviesByCategory(categoryId, page = 2).getOrNull().orEmpty()
+        val tmdbMovies = (p1 + p2).distinctBy { it.id }
+        val movieList = if (tmdbMovies.isNotEmpty()) {
             tmdbMovies
         } else {
             val allLocal = movieDataSource.getMovieList()
@@ -229,4 +232,12 @@ class MovieRepositoryImpl @Inject constructor(
         val list = movieDataSource.getFavoriteMovieList()
         emit(list)
     }.flowOn(Dispatchers.IO)
+
+    override suspend fun refreshAllCatalogs(): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        diskCache.clearAll()
+        categoryDetailsCache.clear()
+        movieDetailsCache.clear()
+        movieDataSource.clearAllReaders()
+        true
+    }
 }
