@@ -22,24 +22,37 @@ data class LiveChannel(
     val schedule: List<EpgProgram> = emptyList()
 ) {
     fun getCurrentEpgProgram(nowMs: Long = System.currentTimeMillis()): EpgProgram {
+        if (schedule.isEmpty()) {
+            val slotDurationMs = 60 * 60 * 1000L
+            val slotStart = (nowMs / slotDurationMs) * slotDurationMs
+            val slotEnd = slotStart + slotDurationMs
+
+            return EpgProgram(
+                id = "${id}_current",
+                title = currentProgram.ifBlank { "$name Live" },
+                description = programDescription.ifBlank { "Streaming live now on $name ($category)" },
+                category = category,
+                startEpochMs = slotStart,
+                endEpochMs = slotEnd
+            )
+        }
+
         val live = schedule.firstOrNull { it.isLive(nowMs) }
         if (live != null) return live
 
         // If schedule has items from a previous day, roll them over to today's clock
-        if (schedule.isNotEmpty()) {
-            val startOfTodayMs = getStartOfDay(nowMs)
-            val rolled = schedule.map { prog ->
-                val startMin = getMinuteOfDay(prog.startEpochMs)
-                val endMin = getMinuteOfDay(prog.endEpochMs)
-                val durationMin = if (endMin > startMin) (endMin - startMin) else 60
-                prog.copy(
-                    startEpochMs = startOfTodayMs + (startMin * 60 * 1000L),
-                    endEpochMs = startOfTodayMs + ((startMin + durationMin) * 60 * 1000L)
-                )
-            }
-            val rolledLive = rolled.firstOrNull { it.isLive(nowMs) }
-            if (rolledLive != null) return rolledLive
+        val startOfTodayMs = getStartOfDay(nowMs)
+        val rolled = schedule.map { prog ->
+            val startMin = getMinuteOfDay(prog.startEpochMs)
+            val endMin = getMinuteOfDay(prog.endEpochMs)
+            val durationMin = if (endMin > startMin) (endMin - startMin) else 60
+            prog.copy(
+                startEpochMs = startOfTodayMs + (startMin * 60 * 1000L),
+                endEpochMs = startOfTodayMs + ((startMin + durationMin) * 60 * 1000L)
+            )
         }
+        val rolledLive = rolled.firstOrNull { it.isLive(nowMs) }
+        if (rolledLive != null) return rolledLive
 
         // Clock-aligned slot fallback (e.g., 2:00 PM - 3:00 PM) based on real clock
         val slotDurationMs = 60 * 60 * 1000L

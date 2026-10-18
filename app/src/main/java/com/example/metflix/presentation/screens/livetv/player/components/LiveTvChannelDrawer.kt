@@ -46,12 +46,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
+import androidx.tv.material3.CardBorder
+import androidx.tv.material3.CardColors
 import androidx.tv.material3.CardDefaults
+import androidx.tv.material3.CardScale
+import androidx.tv.material3.CardShape
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.example.metflix.data.entities.LiveChannel
 import kotlinx.coroutines.delay
+
+private val DrawerItemShape = RoundedCornerShape(10.dp)
+private val BadgeShape = RoundedCornerShape(6.dp)
+private val FocusedBorderStroke = BorderStroke(2.dp, Color.White)
+private val FocusedBorder = Border(
+    border = FocusedBorderStroke,
+    shape = DrawerItemShape
+)
+private val DrawerBackgroundColor = Color(0xFF0E1013)
 
 @Composable
 fun LiveTvChannelDrawer(
@@ -60,7 +73,8 @@ fun LiveTvChannelDrawer(
     channels: List<LiveChannel>,
     onSelectChannel: (LiveChannel) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentTimeMs: Long = remember { System.currentTimeMillis() }
 ) {
     if (!isPresented) return
 
@@ -81,6 +95,33 @@ fun LiveTvChannelDrawer(
         }
     }
 
+    // Pre-allocate styles once for all items in the drawer to eliminate per-card allocations during scrolling
+    val cardShape = CardDefaults.shape(DrawerItemShape)
+    val cardScale = CardDefaults.scale(scale = 1f, focusedScale = 1f)
+    val normalBorder = CardDefaults.border(
+        border = Border.None,
+        focusedBorder = FocusedBorder
+    )
+    val currentBorder = CardDefaults.border(
+        border = Border(
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+            shape = DrawerItemShape
+        ),
+        focusedBorder = FocusedBorder
+    )
+    val normalColors = CardDefaults.colors(
+        containerColor = Color.White.copy(alpha = 0.08f),
+        focusedContainerColor = MaterialTheme.colorScheme.primary,
+        contentColor = Color.White,
+        focusedContentColor = MaterialTheme.colorScheme.onPrimary
+    )
+    val currentColors = CardDefaults.colors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+        focusedContainerColor = MaterialTheme.colorScheme.primary,
+        contentColor = Color.White,
+        focusedContentColor = MaterialTheme.colorScheme.onPrimary
+    )
+
     AnimatedVisibility(
         visible = isPresented,
         enter = slideInHorizontally(initialOffsetX = { -it }) + fadeIn(),
@@ -91,7 +132,7 @@ fun LiveTvChannelDrawer(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(380.dp)
-                .background(Color.Black.copy(alpha = 0.95f))
+                .background(DrawerBackgroundColor)
                 .padding(top = 24.dp, start = 20.dp, end = 20.dp, bottom = 20.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -138,6 +179,11 @@ fun LiveTvChannelDrawer(
                         ChannelDrawerCard(
                             channel = ch,
                             isCurrent = isCurrent,
+                            currentTimeMs = currentTimeMs,
+                            shape = cardShape,
+                            colors = if (isCurrent) currentColors else normalColors,
+                            scale = cardScale,
+                            border = if (isCurrent) currentBorder else normalBorder,
                             onClick = {
                                 onSelectChannel(ch)
                                 onDismiss()
@@ -155,45 +201,31 @@ fun LiveTvChannelDrawer(
 private fun ChannelDrawerCard(
     channel: LiveChannel,
     isCurrent: Boolean,
+    currentTimeMs: Long,
+    shape: CardShape,
+    colors: CardColors,
+    scale: CardScale,
+    border: CardBorder,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isItemFocused by remember { mutableStateOf(false) }
+
+    val (progTitle, progSubtitle) = remember(channel.id, currentTimeMs) {
+        val prog = channel.getCurrentEpgProgram(currentTimeMs)
+        val subtitle = "${prog.formattedStartTime} • ${prog.getFormattedRemainingText(currentTimeMs)}"
+        prog.title to subtitle
+    }
 
     Card(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .onFocusChanged { isItemFocused = it.isFocused },
-        shape = CardDefaults.shape(RoundedCornerShape(10.dp)),
-        colors = CardDefaults.colors(
-            containerColor = if (isCurrent) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            } else {
-                Color.White.copy(alpha = 0.08f)
-            },
-            focusedContainerColor = MaterialTheme.colorScheme.primary,
-            contentColor = Color.White,
-            focusedContentColor = MaterialTheme.colorScheme.onPrimary
-        ),
-        scale = CardDefaults.scale(
-            scale = 1f,
-            focusedScale = 1f
-        ),
-        border = CardDefaults.border(
-            border = if (isCurrent) {
-                Border(
-                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
-                    shape = RoundedCornerShape(10.dp)
-                )
-            } else {
-                Border.None
-            },
-            focusedBorder = Border(
-                border = BorderStroke(2.dp, Color.White),
-                shape = RoundedCornerShape(10.dp)
-            )
-        )
+        shape = shape,
+        colors = colors,
+        scale = scale,
+        border = border
     ) {
         Row(
             modifier = Modifier
@@ -204,7 +236,7 @@ private fun ChannelDrawerCard(
             // Channel Number Badge
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(BadgeShape)
                     .background(
                         if (isItemFocused) {
                             Color.Black.copy(alpha = 0.25f)
@@ -243,9 +275,8 @@ private fun ChannelDrawerCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                val prog = channel.getCurrentEpgProgram()
                 Text(
-                    text = prog.title,
+                    text = progTitle,
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal
                     ),
@@ -258,7 +289,7 @@ private fun ChannelDrawerCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${prog.formattedStartTime} • ${prog.getFormattedRemainingText()}",
+                    text = progSubtitle,
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = if (isItemFocused) {
                         MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)

@@ -63,3 +63,18 @@ data class EpgProgram(
         }
     }
 }
+
+object EpgTimeFormatter {
+    private val timeFormat = ThreadLocal.withInitial {
+        SimpleDateFormat("h:mm a", Locale.getDefault())
+    }
+
+    fun formatTime(epochMs: Long): String {
+        return timeFormat.get()?.format(Date(epochMs)) ?: ""
+    }
+
+    fun formatTimeSlot(startEpochMs: Long, endEpochMs: Long): String {
+        val fmt = timeFormat.get() ?: return ""
+        return "${fmt.format(Date(startEpochMs))} - ${fmt.format(Date(endEpochMs))}"
+    }
+}

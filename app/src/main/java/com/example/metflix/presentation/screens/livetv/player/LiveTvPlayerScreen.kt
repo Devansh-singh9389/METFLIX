@@ -496,7 +496,9 @@ private fun LiveTvPlayerContent(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
-                    lastUserInteraction = System.currentTimeMillis()
+                    if (!isDrawerOpen && !isSettingsOpen) {
+                        lastUserInteraction = System.currentTimeMillis()
+                    }
                     when (event.key) {
                         Key.DirectionUp, Key.ChannelUp, Key.PageUp -> {
                             if (!isDrawerOpen && !isSettingsOpen) {
@@ -1047,6 +1049,7 @@ private fun LiveTvPlayerContent(
                 lastUserInteraction = System.currentTimeMillis()
                 runCatching { rootFocusRequester.requestFocus() }
             },
+            currentTimeMs = currentTimeMs,
             modifier = Modifier.align(Alignment.CenterStart)
         )
 
