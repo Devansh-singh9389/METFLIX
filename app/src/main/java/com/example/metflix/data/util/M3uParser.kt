@@ -20,6 +20,8 @@ object M3uParser {
     private val TVG_COUNTRY_REGEX = Regex("""tvg-country="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val TVG_LANGUAGE_REGEX = Regex("""tvg-language="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val TVG_CHNO_REGEX = Regex("""tvg-chno="([0-9]+)"""", RegexOption.IGNORE_CASE)
+    private val DRM_SCHEME_REGEX = Regex("""(?:drm-scheme|drm_scheme|drm-system|drm_system)="([^"]*)"""", RegexOption.IGNORE_CASE)
+    private val DRM_LICENSE_REGEX = Regex("""(?:drm-license|drm_license|drm-license-url|drm_license_url|license-url|license_url)="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val URL_TVG_REGEX = Regex("""(?:url-tvg|x-tvg-url)="([^"]*)"""", RegexOption.IGNORE_CASE)
 
     fun parsePlaylist(inputStream: InputStream, defaultCategory: String = "General", maxChannels: Int = 3500): M3uPlaylist {
@@ -50,6 +52,8 @@ object M3uParser {
         var currentGroup: String? = null
         var currentCountry: String? = null
         var currentLanguage: String? = null
+        var currentDrmScheme: String? = null
+        var currentDrmLicenseUrl: String? = null
         var currentName: String? = null
         var channelCounter = 1
 
@@ -71,6 +75,9 @@ object M3uParser {
                     currentGroup = GROUP_TITLE_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
                     currentCountry = TVG_COUNTRY_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
                     currentLanguage = TVG_LANGUAGE_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
+                    currentDrmScheme = DRM_SCHEME_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
+                        ?.lowercase(Locale.ROOT)
+                    currentDrmLicenseUrl = DRM_LICENSE_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
 
                     val commaIndex = line.lastIndexOf(',')
                     currentName = if (commaIndex != -1 && commaIndex + 1 < line.length) {
@@ -84,12 +91,17 @@ object M3uParser {
 
                     // Ignore broken or unsupported streams
                     if (streamUrl.startsWith("http://", ignoreCase = true) || streamUrl.startsWith("https://", ignoreCase = true)) {
-                        // Detect unconfigured DRM streams (e.g. Widevine DASH without license config)
-                        val isDrm = streamUrl.contains(".mpd", ignoreCase = true) &&
-                                (streamUrl.contains("widevine", ignoreCase = true) || streamUrl.contains("license", ignoreCase = true))
+                        val drmScheme = currentDrmScheme?.let(::normalizeDrmScheme)
+                        val drmLicenseUrl = currentDrmLicenseUrl?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                        val looksLikeDrm = streamUrl.contains(".mpd", ignoreCase = true) &&
+                            (streamUrl.contains("widevine", ignoreCase = true) ||
+                                streamUrl.contains("playready", ignoreCase = true) ||
+                                streamUrl.contains("license", ignoreCase = true))
+                        val hasConfiguredDrm = drmScheme != null && drmLicenseUrl != null
 
-                        // ExoPlayer cannot play Widevine DRM streams without a license server URL/key; skip to avoid 100% playback failures
-                        if (!isDrm) {
+                        // Keep DRM streams only when Media3 has both a supported scheme and a license URL.
+                        val hasDrmMetadata = looksLikeDrm || currentDrmScheme != null || currentDrmLicenseUrl != null
+                        if (!hasDrmMetadata || hasConfiguredDrm) {
                             val category = normalizeCategory(currentGroup ?: defaultCategory)
                             val id = generateId(currentTvgId, name, streamUrl)
                             val cleanName = cleanChannelName(name)
@@ -109,9 +121,10 @@ object M3uParser {
                                     programDescription = "Streaming live on $cleanName ($category)",
                                     isFavorite = false,
                                     epgId = currentTvgId,
-                                    drmScheme = null,
-                                    requiredSecurityLevel = "NONE",
-                                    isFta = true
+                                    drmScheme = drmScheme,
+                                    drmLicenseUrl = drmLicenseUrl,
+                                    requiredSecurityLevel = if (drmScheme != null) "L3" else "NONE",
+                                    isFta = drmScheme == null
                                 )
                             )
                         }
@@ -125,12 +138,23 @@ object M3uParser {
                     currentGroup = null
                     currentCountry = null
                     currentLanguage = null
+                    currentDrmScheme = null
+                    currentDrmLicenseUrl = null
                     currentName = null
                 }
+
             }
         }
 
         return M3uPlaylist(channels, headerEpgUrl)
+    }
+
+    private fun normalizeDrmScheme(raw: String): String? {
+        return when (raw.trim().lowercase(Locale.ROOT)) {
+            "widevine", "com.widevine.alpha" -> "widevine"
+            "playready", "com.microsoft.playready" -> "playready"
+            else -> null
+        }
     }
 
     private fun normalizeCategory(group: String): String {

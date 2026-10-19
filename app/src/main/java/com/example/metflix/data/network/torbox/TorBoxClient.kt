@@ -511,6 +511,7 @@ class TorBoxClient @Inject constructor(
             // Method 1: Request JSON download link with redirect=false
             val req = Request.Builder()
                 .url("$BASE_URL/torrents/requestdl?token=$cleanKey&torrent_id=$torrentId$fileParam&redirect=false")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()

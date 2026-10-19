@@ -328,7 +328,7 @@ private fun LiveTvPlayerContent(
         try {
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
-            val mediaItem = MediaItem.Builder()
+            val mediaItemBuilder = MediaItem.Builder()
                 .setUri(Uri.parse(state.currentChannel.streamUrl))
                 .setMediaMetadata(
                     MediaMetadata.Builder()
@@ -336,7 +336,23 @@ private fun LiveTvPlayerContent(
                         .setArtist(state.currentChannel.currentProgram)
                         .build()
                 )
-                .build()
+            val drmScheme = state.currentChannel.drmScheme
+            val licenseUrl = state.currentChannel.drmLicenseUrl
+            if (drmScheme != null && licenseUrl != null) {
+                val drmUuid = when (drmScheme.lowercase()) {
+                    "widevine" -> C.WIDEVINE_UUID
+                    "playready" -> C.PLAYREADY_UUID
+                    else -> null
+                }
+                if (drmUuid != null) {
+                    mediaItemBuilder.setDrmConfiguration(
+                        MediaItem.DrmConfiguration.Builder(drmUuid)
+                            .setLicenseUri(licenseUrl)
+                            .build()
+                    )
+                }
+            }
+            val mediaItem = mediaItemBuilder.build()
 
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
