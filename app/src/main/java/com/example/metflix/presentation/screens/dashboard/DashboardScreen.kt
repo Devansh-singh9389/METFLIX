@@ -95,7 +95,11 @@ fun DashboardScreen(
             currentDestination?.let { dest ->
                 val screenName = dest.substringBefore('/')
                 val screen = try { Screens.valueOf(screenName) } catch (_: Exception) { null }
-                screen?.let { TopBarTabs.indexOf(it).takeIf { idx -> idx >= 0 } }
+                when {
+                    screen == Screens.Profile -> PROFILE_SCREEN_INDEX
+                    screen != null -> TopBarTabs.indexOf(screen).takeIf { idx -> idx >= 0 }
+                    else -> null
+                }
             } ?: 0
         }
     }

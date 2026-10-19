@@ -68,7 +68,7 @@ val TopBarTabs = Screens.entries.toList().filter { it.isTabItem }
 // +1 for ProfileTab
 val TopBarFocusRequesters = List(size = TopBarTabs.size + 1) { FocusRequester() }
 
-private const val PROFILE_SCREEN_INDEX = -1
+const val PROFILE_SCREEN_INDEX = -1
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable

@@ -212,7 +212,6 @@ fun CachedVideoPlayerScreen(
                     Button(
                         onClick = {
                             retryUsed = true
-                            hasError = false
                             bytesLoaded = 0L
                             coroutineScope.launch {
                                 isRefreshing = true
@@ -224,6 +223,7 @@ fun CachedVideoPlayerScreen(
                                 } else {
                                     session = refreshed
                                     refreshAttempted = true
+                                    hasError = false
                                 }
                             }
                         },

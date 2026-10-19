@@ -85,6 +85,19 @@ object M3uParser {
                     } else {
                         currentTvgName ?: currentTvgId ?: "Channel"
                     }
+                } else if (line.startsWith("#KODIPROP:", ignoreCase = true)) {
+                    val property = line.substringAfter(':', "").trim()
+                    val key = property.substringBefore('=', "").trim().lowercase(Locale.ROOT)
+                    val value = property.substringAfter('=', "").trim()
+                    when {
+                        key.endsWith("license_type") -> currentDrmScheme = value
+                            .substringBefore('|')
+                            .ifBlank { null }
+                            ?.lowercase(Locale.ROOT)
+                        key.endsWith("license_key") -> currentDrmLicenseUrl = value
+                            .substringBefore('|')
+                            .ifBlank { null }
+                    }
                 } else if (!line.startsWith("#")) {
                     val streamUrl = line
                     val name = currentName ?: currentTvgName ?: "Live Channel"
