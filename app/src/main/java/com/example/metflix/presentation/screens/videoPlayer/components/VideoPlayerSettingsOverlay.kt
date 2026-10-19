@@ -27,9 +27,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -143,10 +145,11 @@ fun VideoPlayerSettingsOverlay(
     BackHandler(onBack = onDismiss)
 
     val dialogFirstFocusRequester = remember { FocusRequester() }
+    var isEditingKey by remember { mutableStateOf(false) }
+    var tempKey by remember { mutableStateOf("") }
 
     LaunchedEffect(isPresented) {
         if (isPresented) {
-            delay(50)
             runCatching { dialogFirstFocusRequester.requestFocus() }
         }
     }
@@ -156,7 +159,7 @@ fun VideoPlayerSettingsOverlay(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.85f))
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyUp) {
+                if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.Menu, Key.Settings -> {
                             onDismiss()
@@ -180,19 +183,18 @@ fun VideoPlayerSettingsOverlay(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
             onClick = {}
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(22.dp)
-                    .verticalScroll(rememberScrollState()),
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(22.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -226,317 +228,329 @@ fun VideoPlayerSettingsOverlay(
                         )
                     }
                 }
+            }
 
                 // 1. Streaming Server / Multi-Server Section
                 if (availableServers.isNotEmpty()) {
-                    SettingsSectionHeader(
-                        icon = Icons.Default.Dns,
-                        title = "Streaming Server / Source"
-                    )
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            SettingsSectionHeader(
+                                icon = Icons.Default.Dns,
+                                title = "Streaming Server / Source"
+                            )
 
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        availableServers.chunked(2).forEach { rowServers ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                rowServers.forEach { server ->
-                                    val isSelected = selectedServer?.id == server.id
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                availableServers.chunked(2).forEach { rowServers ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        rowServers.forEach { server ->
+                                            val isSelected = selectedServer?.id == server.id
 
-                                    ServerPillButton(
-                                        server = server,
-                                        isSelected = isSelected,
-                                        onClick = { onSelectServer(server) },
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                            ServerPillButton(
+                                                server = server,
+                                                isSelected = isSelected,
+                                                onClick = { onSelectServer(server) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        if (rowServers.size == 1) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
                                 }
-                                if (rowServers.size == 1) {
-                                    Spacer(modifier = Modifier.weight(1f))
-                                }
+
+                                Text(
+                                    text = "⚡ Servers are probed in parallel and dynamically ranked by response time, direct stream, and regional audio match.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                    fontSize = 11.sp
+                                )
                             }
                         }
-
-                        Text(
-                            text = "⚡ Servers are probed in parallel and dynamically ranked by response time, direct stream, and regional audio match.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                            fontSize = 11.sp
-                        )
                     }
                 }
 
                 // 1.5. Playback Engine Section (Web Embed vs Native ExoPlayer)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                item {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Dns,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Playback Engine",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { onTogglePlayerEngine(true) },
-                            colors = ButtonDefaults.colors(
-                                containerColor = if (isWebPlayerMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Web Embed", style = MaterialTheme.typography.labelMedium)
+                            Icon(
+                                imageVector = Icons.Default.Dns,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Playback Engine",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                        Button(
-                            onClick = { onTogglePlayerEngine(false) },
-                            colors = ButtonDefaults.colors(
-                                containerColor = if (!isWebPlayerMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
-                            )
-                        ) {
-                            Text("Native (ExoPlayer)", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { onTogglePlayerEngine(true) },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = if (isWebPlayerMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            ) {
+                                Text("Web Embed", style = MaterialTheme.typography.labelMedium)
+                            }
+                            Button(
+                                onClick = { onTogglePlayerEngine(false) },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = if (!isWebPlayerMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    focusedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            ) {
+                                Text("Native (ExoPlayer)", style = MaterialTheme.typography.labelMedium)
+                            }
                         }
                     }
                 }
 
                 // 2. Video Quality / Multi-Resolution Section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.HighQuality,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Video Quality & Resolution",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    if (sourceResolutionLabel.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                    RoundedCornerShape(4.dp)
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.HighQuality,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Video Quality & Resolution",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            if (sourceResolutionLabel.isNotBlank()) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                            RoundedCornerShape(4.dp)
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Live: $sourceResolutionLabel",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        if (isWebPlayerMode) {
+                            WebEmbedEngineNotice(
+                                title = "Video Quality Managed in Web Frame",
+                                description = "Quality & resolution are handled automatically by the web stream provider. Switch to Native engine if available for direct hardware resolution selection."
+                            )
+                        } else {
+                            val dynamicQualityOptions = remember(availableQualityHeights) {
+                                if (availableQualityHeights.isNotEmpty()) {
+                                    listOf("Auto" to 0) + availableQualityHeights.sortedDescending().map { h ->
+                                        val label = if (h >= 2160) "4K (${h}p)" else "${h}p"
+                                        label to h
+                                    }
+                                } else {
+                                    VideoQualityOptions
+                                }
+                            }
+
+                            val qualityChunkSize = if (dynamicQualityOptions.size > 5) 4 else dynamicQualityOptions.size
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                dynamicQualityOptions.chunked(qualityChunkSize).forEach { rowOptions ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        rowOptions.forEach { (label, height) ->
+                                            val isSelected = currentQualityMaxHeight == height
+                                            OptionPillButton(
+                                                label = label,
+                                                isSelected = isSelected,
+                                                onClick = { onSelectQuality(height) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        repeat(qualityChunkSize - rowOptions.size) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
+                                }
+                            }
+
+                            val qualityDescription = when {
+                                currentQualityMaxHeight == 0 -> "Auto: Dynamically adapts stream quality and bitrates to your network for smooth playback."
+                                currentQualityMaxHeight >= 2160 -> "${currentQualityMaxHeight}p Ultra HD (4K): Maximum visual fidelity for 4K displays."
+                                currentQualityMaxHeight >= 1080 -> "1080p Full HD: Maximum crispness, recommended for high-speed Wi-Fi & Ethernet."
+                                currentQualityMaxHeight >= 720 -> "720p HD: High definition with balanced internet data consumption."
+                                currentQualityMaxHeight >= 480 -> "480p SD: Data Saver mode — uses up to 80% less internet bandwidth."
+                                currentQualityMaxHeight > 0 -> "${currentQualityMaxHeight}p: Minimum data usage for low-speed connections."
+                                else -> "Adaptive streaming"
+                            }
+
                             Text(
-                                text = "Live: $sourceResolutionLabel",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
+                                text = qualityDescription,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                fontSize = 11.sp
                             )
                         }
                     }
                 }
 
-                if (isWebPlayerMode) {
-                    WebEmbedEngineNotice(
-                        title = "Video Quality Managed in Web Frame",
-                        description = "Quality & resolution are handled automatically by the web stream provider. Switch to Native engine if available for direct hardware resolution selection."
-                    )
-                } else {
-                    val dynamicQualityOptions = remember(availableQualityHeights) {
-                        if (availableQualityHeights.isNotEmpty()) {
-                            listOf("Auto" to 0) + availableQualityHeights.sortedDescending().map { h ->
-                                val label = if (h >= 2160) "4K (${h}p)" else "${h}p"
-                                label to h
-                            }
-                        } else {
-                            VideoQualityOptions
-                        }
-                    }
-
-                    val qualityChunkSize = if (dynamicQualityOptions.size > 5) 4 else dynamicQualityOptions.size
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        dynamicQualityOptions.chunked(qualityChunkSize).forEach { rowOptions ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                rowOptions.forEach { (label, height) ->
-                                    val isSelected = currentQualityMaxHeight == height
-                                    OptionPillButton(
-                                        label = label,
-                                        isSelected = isSelected,
-                                        onClick = { onSelectQuality(height) },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                repeat(qualityChunkSize - rowOptions.size) {
-                                    Spacer(modifier = Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    }
-
-                    val qualityDescription = when {
-                        currentQualityMaxHeight == 0 -> "Auto: Dynamically adapts stream quality and bitrates to your network for smooth playback."
-                        currentQualityMaxHeight >= 2160 -> "${currentQualityMaxHeight}p Ultra HD (4K): Maximum visual fidelity for 4K displays."
-                        currentQualityMaxHeight >= 1080 -> "1080p Full HD: Maximum crispness, recommended for high-speed Wi-Fi & Ethernet."
-                        currentQualityMaxHeight >= 720 -> "720p HD: High definition with balanced internet data consumption."
-                        currentQualityMaxHeight >= 480 -> "480p SD: Data Saver mode — uses up to 80% less internet bandwidth."
-                        currentQualityMaxHeight > 0 -> "${currentQualityMaxHeight}p: Minimum data usage for low-speed connections."
-                        else -> "Adaptive streaming"
-                    }
-
-                    Text(
-                        text = qualityDescription,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                        fontSize = 11.sp
-                    )
-                }
-
                 // 2. AllDebrid Cloud Account & High-Speed Dual-Audio
-                SettingsSectionHeader(
-                    icon = Icons.Default.VpnKey,
-                    title = "AllDebrid Cloud Streaming (Instant Dual-Audio)"
-                )
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SettingsSectionHeader(
+                            icon = Icons.Default.VpnKey,
+                            title = "AllDebrid Cloud Streaming (Instant Dual-Audio)"
+                        )
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
-                    colors = ClickableSurfaceDefaults.colors(
-                        containerColor = if (isDebridActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
-                    onClick = {}
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
+                        Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
+                            colors = ClickableSurfaceDefaults.colors(
+                                containerColor = if (isDebridActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+                            onClick = {}
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (isDebridActive) "Cloud Debrid Active" else "Cloud Debrid Disabled / Unconfigured",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDebridActive) MaterialTheme.colorScheme.primary else Color.White
-                                )
-                                Text(
-                                    text = if (debridStatus.isNotBlank()) debridStatus else "High-speed cached torrent unthrottling for Dual-Audio (Hindi+Eng) streams.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.LightGray
-                                )
-                            }
-                        }
-
-                        // Provider Selection Pills (AllDebrid vs TorBox)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            com.example.metflix.data.settings.DebridProviderType.entries.forEach { provider ->
-                                Button(
-                                    onClick = { onSelectDebridProvider(provider) },
-                                    colors = ButtonDefaults.colors(
-                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                                        focusedContainerColor = MaterialTheme.colorScheme.primary
-                                    )
-                                ) {
-                                    Text(provider.displayName, fontSize = 12.sp)
-                                }
-                            }
-                        }
-
-                        var isEditingKey by remember { mutableStateOf(false) }
-                        var tempKey by remember { mutableStateOf("") }
-
-                        if (isEditingKey) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                BasicTextField(
-                                    value = tempKey,
-                                    onValueChange = { tempKey = it },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    textStyle = TextStyle(
-                                        color = Color.White,
-                                        fontSize = 13.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    ),
-                                    singleLine = true
-                                )
-
-                                Button(
-                                    onClick = {
-                                        onSaveDebridKey(tempKey)
-                                    },
-                                    colors = ButtonDefaults.colors(
-                                        containerColor = Color(0xFF2E7D32),
-                                        focusedContainerColor = Color(0xFF4CAF50)
-                                    )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Test & Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                Button(
-                                    onClick = { isEditingKey = false },
-                                    colors = ButtonDefaults.colors(
-                                        focusedContainerColor = MaterialTheme.colorScheme.error
-                                    )
-                                ) {
-                                    Text("Cancel", fontSize = 12.sp)
-                                }
-                            }
-                        } else {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = { isEditingKey = true },
-                                    colors = ButtonDefaults.colors(
-                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                                        focusedContainerColor = MaterialTheme.colorScheme.primary
-                                    )
-                                ) {
-                                    Text(
-                                        text = if (isDebridActive) "Change API Key" else "Enter AllDebrid API Key",
-                                        fontSize = 12.sp
-                                    )
-                                }
-
-                                if (isDebridActive) {
-                                    Button(
-                                        onClick = { onToggleDebrid(false) },
-                                        colors = ButtonDefaults.colors(
-                                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                                            focusedContainerColor = MaterialTheme.colorScheme.error
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isDebridActive) "Cloud Debrid Active" else "Cloud Debrid Disabled / Unconfigured",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDebridActive) MaterialTheme.colorScheme.primary else Color.White
                                         )
+                                        Text(
+                                            text = if (debridStatus.isNotBlank()) debridStatus else "High-speed cached torrent unthrottling for Dual-Audio (Hindi+Eng) streams.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.LightGray
+                                        )
+                                    }
+                                }
+
+                                // Provider Selection Pills (AllDebrid vs TorBox)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    com.example.metflix.data.settings.DebridProviderType.entries.forEach { provider ->
+                                        Button(
+                                            onClick = { onSelectDebridProvider(provider) },
+                                            colors = ButtonDefaults.colors(
+                                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                                focusedContainerColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        ) {
+                                            Text(provider.displayName, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+
+                                if (isEditingKey) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("Disable", fontSize = 12.sp)
+                                        BasicTextField(
+                                            value = tempKey,
+                                            onValueChange = { tempKey = it },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            textStyle = TextStyle(
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontFamily = FontFamily.Monospace
+                                            ),
+                                            singleLine = true
+                                        )
+
+                                        Button(
+                                            onClick = {
+                                                onSaveDebridKey(tempKey)
+                                            },
+                                            colors = ButtonDefaults.colors(
+                                                containerColor = Color(0xFF2E7D32),
+                                                focusedContainerColor = Color(0xFF4CAF50)
+                                            )
+                                        ) {
+                                            Text("Test & Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        Button(
+                                            onClick = { isEditingKey = false },
+                                            colors = ButtonDefaults.colors(
+                                                focusedContainerColor = MaterialTheme.colorScheme.error
+                                            )
+                                        ) {
+                                            Text("Cancel", fontSize = 12.sp)
+                                        }
+                                    }
+                                } else {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = { isEditingKey = true },
+                                            colors = ButtonDefaults.colors(
+                                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                                focusedContainerColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        ) {
+                                            Text(
+                                                text = if (isDebridActive) "Change API Key" else "Enter AllDebrid API Key",
+                                                fontSize = 12.sp
+                                            )
+                                        }
+
+                                        if (isDebridActive) {
+                                            Button(
+                                                onClick = { onToggleDebrid(false) },
+                                                colors = ButtonDefaults.colors(
+                                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                                    focusedContainerColor = MaterialTheme.colorScheme.error
+                                                )
+                                            ) {
+                                                Text("Disable", fontSize = 12.sp)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -545,51 +559,85 @@ fun VideoPlayerSettingsOverlay(
                 }
 
                 // 3. Audio Track / Multi-Audio Selection
-                SettingsSectionHeader(
-                    icon = Icons.Default.Audiotrack,
-                    title = "Audio Track & Language"
-                )
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SettingsSectionHeader(
+                            icon = Icons.Default.Audiotrack,
+                            title = "Audio Track & Language"
+                        )
 
-                if (isWebPlayerMode) {
-                    WebEmbedEngineNotice(
-                        title = "Audio Managed by Web Player",
-                        description = "Audio language and multichannel streams are embedded within the web player interface."
-                    )
-                } else if (availableAudioTracks.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        availableAudioTracks.chunked(3).forEachIndexed { chunkIndex, rowTracks ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                rowTracks.forEachIndexed { itemIndex, trackLabel ->
-                                    val index = chunkIndex * 3 + itemIndex
-                                    val isSelected = selectedAudioTrackIndex == index
-                                    val displayLabel = if (isSelected) "✓ $trackLabel" else trackLabel
-                                    OptionPillButton(
-                                        label = displayLabel,
-                                        isSelected = isSelected,
-                                        onClick = { onSelectAudioTrack(index) },
-                                        modifier = Modifier.weight(1f)
-                                    )
+                        if (isWebPlayerMode) {
+                            WebEmbedEngineNotice(
+                                title = "Audio Managed by Web Player",
+                                description = "Audio language and multichannel streams are embedded within the web player interface."
+                            )
+                        } else if (availableAudioTracks.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                availableAudioTracks.chunked(3).forEachIndexed { chunkIndex, rowTracks ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        rowTracks.forEachIndexed { itemIndex, trackLabel ->
+                                            val index = chunkIndex * 3 + itemIndex
+                                            val isSelected = selectedAudioTrackIndex == index
+                                            val displayLabel = if (isSelected) "✓ $trackLabel" else trackLabel
+                                            OptionPillButton(
+                                                label = displayLabel,
+                                                isSelected = isSelected,
+                                                onClick = { onSelectAudioTrack(index) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        repeat(3 - rowTracks.size) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
                                 }
-                                repeat(3 - rowTracks.size) {
-                                    Spacer(modifier = Modifier.weight(1f))
+
+                                if (availableAudioTracks.size <= 1) {
+                                    val noticeText = when (selectedServer?.id) {
+                                        "anime" -> "💡 AnimeWorld multi-audio stream active. If alternative dubs (Hindi/English) are available on the CDN for this episode, they appear above."
+                                        "dualaudio" -> "💡 Server 1 searched Indian Dual-Audio catalogs. If no Hindi release has dropped online yet for this title, it plays in English."
+                                        else -> "💡 This stream has 1 audio track. For Hindi & Regional dubs, switch to Server 1 (Dual-Audio) or Server 0 (AnimeWorld Multi-Audio)."
+                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(
+                                                Color.White.copy(alpha = 0.05f),
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = noticeText,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                            fontSize = 11.sp
+                                        )
+                                    }
                                 }
                             }
-                        }
-
-                        if (availableAudioTracks.size <= 1) {
-                            val noticeText = when (selectedServer?.id) {
-                                "anime" -> "💡 AnimeWorld multi-audio stream active. If alternative dubs (Hindi/English) are available on the CDN for this episode, they appear above."
-                                "dualaudio" -> "💡 Server 1 searched Indian Dual-Audio catalogs. If no Hindi release has dropped online yet for this title, it plays in English."
-                                else -> "💡 This stream has 1 audio track. For Hindi & Regional dubs, switch to Server 1 (Dual-Audio) or Server 0 (AnimeWorld Multi-Audio)."
+                        } else {
+                            val noticeText = if (selectedServer?.id == "dualaudio") {
+                                "Primary Direct Audio (Stereo / Multichannel Pass-Through) • No Hindi release found yet for this title; streaming in English"
+                            } else {
+                                "Primary Direct Audio (Stereo / Multichannel Pass-Through) • Switch to Server 1 (Dual-Audio) for Hindi / Regional dubs"
                             }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        Color.White.copy(alpha = 0.05f),
+                                        Color.White.copy(alpha = 0.06f),
                                         RoundedCornerShape(8.dp)
                                     )
                                     .padding(10.dp),
@@ -599,238 +647,226 @@ fun VideoPlayerSettingsOverlay(
                                 Icon(
                                     imageVector = Icons.Default.Info,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    tint = Color.LightGray,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
                                     text = noticeText,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                    color = Color.LightGray,
                                     fontSize = 11.sp
                                 )
                             }
                         }
                     }
-                } else {
-                    val noticeText = if (selectedServer?.id == "dualaudio") {
-                        "Primary Direct Audio (Stereo / Multichannel Pass-Through) • No Hindi release found yet for this title; streaming in English"
-                    } else {
-                        "Primary Direct Audio (Stereo / Multichannel Pass-Through) • Switch to Server 1 (Dual-Audio) for Hindi / Regional dubs"
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Color.White.copy(alpha = 0.06f),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = Color.LightGray,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = noticeText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.LightGray,
-                            fontSize = 11.sp
-                        )
-                    }
                 }
 
                 // 4. Subtitle Selection
-                SettingsSectionHeader(
-                    icon = Icons.Default.ClosedCaption,
-                    title = "Subtitles / Captions"
-                )
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SettingsSectionHeader(
+                            icon = Icons.Default.ClosedCaption,
+                            title = "Subtitles / Captions"
+                        )
 
-                if (isWebPlayerMode) {
-                    WebEmbedEngineNotice(
-                        title = "Subtitles Managed by Web Player",
-                        description = "Subtitles are rendered directly within the web player stream iframe."
-                    )
-                } else if (availableSubtitleTracks.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val allTracks = listOf("Off") + availableSubtitleTracks
-                        allTracks.chunked(3).forEachIndexed { chunkIndex, rowTracks ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                rowTracks.forEachIndexed { itemIndex, trackLabel ->
-                                    val index = chunkIndex * 3 + itemIndex - 1
-                                    val isSelected = selectedSubtitleTrackIndex == index
-                                    val displayLabel = if (isSelected) "✓ $trackLabel" else trackLabel
-                                    OptionPillButton(
-                                        label = displayLabel,
-                                        isSelected = isSelected,
-                                        onClick = { onSelectSubtitleTrack(index) },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                repeat(3 - rowTracks.size) {
-                                    Spacer(modifier = Modifier.weight(1f))
+                        if (isWebPlayerMode) {
+                            WebEmbedEngineNotice(
+                                title = "Subtitles Managed by Web Player",
+                                description = "Subtitles are rendered directly within the web player stream iframe."
+                            )
+                        } else if (availableSubtitleTracks.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                val allTracks = listOf("Off") + availableSubtitleTracks
+                                allTracks.chunked(3).forEachIndexed { chunkIndex, rowTracks ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        rowTracks.forEachIndexed { itemIndex, trackLabel ->
+                                            val index = chunkIndex * 3 + itemIndex - 1
+                                            val isSelected = selectedSubtitleTrackIndex == index
+                                            val displayLabel = if (isSelected) "✓ $trackLabel" else trackLabel
+                                            OptionPillButton(
+                                                label = displayLabel,
+                                                isSelected = isSelected,
+                                                onClick = { onSelectSubtitleTrack(index) },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        repeat(3 - rowTracks.size) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
                                 }
                             }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        Color.White.copy(alpha = 0.06f),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = Color.LightGray,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "No embedded subtitle tracks detected for this stream",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp
+                                )
+                            }
                         }
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Color.White.copy(alpha = 0.06f),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = Color.LightGray,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "No embedded subtitle tracks detected for this stream",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.LightGray,
-                            fontSize = 11.sp
-                        )
                     }
                 }
 
                 // 5. Screen Aspect Ratio / Scale
-                SettingsSectionHeader(
-                    icon = Icons.Default.AspectRatio,
-                    title = "Screen Aspect Ratio"
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val scaleModes = listOf(
-                        "Fit (Original)" to ContentScale.Fit,
-                        "Zoom / Crop" to ContentScale.Crop,
-                        "Stretch" to ContentScale.FillBounds
-                    )
-
-                    scaleModes.forEach { (title, scale) ->
-                        val isSelected = currentContentScale == scale
-                        OptionPillButton(
-                            label = title,
-                            isSelected = isSelected,
-                            onClick = { onSelectContentScale(scale) },
-                            modifier = Modifier.weight(1f)
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SettingsSectionHeader(
+                            icon = Icons.Default.AspectRatio,
+                            title = "Screen Aspect Ratio"
                         )
-                    }
-                }
 
-                // 6. Playback Speed
-                SettingsSectionHeader(
-                    icon = Icons.Default.Speed,
-                    title = "Playback Speed"
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    SpeedOptions.forEach { speed ->
-                        val isSelected = currentSpeed == speed
-                        OptionPillButton(
-                            label = "${speed}x",
-                            isSelected = isSelected,
-                            onClick = { onSelectSpeed(speed) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                // 7. Sleep Timer
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    SettingsSectionHeader(
-                        icon = Icons.Default.Timer,
-                        title = "Sleep Timer"
-                    )
-                    if (currentSleepTimerMinutes > 0) {
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    Color(0xFF4CAF50).copy(alpha = 0.2f),
-                                    RoundedCornerShape(4.dp)
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = "Active: ${currentSleepTimerMinutes}m",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF81C784),
-                                fontWeight = FontWeight.Bold
+                            val scaleModes = listOf(
+                                "Fit (Original)" to ContentScale.Fit,
+                                "Zoom / Crop" to ContentScale.Crop,
+                                "Stretch" to ContentScale.FillBounds
                             )
+
+                            scaleModes.forEach { (title, scale) ->
+                                val isSelected = currentContentScale == scale
+                                OptionPillButton(
+                                    label = title,
+                                    isSelected = isSelected,
+                                    onClick = { onSelectContentScale(scale) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    VideoSleepTimerOptions.forEach { (label, minutes) ->
-                        val isSelected = currentSleepTimerMinutes == minutes
-                        OptionPillButton(
-                            label = label,
-                            isSelected = isSelected,
-                            onClick = { onSelectSleepTimer(minutes) },
-                            modifier = Modifier.weight(1f)
+                // 6. Playback Speed
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SettingsSectionHeader(
+                            icon = Icons.Default.Speed,
+                            title = "Playback Speed"
                         )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SpeedOptions.forEach { speed ->
+                                val isSelected = currentSpeed == speed
+                                OptionPillButton(
+                                    label = "${speed}x",
+                                    isSelected = isSelected,
+                                    onClick = { onSelectSpeed(speed) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 7. Sleep Timer
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            SettingsSectionHeader(
+                                icon = Icons.Default.Timer,
+                                title = "Sleep Timer"
+                            )
+                            if (currentSleepTimerMinutes > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            Color(0xFF4CAF50).copy(alpha = 0.2f),
+                                            RoundedCornerShape(4.dp)
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Active: ${currentSleepTimerMinutes}m",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF81C784),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            VideoSleepTimerOptions.forEach { (label, minutes) ->
+                                val isSelected = currentSleepTimerMinutes == minutes
+                                OptionPillButton(
+                                    label = label,
+                                    isSelected = isSelected,
+                                    onClick = { onSelectSleepTimer(minutes) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
                     }
                 }
 
                 // 8. Stream Diagnostics & Actions
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = onToggleStats,
-                        modifier = Modifier.weight(1f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (isStatsVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                            focusedContainerColor = MaterialTheme.colorScheme.secondary
-                        )
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(text = if (isStatsVisible) "Hide Diagnostics HUD" else "Show Diagnostics HUD")
-                    }
+                        Button(
+                            onClick = onToggleStats,
+                            modifier = Modifier.weight(1f),
+                            shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                            colors = ButtonDefaults.colors(
+                                containerColor = if (isStatsVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                focusedContainerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Text(text = if (isStatsVisible) "Hide Diagnostics HUD" else "Show Diagnostics HUD")
+                        }
 
-                    Button(
-                        onClick = onRestartMovie,
-                        modifier = Modifier.weight(1f),
-                        shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
-                        colors = ButtonDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                            focusedContainerColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Restart Video")
+                        Button(
+                            onClick = onRestartMovie,
+                            modifier = Modifier.weight(1f),
+                            shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                            colors = ButtonDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                focusedContainerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Restart Video")
+                        }
                     }
                 }
             }

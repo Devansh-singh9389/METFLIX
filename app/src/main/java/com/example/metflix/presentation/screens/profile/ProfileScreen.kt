@@ -68,9 +68,16 @@ import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import com.example.metflix.presentation.theme.MetFlixTheme
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import com.example.metflix.data.entities.Movie
+import com.example.metflix.data.settings.LanguagePreferences
+import com.example.metflix.data.settings.PerformancePreferences
+import com.example.metflix.data.settings.SearchHistoryPreferences
+import com.example.metflix.data.settings.SubtitlePreferences
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -79,6 +86,18 @@ fun ProfileScreen(
     sidebarWidthFraction: Float = 0.32f,
     onPlayMovie: (Movie) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val languagePreferences = remember { LanguagePreferences(context) }
+    val subtitlePreferences = remember { SubtitlePreferences(context) }
+    val performancePreferences = remember { PerformancePreferences(context) }
+    val searchHistoryPreferences = remember { SearchHistoryPreferences(context) }
+
+    val reduceAnimations by performancePreferences.reduceAnimations.collectAsStateWithLifecycle()
+    val currentLanguageCode by languagePreferences.currentLanguage.collectAsStateWithLifecycle()
+    val isSubtitlesChecked by subtitlePreferences.isSubtitlesEnabled.collectAsStateWithLifecycle()
+    val preferredSubLanguage by subtitlePreferences.preferredLanguage.collectAsStateWithLifecycle()
+    val searchHistory by searchHistoryPreferences.history.collectAsStateWithLifecycle()
+
     val childPadding = rememberChildPadding()
     var selectedScreen by rememberSaveable { mutableStateOf(ProfileScreens.Accounts) }
 
@@ -159,25 +178,22 @@ fun ProfileScreen(
             }
         }
 
-        var selectedLanguageIndex by rememberSaveable { mutableIntStateOf(0) }
-        var isSubtitlesChecked by rememberSaveable { mutableStateOf(true) }
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .onPreviewKeyEvent {
                     if (it.key == Key.Back && it.type == KeyEventType.KeyUp) {
-                        while (!isLeftColumnFocused) {
-                            focusManager.moveFocus(FocusDirection.Left)
+                        if (!isLeftColumnFocused) {
+                            focusRequester.requestFocus()
+                            return@onPreviewKeyEvent true
                         }
-                        return@onPreviewKeyEvent true
                     }
                     false
                 }
         ) {
             Crossfade(
                 targetState = selectedScreen,
-                animationSpec = tween(durationMillis = 150),
+                animationSpec = if (reduceAnimations) snap() else tween(durationMillis = 150),
                 label = "ProfilePaneCrossfade"
             ) { screen ->
                 when (screen) {
@@ -185,20 +201,24 @@ fun ProfileScreen(
                         onOpenPerformanceSettings = { selectedScreen = ProfileScreens.Performance },
                         onOpenDebridSettings = { selectedScreen = ProfileScreens.Debrid }
                     )
-                    ProfileScreens.Debrid -> DebridSection(
-                        onPlayItem = onPlayMovie
-                    )
+                    ProfileScreens.Debrid -> DebridSection()
                     ProfileScreens.Performance -> PerformanceSection()
                     ProfileScreens.About -> AboutSection()
                     ProfileScreens.Subtitles -> SubtitlesSection(
                         isSubtitlesChecked = isSubtitlesChecked,
-                        onSubtitleCheckChange = { isSubtitlesChecked = it }
+                        onSubtitleCheckChange = { subtitlePreferences.setSubtitlesEnabled(it) },
+                        preferredLanguage = preferredSubLanguage,
+                        onPreferredLanguageChange = { subtitlePreferences.setPreferredLanguage(it) }
                     )
                     ProfileScreens.Language -> LanguageSection(
-                        selectedIndex = selectedLanguageIndex,
-                        onSelectedIndexChange = { selectedLanguageIndex = it }
+                        currentLanguageCode = currentLanguageCode,
+                        onLanguageSelected = { languagePreferences.setLanguage(it) }
                     )
-                    ProfileScreens.SearchHistory -> SearchHistorySection()
+                    ProfileScreens.SearchHistory -> SearchHistorySection(
+                        history = searchHistory,
+                        onClearAll = { searchHistoryPreferences.clearHistory() },
+                        onRemoveQuery = { searchHistoryPreferences.removeQuery(it) }
+                    )
                     ProfileScreens.HelpAndSupport -> HelpAndSupportSection()
                 }
             }

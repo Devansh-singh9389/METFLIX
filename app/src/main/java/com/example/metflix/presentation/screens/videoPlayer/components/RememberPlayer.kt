@@ -43,8 +43,8 @@ fun rememberPlayer(
     val player = remember(headers) {
         val userAgent = headers["User-Agent"] ?: "AndroidXMedia3/1.8.0 (Linux; Android; MetFlix)"
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(20_000)
-            .setReadTimeoutMs(20_000)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(30_000)
             .setAllowCrossProtocolRedirects(true)
             .setKeepPostFor302Redirects(true)
             .setUserAgent(userAgent)
@@ -58,10 +58,10 @@ fun rememberPlayer(
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 20_000,
-                /* maxBufferMs = */ 60_000,
-                /* bufferForPlaybackMs = */ 1_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 3_000
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 2_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 4_000
             )
             .setBackBuffer(
                 /* backBufferDurationMs = */ 10_000,
@@ -89,7 +89,7 @@ fun rememberPlayer(
             .setSeekBackIncrementMs(10_000)
             .setSeekParameters(SeekParameters.CLOSEST_SYNC)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
-            .setWakeMode(C.WAKE_MODE_NONE)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
             .build()
             .apply {

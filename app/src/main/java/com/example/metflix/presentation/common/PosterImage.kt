@@ -41,7 +41,7 @@ fun PosterImage(
             .data(movie.posterUri)
             .bitmapConfig(if (isHighQuality) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565)
             .allowRgb565(!isHighQuality)
-            .size(if (isHighQuality) 600 else 300, if (isHighQuality) 900 else 450)
+            .size(if (isHighQuality) 500 else 180, if (isHighQuality) 750 else 270)
             .precision(Precision.INEXACT)
             .crossfade(false)
             .build()

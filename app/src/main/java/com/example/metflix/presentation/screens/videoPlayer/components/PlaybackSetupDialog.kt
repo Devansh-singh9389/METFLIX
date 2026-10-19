@@ -119,12 +119,29 @@ fun PlaybackSetupDialog(
                     Spacer(modifier = Modifier.width(14.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Playback Setup",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFFE50914),
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Playback Setup",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color(0xFFE50914),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF2E7D32).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "0 Quota Used",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF81C784)
+                                )
+                            }
+                        }
                         Text(
                             text = movieDetails.name,
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),

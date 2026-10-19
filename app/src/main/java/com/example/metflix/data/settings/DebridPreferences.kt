@@ -196,6 +196,14 @@ class DebridPreferences @Inject constructor(
     private val _torBoxApiKey = MutableStateFlow(initialTorBoxKey)
     val torBoxApiKey: StateFlow<String> = _torBoxApiKey.asStateFlow()
 
+    // Provider-specific verification key helpers
+    private fun getVerifiedKey(provider: DebridProviderType) = "${provider.name.lowercase()}_$KEY_IS_VERIFIED"
+    private fun getPremiumKey(provider: DebridProviderType) = "${provider.name.lowercase()}_$KEY_IS_PREMIUM"
+    private fun getEmailKey(provider: DebridProviderType) = "${provider.name.lowercase()}_$KEY_USER_EMAIL"
+    private fun getDaysKey(provider: DebridProviderType) = "${provider.name.lowercase()}_$KEY_DAYS_REMAINING"
+    private fun getPlanKey(provider: DebridProviderType) = "${provider.name.lowercase()}_$KEY_PLAN_NAME"
+    private fun getUserInfoKey(provider: DebridProviderType) = "${provider.name.lowercase()}_$KEY_USER_INFO"
+
     // Active key (for currently selected provider)
     private val _apiKey = MutableStateFlow(
         if (initialProvider == DebridProviderType.ALLDEBRID) initialAllDebridKey else initialTorBoxKey
@@ -205,22 +213,46 @@ class DebridPreferences @Inject constructor(
     private val _isEnabled = MutableStateFlow(prefs.getBoolean(KEY_ALLDEBRID_ENABLED, true))
     val isEnabled: StateFlow<Boolean> = _isEnabled.asStateFlow()
 
-    private val _userInfo = MutableStateFlow(prefs.getString(KEY_USER_INFO, "").orEmpty())
+    private val _userInfo = MutableStateFlow(
+        prefs.getString(getUserInfoKey(initialProvider), null) ?: prefs.getString(KEY_USER_INFO, "").orEmpty()
+    )
     val userInfo: StateFlow<String> = _userInfo.asStateFlow()
 
-    private val _isVerified = MutableStateFlow(prefs.getBoolean(KEY_IS_VERIFIED, false))
+    private val _isVerified = MutableStateFlow(
+        if (prefs.contains(getVerifiedKey(initialProvider))) {
+            prefs.getBoolean(getVerifiedKey(initialProvider), false)
+        } else {
+            prefs.getBoolean(KEY_IS_VERIFIED, false)
+        }
+    )
     val isVerified: StateFlow<Boolean> = _isVerified.asStateFlow()
 
-    private val _isPremium = MutableStateFlow(prefs.getBoolean(KEY_IS_PREMIUM, false))
+    private val _isPremium = MutableStateFlow(
+        if (prefs.contains(getPremiumKey(initialProvider))) {
+            prefs.getBoolean(getPremiumKey(initialProvider), false)
+        } else {
+            prefs.getBoolean(KEY_IS_PREMIUM, false)
+        }
+    )
     val isPremium: StateFlow<Boolean> = _isPremium.asStateFlow()
 
-    private val _userEmail = MutableStateFlow(prefs.getString(KEY_USER_EMAIL, "").orEmpty())
+    private val _userEmail = MutableStateFlow(
+        prefs.getString(getEmailKey(initialProvider), null) ?: prefs.getString(KEY_USER_EMAIL, "").orEmpty()
+    )
     val userEmail: StateFlow<String> = _userEmail.asStateFlow()
 
-    private val _daysRemaining = MutableStateFlow(prefs.getInt(KEY_DAYS_REMAINING, 0))
+    private val _daysRemaining = MutableStateFlow(
+        if (prefs.contains(getDaysKey(initialProvider))) {
+            prefs.getInt(getDaysKey(initialProvider), 0)
+        } else {
+            prefs.getInt(KEY_DAYS_REMAINING, 0)
+        }
+    )
     val daysRemaining: StateFlow<Int> = _daysRemaining.asStateFlow()
 
-    private val _planName = MutableStateFlow(prefs.getString(KEY_PLAN_NAME, "").orEmpty())
+    private val _planName = MutableStateFlow(
+        prefs.getString(getPlanKey(initialProvider), null) ?: prefs.getString(KEY_PLAN_NAME, "").orEmpty()
+    )
     val planName: StateFlow<String> = _planName.asStateFlow()
 
     private val _autoFallbackToFree = MutableStateFlow(prefs.getBoolean(KEY_AUTO_FALLBACK, true))
@@ -237,6 +269,31 @@ class DebridPreferences @Inject constructor(
 
     private val _playbackPreferHindi = MutableStateFlow(prefs.getBoolean(KEY_PLAYBACK_PREFER_HINDI, true))
     val playbackPreferHindi: StateFlow<Boolean> = _playbackPreferHindi.asStateFlow()
+
+    fun loadVerificationFor(provider: DebridProviderType) {
+        val verifiedKey = getVerifiedKey(provider)
+        val isVerified = if (prefs.contains(verifiedKey)) {
+            prefs.getBoolean(verifiedKey, false)
+        } else {
+            prefs.getBoolean(KEY_IS_VERIFIED, false)
+        }
+        val isPremium = if (prefs.contains(getPremiumKey(provider))) {
+            prefs.getBoolean(getPremiumKey(provider), false)
+        } else {
+            prefs.getBoolean(KEY_IS_PREMIUM, false)
+        }
+        val email = prefs.getString(getEmailKey(provider), null) ?: prefs.getString(KEY_USER_EMAIL, "").orEmpty()
+        val days = if (prefs.contains(getDaysKey(provider))) prefs.getInt(getDaysKey(provider), 0) else prefs.getInt(KEY_DAYS_REMAINING, 0)
+        val plan = prefs.getString(getPlanKey(provider), null) ?: prefs.getString(KEY_PLAN_NAME, "").orEmpty()
+        val info = prefs.getString(getUserInfoKey(provider), null) ?: prefs.getString(KEY_USER_INFO, "").orEmpty()
+
+        _isVerified.value = isVerified
+        _isPremium.value = isPremium
+        _userEmail.value = email
+        _daysRemaining.value = days
+        _planName.value = plan
+        _userInfo.value = info
+    }
 
     fun savePlaybackPreferences(source: String, quality: String, preferHindi: Boolean) {
         prefs.edit()
@@ -256,7 +313,7 @@ class DebridPreferences @Inject constructor(
             DebridProviderType.ALLDEBRID -> _allDebridApiKey.value
             DebridProviderType.TORBOX -> _torBoxApiKey.value
         }
-        clearVerification()
+        loadVerificationFor(provider)
     }
 
     fun saveApiKey(key: String) {
@@ -361,9 +418,11 @@ class DebridPreferences @Inject constructor(
         _autoFallbackToFree.value = enabled
     }
 
-    fun saveUserInfo(info: String) {
-        prefs.edit().putString(KEY_USER_INFO, info).apply()
-        _userInfo.value = info
+    fun saveUserInfo(info: String, provider: DebridProviderType = _selectedProvider.value) {
+        prefs.edit().putString(getUserInfoKey(provider), info).apply()
+        if (_selectedProvider.value == provider) {
+            _userInfo.value = info
+        }
     }
 
     fun saveVerificationStatus(
@@ -371,35 +430,42 @@ class DebridPreferences @Inject constructor(
         isPremium: Boolean,
         email: String,
         days: Int,
-        plan: String
+        plan: String,
+        provider: DebridProviderType = _selectedProvider.value
     ) {
         prefs.edit()
-            .putBoolean(KEY_IS_VERIFIED, isVerified)
-            .putBoolean(KEY_IS_PREMIUM, isPremium)
-            .putString(KEY_USER_EMAIL, email)
-            .putInt(KEY_DAYS_REMAINING, days)
-            .putString(KEY_PLAN_NAME, plan)
+            .putBoolean(getVerifiedKey(provider), isVerified)
+            .putBoolean(getPremiumKey(provider), isPremium)
+            .putString(getEmailKey(provider), email)
+            .putInt(getDaysKey(provider), days)
+            .putString(getPlanKey(provider), plan)
             .apply()
-        _isVerified.value = isVerified
-        _isPremium.value = isPremium
-        _userEmail.value = email
-        _daysRemaining.value = days
-        _planName.value = plan
+        if (_selectedProvider.value == provider) {
+            _isVerified.value = isVerified
+            _isPremium.value = isPremium
+            _userEmail.value = email
+            _daysRemaining.value = days
+            _planName.value = plan
+        }
     }
 
-    fun clearVerification() {
+    fun clearVerification(provider: DebridProviderType = _selectedProvider.value) {
         prefs.edit()
-            .putBoolean(KEY_IS_VERIFIED, false)
-            .putBoolean(KEY_IS_PREMIUM, false)
-            .putString(KEY_USER_EMAIL, "")
-            .putInt(KEY_DAYS_REMAINING, 0)
-            .putString(KEY_PLAN_NAME, "")
+            .putBoolean(getVerifiedKey(provider), false)
+            .putBoolean(getPremiumKey(provider), false)
+            .putString(getEmailKey(provider), "")
+            .putInt(getDaysKey(provider), 0)
+            .putString(getPlanKey(provider), "")
+            .putString(getUserInfoKey(provider), "")
             .apply()
-        _isVerified.value = false
-        _isPremium.value = false
-        _userEmail.value = ""
-        _daysRemaining.value = 0
-        _planName.value = ""
+        if (_selectedProvider.value == provider) {
+            _isVerified.value = false
+            _isPremium.value = false
+            _userEmail.value = ""
+            _daysRemaining.value = 0
+            _planName.value = ""
+            _userInfo.value = ""
+        }
     }
 
     fun clearApiKey() {

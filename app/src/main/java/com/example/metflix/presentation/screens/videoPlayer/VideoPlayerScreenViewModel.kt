@@ -86,6 +86,7 @@ class VideoPlayerScreenViewModel @Inject constructor(
 
     private val isUserExplicitSelection = MutableStateFlow(false)
     private var raceJob: Job? = null
+    private var manualResolveJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -203,13 +204,17 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 _availableServers.value = result.rankedServers
 
                 // If user hasn't explicitly selected another server, pick the fastest/best stream
+                // Do NOT repeatedly overwrite and restart playback if a stream is already active
                 if (!isUserExplicitSelection.value && result.bestStream != null) {
-                    _selectedServer.value = result.bestStream.server
-                    _resolvedStream.value = result.bestStream
-                    _resolutionMessage.value = if (result.bestStream.server.id == "alldebrid") {
-                        "Connected · Premium Stream"
-                    } else {
-                        "Playing · ${result.bestStream.server.name}"
+                    val currentStream = _resolvedStream.value
+                    if (currentStream == null) {
+                        _selectedServer.value = result.bestStream.server
+                        _resolvedStream.value = result.bestStream
+                        _resolutionMessage.value = if (result.bestStream.server.id == "alldebrid") {
+                            "Connected · Premium Stream"
+                        } else {
+                            "Playing · ${result.bestStream.server.name}"
+                        }
                     }
                 } else if (!isUserExplicitSelection.value && result.bestStream == null && result.isFinal) {
                     _resolutionMessage.value = "Premium stream uncached. Please select an alternative source."
@@ -223,27 +228,40 @@ class VideoPlayerScreenViewModel @Inject constructor(
     }
 
     private fun resolveCurrentStream(details: MovieDetails, server: StreamServer) {
-        viewModelScope.launch {
+        manualResolveJob?.cancel()
+        manualResolveJob = viewModelScope.launch {
             _isResolvingStream.value = true
             _resolutionMessage.value = "Switching to ${server.name}..."
-            val resolved = streamResolverRepository.resolveMovieStream(
-                tmdbId = details.id,
-                movieTitle = details.name,
-                releaseYear = details.releaseDate.take(4),
-                server = server,
-                isTvShow = _isTvShow.value,
-                season = _seasonNumber.value,
-                episode = _episodeNumber.value,
-                imdbId = details.imdbId
-            )
-            _resolvedStream.value = resolved
-            _resolutionMessage.value = "Playing · ${server.name}"
-            _isResolvingStream.value = false
+            try {
+                val resolved = streamResolverRepository.resolveMovieStream(
+                    tmdbId = details.id,
+                    movieTitle = details.name,
+                    releaseYear = details.releaseDate.take(4),
+                    server = server,
+                    isTvShow = _isTvShow.value,
+                    season = _seasonNumber.value,
+                    episode = _episodeNumber.value,
+                    imdbId = details.imdbId
+                )
+                // Only apply if the server is still selected
+                if (_selectedServer.value.id == server.id) {
+                    _resolvedStream.value = resolved
+                    _resolutionMessage.value = "Playing · ${server.name}"
+                }
+            } catch (e: Exception) {
+                if (_selectedServer.value.id == server.id) {
+                    _resolutionMessage.value = "Failed to connect to ${server.name}"
+                }
+            } finally {
+                if (_selectedServer.value.id == server.id) {
+                    _isResolvingStream.value = false
+                }
+            }
         }
     }
 
     fun selectServer(server: StreamServer) {
-        if (_selectedServer.value.id == server.id && _resolvedStream.value != null) return
+        if (_selectedServer.value.id == server.id && _resolvedStream.value != null && !_isResolvingStream.value) return
         isUserExplicitSelection.value = true
         _selectedServer.value = server
         val details = movieDetailsFlow.value ?: return
@@ -252,6 +270,7 @@ class VideoPlayerScreenViewModel @Inject constructor(
 
     fun retryNextServer(): StreamServer? {
         val currentList = _availableServers.value
+        if (currentList.isEmpty()) return null
         val currentIndex = currentList.indexOfFirst { it.id == _selectedServer.value.id }
         val nextIndex = if (currentIndex >= 0) (currentIndex + 1) % currentList.size else 0
         val nextServer = currentList[nextIndex]
@@ -261,7 +280,11 @@ class VideoPlayerScreenViewModel @Inject constructor(
 
     fun onCapturedDirectStream(directUrl: String, headers: Map<String, String>) {
         val current = _resolvedStream.value ?: return
-        if (current.streamUrl != directUrl) {
+        // Ignore duplicate stream URLs or subtitle/audio-only tracks
+        if (current.streamUrl != directUrl &&
+            !directUrl.contains("subtitle", ignoreCase = true) &&
+            !directUrl.contains(".vtt", ignoreCase = true)
+        ) {
             _resolvedStream.value = current.copy(
                 streamUrl = directUrl,
                 isHls = true,

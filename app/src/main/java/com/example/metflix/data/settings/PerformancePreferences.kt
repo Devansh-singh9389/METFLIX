@@ -30,7 +30,7 @@ import javax.inject.Singleton
 
 @Singleton
 class PerformancePreferences @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     companion object {
         private const val PREFS_NAME = "metflix_performance_prefs"
@@ -39,6 +39,11 @@ class PerformancePreferences @Inject constructor(
         private const val KEY_HIGH_QUALITY_IMAGES = "key_high_quality_images"
         private const val KEY_REDUCE_ANIMATIONS = "key_reduce_animations"
         private const val KEY_MAX_CHANNELS = "key_max_channels"
+
+        private const val KEY_USER_TMDB_ENABLED = "key_user_tmdb_enabled"
+        private const val KEY_USER_HIGH_QUALITY_IMAGES = "key_user_high_quality_images"
+        private const val KEY_USER_REDUCE_ANIMATIONS = "key_user_reduce_animations"
+        private const val KEY_USER_MAX_CHANNELS = "key_user_max_channels"
 
         @Volatile
         var instance: PerformancePreferences? = null
@@ -63,29 +68,25 @@ class PerformancePreferences @Inject constructor(
     // Default to Low-Spec Mode if device is low RAM (like 512MB RAM TV sticks)
     private val defaultLowSpecMode: Boolean get() = isDeviceLowRam
 
-    private val _lowSpecMode = MutableStateFlow(
-        prefs.getBoolean(KEY_LOW_SPEC_MODE, defaultLowSpecMode)
-    )
+    private val initialLowSpec = prefs.getBoolean(KEY_LOW_SPEC_MODE, defaultLowSpecMode)
+    private val _lowSpecMode = MutableStateFlow(initialLowSpec)
     val lowSpecMode: StateFlow<Boolean> = _lowSpecMode.asStateFlow()
 
-    private val _tmdbEnabled = MutableStateFlow(
-        prefs.getBoolean(KEY_TMDB_ENABLED, !defaultLowSpecMode)
-    )
+    private val userTmdbPref = prefs.getBoolean(KEY_USER_TMDB_ENABLED, prefs.getBoolean(KEY_TMDB_ENABLED, !defaultLowSpecMode))
+    private val userHqPref = prefs.getBoolean(KEY_USER_HIGH_QUALITY_IMAGES, prefs.getBoolean(KEY_HIGH_QUALITY_IMAGES, !defaultLowSpecMode))
+    private val userAnimPref = prefs.getBoolean(KEY_USER_REDUCE_ANIMATIONS, prefs.getBoolean(KEY_REDUCE_ANIMATIONS, defaultLowSpecMode))
+    private val userMaxChannelsPref = prefs.getInt(KEY_USER_MAX_CHANNELS, prefs.getInt(KEY_MAX_CHANNELS, if (defaultLowSpecMode) 3500 else 5000))
+
+    private val _tmdbEnabled = MutableStateFlow(if (initialLowSpec) false else userTmdbPref)
     val tmdbEnabled: StateFlow<Boolean> = _tmdbEnabled.asStateFlow()
 
-    private val _highQualityImages = MutableStateFlow(
-        prefs.getBoolean(KEY_HIGH_QUALITY_IMAGES, !defaultLowSpecMode)
-    )
+    private val _highQualityImages = MutableStateFlow(if (initialLowSpec) false else userHqPref)
     val highQualityImages: StateFlow<Boolean> = _highQualityImages.asStateFlow()
 
-    private val _reduceAnimations = MutableStateFlow(
-        prefs.getBoolean(KEY_REDUCE_ANIMATIONS, defaultLowSpecMode)
-    )
+    private val _reduceAnimations = MutableStateFlow(if (initialLowSpec) true else userAnimPref)
     val reduceAnimations: StateFlow<Boolean> = _reduceAnimations.asStateFlow()
 
-    private val _maxChannels = MutableStateFlow(
-        prefs.getInt(KEY_MAX_CHANNELS, if (defaultLowSpecMode) 3500 else 5000)
-    )
+    private val _maxChannels = MutableStateFlow(if (initialLowSpec) 3500 else userMaxChannelsPref)
     val maxChannels: StateFlow<Int> = _maxChannels.asStateFlow()
 
     init {
@@ -94,28 +95,33 @@ class PerformancePreferences @Inject constructor(
     }
 
     fun setLowSpecMode(enabled: Boolean) {
-        prefs.edit()
-            .putBoolean(KEY_LOW_SPEC_MODE, enabled)
-            .putBoolean(KEY_TMDB_ENABLED, !enabled)
-            .putBoolean(KEY_HIGH_QUALITY_IMAGES, !enabled)
-            .putBoolean(KEY_REDUCE_ANIMATIONS, enabled)
-            .putInt(KEY_MAX_CHANNELS, if (enabled) 3500 else 5000)
-            .apply()
-
+        prefs.edit().putBoolean(KEY_LOW_SPEC_MODE, enabled).apply()
         _lowSpecMode.value = enabled
-        _tmdbEnabled.value = !enabled
-        _highQualityImages.value = !enabled
-        _reduceAnimations.value = enabled
-        _maxChannels.value = if (enabled) 3500 else 5000
+
+        if (enabled) {
+            _tmdbEnabled.value = false
+            _highQualityImages.value = false
+            _reduceAnimations.value = true
+            _maxChannels.value = 3500
+        } else {
+            val userTmdb = prefs.getBoolean(KEY_USER_TMDB_ENABLED, true)
+            val userHq = prefs.getBoolean(KEY_USER_HIGH_QUALITY_IMAGES, true)
+            val userAnim = prefs.getBoolean(KEY_USER_REDUCE_ANIMATIONS, false)
+            val userChannels = prefs.getInt(KEY_USER_MAX_CHANNELS, 5000)
+
+            _tmdbEnabled.value = userTmdb
+            _highQualityImages.value = userHq
+            _reduceAnimations.value = userAnim
+            _maxChannels.value = userChannels
+        }
 
         syncConfig()
     }
 
     fun setTmdbEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_TMDB_ENABLED, enabled).apply()
+        prefs.edit().putBoolean(KEY_USER_TMDB_ENABLED, enabled).apply()
         _tmdbEnabled.value = enabled
-        // If enabling TMDB while in lowSpecMode, disengage pure lowSpec mode flag if both graphics & network enabled
-        if (enabled && _highQualityImages.value) {
+        if (enabled && _lowSpecMode.value) {
             _lowSpecMode.value = false
             prefs.edit().putBoolean(KEY_LOW_SPEC_MODE, false).apply()
         }
@@ -123,9 +129,9 @@ class PerformancePreferences @Inject constructor(
     }
 
     fun setHighQualityImages(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_HIGH_QUALITY_IMAGES, enabled).apply()
+        prefs.edit().putBoolean(KEY_USER_HIGH_QUALITY_IMAGES, enabled).apply()
         _highQualityImages.value = enabled
-        if (enabled && _tmdbEnabled.value) {
+        if (enabled && _lowSpecMode.value) {
             _lowSpecMode.value = false
             prefs.edit().putBoolean(KEY_LOW_SPEC_MODE, false).apply()
         }
@@ -133,11 +139,12 @@ class PerformancePreferences @Inject constructor(
     }
 
     fun setReduceAnimations(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_REDUCE_ANIMATIONS, enabled).apply()
+        prefs.edit().putBoolean(KEY_USER_REDUCE_ANIMATIONS, enabled).apply()
         _reduceAnimations.value = enabled
         syncConfig()
     }
 
+    @OptIn(coil.annotation.ExperimentalCoilApi::class)
     fun clearCaches() {
         try {
             val imageLoader = Coil.imageLoader(context)

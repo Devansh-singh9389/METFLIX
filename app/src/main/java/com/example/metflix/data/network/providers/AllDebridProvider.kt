@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -240,15 +241,25 @@ class AllDebridProvider @Inject constructor(
                 val hash: String,
                 val name: String,
                 val fileId: Int?,
-                val fullDesc: String
+                val fullDesc: String,
+                val quality: String,
+                val isHindi: Boolean,
+                val score: Int
             )
 
-            val targetsToResolve = mutableListOf<TargetResolution>()
+            val rawTargets = mutableListOf<TargetResolution>()
 
             for ((hash, cachedItem) in cachedMap) {
                 val candidate = candidateMap[hash]
                 val torrentName = cachedItem.name.ifBlank { candidate?.title ?: title }
-                val fullDesc = "${candidate?.name.orEmpty()} ${candidate?.title.orEmpty()} $torrentName"
+                val cleanedName = cleanReleaseTitle(torrentName)
+                val fullDesc = "${candidate?.name.orEmpty()} ${candidate?.title.orEmpty()} $torrentName $cleanedName"
+
+                // Filter out completely mismatched releases (e.g. Spider-Man when searching for Obsession)
+                if (!isTitleMatching(cleanedName, title)) {
+                    Log.d(TAG, "Rejecting mismatched TorBox release '$torrentName' for target '$title'")
+                    continue
+                }
 
                 val targetFileId: Int? = when (mediaId) {
                     is MediaId.TvShow -> {
@@ -278,66 +289,112 @@ class AllDebridProvider @Inject constructor(
                     is MediaId.Anime -> continue
                 }
 
-                targetsToResolve.add(TargetResolution(hash, torrentName, targetFileId, fullDesc))
+                val isHindi = AudioLanguageDetector.isHindiTrack(fullDesc, fullDesc) ||
+                        fullDesc.contains("hindi", ignoreCase = true) ||
+                        fullDesc.contains("dual", ignoreCase = true)
+
+                val quality = when {
+                    fullDesc.contains("4k", ignoreCase = true) || fullDesc.contains("2160p", ignoreCase = true) -> "4K UHD"
+                    fullDesc.contains("1080p", ignoreCase = true) -> "1080p"
+                    fullDesc.contains("720p", ignoreCase = true) -> "720p"
+                    else -> "HD"
+                }
+
+                var score = 0
+                if (isHindi) score += 2000
+                if (quality == "1080p") score += 500
+                else if (quality == "720p") score += 400
+                else if (quality == "4K UHD") score += 300
+
+                rawTargets.add(TargetResolution(hash, cleanedName, targetFileId, fullDesc, quality, isHindi, score))
             }
+
+            // Deduplicate by tier (quality + isHindi) so we only keep the single best release per tier
+            val targetsToResolve = rawTargets
+                .sortedByDescending { it.score }
+                .distinctBy { "${it.quality}_${it.isHindi}" }
 
             // Fetch user's existing account torrents to reuse active torrent ID if already added
             val userTorrents = torBoxClient.getUserTorrents(apiKey)
             val userTorrentByHash = userTorrents.associateBy { it.hash.lowercase(Locale.ROOT) }
 
-            // 3. Resolve direct streaming URLs concurrently for top candidates
-            val resolvedCandidates = targetsToResolve.take(5).map { target ->
-                async {
-                    try {
-                        val existingTorrent = userTorrentByHash[target.hash]
-                        val torrentId = existingTorrent?.id?.takeIf { it > 0 } ?: run {
-                            val encodedName = URLEncoder.encode(target.name.ifBlank { title }, "UTF-8")
-                            val magnet = "magnet:?xt=urn:btih:${target.hash}&dn=$encodedName"
-                            torBoxClient.createTorrent(apiKey, magnet)
+            // 3. Resolve direct streaming URLs on-demand for top candidates (sequential fallback, NOT 5 concurrent creations)
+            val resolvedCandidates = mutableListOf<StreamCandidate>()
+
+            for (target in targetsToResolve.take(3)) {
+                try {
+                    val existingTorrent = userTorrentByHash[target.hash]
+                    val torrentId = existingTorrent?.id?.takeIf { it > 0 } ?: run {
+                        val encodedName = URLEncoder.encode(target.name.ifBlank { title }, "UTF-8")
+                        val magnet = "magnet:?xt=urn:btih:${target.hash}&dn=$encodedName"
+                        torBoxClient.createTorrent(apiKey, magnet)
+                    }
+
+                    if (torrentId == null || torrentId <= 0) continue
+
+                    // Obtain true torrent details with real server file IDs
+                    val torrentDetails = existingTorrent ?: run {
+                        var details = torBoxClient.getTorrentDetails(apiKey, torrentId)
+                        if (details == null || details.files.isEmpty()) {
+                            delay(1000)
+                            details = torBoxClient.getTorrentDetails(apiKey, torrentId)
                         }
+                        details
+                    }
 
-                        if (torrentId == null || torrentId <= 0) return@async null
-
-                        val directUrl = torBoxClient.requestDownloadLink(apiKey, torrentId, target.fileId)
-                        if (directUrl.isNullOrBlank()) return@async null
-
-                        val isHindi = AudioLanguageDetector.isHindiTrack(target.fullDesc, target.fullDesc) ||
-                                target.fullDesc.contains("hindi", ignoreCase = true) ||
-                                target.fullDesc.contains("dual", ignoreCase = true)
-
-                        val reportedLangs = if (isHindi) listOf("Hindi", "English") else listOf("English")
-
-                        val quality = when {
-                            target.fullDesc.contains("4k", ignoreCase = true) || target.fullDesc.contains("2160p", ignoreCase = true) -> "4K UHD"
-                            target.fullDesc.contains("1080p", ignoreCase = true) -> "1080p"
-                            target.fullDesc.contains("720p", ignoreCase = true) -> "720p"
-                            else -> "HD"
+                    val realFileId = when (mediaId) {
+                        is MediaId.TvShow -> {
+                            val matched = if (torrentDetails != null && torrentDetails.files.isNotEmpty()) {
+                                matchEpisodeFile(torrentDetails.files, mediaId.seasonNumber, mediaId.episodeNumber)
+                            } else null
+                            if (matched == null && torrentDetails != null && torrentDetails.files.isNotEmpty()) {
+                                Log.d(TAG, "Skipping TorBox torrent '${target.name}': missing S${mediaId.seasonNumber}E${mediaId.episodeNumber}")
+                                continue
+                            }
+                            matched?.id ?: target.fileId
                         }
-
-                        val format = when {
-                            directUrl.contains(".m3u8") -> StreamFormat.HLS
-                            directUrl.contains(".mp4") -> StreamFormat.MP4
-                            else -> StreamFormat.MKV
+                        is MediaId.Movie -> {
+                            val videoFile = torrentDetails?.files?.filter { f ->
+                                val ext = f.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                                ext in listOf("mkv", "mp4", "avi", "mov", "ts", "m4v")
+                            }?.maxByOrNull { it.size } ?: torrentDetails?.files?.maxByOrNull { it.size }
+                            videoFile?.id ?: target.fileId
                         }
+                        is MediaId.Anime -> null
+                    }
 
+                    val directUrl = torBoxClient.requestDownloadLink(apiKey, torrentId, realFileId)
+                    if (directUrl.isNullOrBlank()) continue
+
+                    val reportedLangs = if (target.isHindi) listOf("Hindi", "English") else listOf("English")
+
+                    val format = when {
+                        directUrl.contains(".m3u8") -> StreamFormat.HLS
+                        directUrl.contains(".mp4") -> StreamFormat.MP4
+                        else -> StreamFormat.MKV
+                    }
+
+                    resolvedCandidates.add(
                         StreamCandidate(
                             providerId = id,
-                            providerName = "TorBox Cloud [$quality${if (isHindi) " • Hindi+Eng" else ""}]",
+                            providerName = "TorBox Cloud [${target.quality}${if (target.isHindi) " • Hindi+Eng" else ""}]",
                             streamUrl = directUrl,
                             format = format,
                             reportedLanguages = reportedLangs,
-                            isAudioVerified = isHindi,
+                            isAudioVerified = target.isHindi,
                             headers = mapOf("User-Agent" to BROWSER_USER_AGENT),
                             latencyMs = 28L,
-                            quality = quality,
+                            quality = target.quality,
                             isDirectStream = true
                         )
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Error resolving TorBox target ${target.hash}: ${e.message}")
-                        null
-                    }
+                    )
+
+                    // If we have resolved 1 top high-priority stream (or 2 distinct options: Hindi + 1080p/720p), stop creating more torrents!
+                    if (resolvedCandidates.size >= 2) break
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error resolving TorBox target ${target.hash}: ${e.message}")
                 }
-            }.awaitAll().filterNotNull().toMutableList()
+            }
 
             // 4. Fallback to user's saved account library if no streams resolved from public catalog
             if (resolvedCandidates.isEmpty()) {
@@ -457,6 +514,38 @@ class AllDebridProvider @Inject constructor(
                     name.contains(seasonEpisodeWords) ||
                     name.contains(seasonEpisodeShort)
         }
+    }
+
+    /**
+     * Strips promotional prefixes, Chinese bracketed tags, website URLs, and year noise.
+     */
+    private fun cleanReleaseTitle(raw: String): String {
+        return raw
+            // Remove website domains like www.SSDSSE.com or rarbg.to
+            .replace(Regex("""(?i)(?:https?://)?(?:www\.)?[a-z0-9\-]+\.(?:com|org|net|to|cc|me|vip|xyz)"""), " ")
+            // Remove full-width brackets like 【...】 or [HDR+杜比...]
+            .replace(Regex("""【[^】]*】"""), " ")
+            .replace(Regex("""\[[^\]]*\]"""), " ")
+            // Replace dots, underscores, hyphens with spaces
+            .replace(Regex("""[._\-]"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    }
+
+    /**
+     * Verifies that the release title actually corresponds to the requested movie/show.
+     * Prevents totally unrelated releases (e.g. Spider-Man when searching for Obsession).
+     */
+    private fun isTitleMatching(cleanedRelease: String, targetTitle: String): Boolean {
+        val cleanTarget = targetTitle.lowercase(Locale.ROOT).replace(Regex("""[^a-z0-9\s]"""), " ").trim()
+        val targetTokens = cleanTarget.split(Regex("""\s+""")).filter { it.length >= 3 }
+        if (targetTokens.isEmpty()) return true
+
+        val releaseLower = cleanedRelease.lowercase(Locale.ROOT)
+        // At least 60% of significant target title words must be present in the release title
+        val matches = targetTokens.count { token -> releaseLower.contains(token) }
+        val threshold = if (targetTokens.size == 1) 1 else (targetTokens.size * 0.6).toInt().coerceAtLeast(1)
+        return matches >= threshold
     }
 
     private data class TorrentioCandidate(

@@ -110,15 +110,13 @@ fun MoviesRow(
                 key = { _, movie -> movie.id },
                 contentType = { _, _ -> "movie_item" }
             ) { index, movie ->
-                if (onLoadMore != null && index >= movieList.size - 4) {
+                if (onLoadMore != null && index == movieList.size - 1) {
                     androidx.compose.runtime.LaunchedEffect(movieList.size) {
                         onLoadMore()
                     }
                 }
                 MoviesRowItem(
-                    modifier = Modifier
-                        .weight(1f)
-                        .graphicsLayer { },
+                    modifier = Modifier.weight(1f),
                     index = index,
                     itemDirection = itemDirection,
                     onMovieSelected = {
@@ -182,9 +180,7 @@ fun ImmersiveListMoviesRow(
                 contentType = { _, _ -> "movie_item" }
             ) { index, movie ->
                 MoviesRowItem(
-                    modifier = Modifier
-                        .weight(1f)
-                        .graphicsLayer { },
+                    modifier = Modifier.weight(1f),
                     index = index,
                     itemDirection = itemDirection,
                     onMovieSelected = {

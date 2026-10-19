@@ -32,7 +32,7 @@ enum class ProfileScreens(
     private val title: String? = null,
 ) {
     Accounts(Icons.Default.Person),
-    Debrid(title = "AllDebrid Cloud", icon = Icons.Default.Cloud),
+    Debrid(title = "Cloud Debrid", icon = Icons.Default.Cloud),
     Performance(title = "Performance", icon = Icons.Default.Speed),
     About(Icons.Default.Info),
     Subtitles(Icons.Default.Subtitles),

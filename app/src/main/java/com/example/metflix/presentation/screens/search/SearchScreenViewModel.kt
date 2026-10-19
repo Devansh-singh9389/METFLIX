@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.entities.MovieList
 import com.example.metflix.data.repositories.MovieRepository
+import com.example.metflix.data.settings.SearchHistoryPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.FlowPreview
@@ -54,7 +55,8 @@ sealed interface SearchState {
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class SearchScreenViewModel @Inject constructor(
-    private val movieRepository: MovieRepository
+    private val movieRepository: MovieRepository,
+    private val searchHistoryPreferences: SearchHistoryPreferences
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -127,6 +129,7 @@ class SearchScreenViewModel @Inject constructor(
         }
 
         _uiState.value = _uiState.value.copy(isSearching = true)
+        searchHistoryPreferences.addQuery(trimmed)
         val results = try {
             movieRepository.searchMovies(query = trimmed)
         } catch (e: Exception) {

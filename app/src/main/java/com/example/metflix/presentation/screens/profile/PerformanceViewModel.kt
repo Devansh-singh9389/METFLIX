@@ -21,9 +21,13 @@ import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.settings.PerformancePreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @HiltViewModel
 class PerformanceViewModel @Inject constructor(
@@ -40,6 +44,9 @@ class PerformanceViewModel @Inject constructor(
     val tmdbEnabled: StateFlow<Boolean> = preferences.tmdbEnabled
     val highQualityImages: StateFlow<Boolean> = preferences.highQualityImages
     val reduceAnimations: StateFlow<Boolean> = preferences.reduceAnimations
+
+    private val _isClearingCache = MutableStateFlow(false)
+    val isClearingCache: StateFlow<Boolean> = _isClearingCache.asStateFlow()
 
     fun toggleLowSpecMode(enabled: Boolean) {
         preferences.setLowSpecMode(enabled)
@@ -63,10 +70,18 @@ class PerformanceViewModel @Inject constructor(
         preferences.setReduceAnimations(enabled)
     }
 
-    fun clearCache() {
+    fun clearCache(onComplete: () -> Unit = {}) {
         viewModelScope.launch {
-            preferences.clearCaches()
-            tmdbApiClient.resetCircuit()
+            _isClearingCache.value = true
+            try {
+                withContext(Dispatchers.IO) {
+                    preferences.clearCaches()
+                    tmdbApiClient.resetCircuit()
+                }
+                onComplete()
+            } finally {
+                _isClearingCache.value = false
+            }
         }
     }
 }

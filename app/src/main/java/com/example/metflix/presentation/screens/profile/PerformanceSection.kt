@@ -68,6 +68,7 @@ fun PerformanceSection(
     val tmdbEnabled by viewModel.tmdbEnabled.collectAsStateWithLifecycle()
     val highQualityImages by viewModel.highQualityImages.collectAsStateWithLifecycle()
     val reduceAnimations by viewModel.reduceAnimations.collectAsStateWithLifecycle()
+    val isClearingCache by viewModel.isClearingCache.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier
@@ -106,7 +107,7 @@ fun PerformanceSection(
                         Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text(
-                                text = if (isDeviceLowRam) "Hardware: Low-RAM Device (<=1GB RAM)" else "Hardware: High-Performance Device (>1GB RAM)",
+                                text = if (isDeviceLowRam) "Hardware Profile: Low-RAM Android TV (<=1GB RAM)" else "Hardware Profile: Standard Android TV (>1GB RAM)",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -338,25 +339,28 @@ fun PerformanceSection(
             ListItem(
                 selected = false,
                 onClick = {
-                    viewModel.clearCache()
-                    Toast.makeText(context, "Memory and Image Cache Purged", Toast.LENGTH_SHORT).show()
+                    if (!isClearingCache) {
+                        viewModel.clearCache {
+                            Toast.makeText(context, "Memory and Image Cache Purged", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 },
                 trailingContent = {
                     Icon(
                         imageVector = Icons.Default.CleaningServices,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (isClearingCache) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
                     )
                 },
                 headlineContent = {
                     Text(
-                        text = "Purge Memory & Cache",
+                        text = if (isClearingCache) "Purging Memory & Cache..." else "Purge Memory & Cache",
                         style = MaterialTheme.typography.titleMedium
                     )
                 },
                 supportingContent = {
                     Text(
-                        text = "Frees image bitmap memory and resets network circuits immediately.",
+                        text = "Frees image bitmap memory, clears disk cache, and resets network circuits immediately.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

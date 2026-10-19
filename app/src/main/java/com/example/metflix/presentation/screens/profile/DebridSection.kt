@@ -30,8 +30,14 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.tv.material3.IconButton
 import com.example.metflix.data.network.torbox.TorBoxDeviceAuthUiState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,20 +69,13 @@ import androidx.tv.material3.surfaceColorAtElevation
 import com.example.metflix.data.settings.DebridProviderType
 import com.example.metflix.presentation.theme.MetFlixCardShape
 
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
-import com.example.metflix.data.entities.Movie
-import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
-
 @Composable
 fun DebridSection(
-    viewModel: DebridViewModel = hiltViewModel(),
-    onPlayItem: (Movie) -> Unit = {}
+    viewModel: DebridViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val selectedProvider by viewModel.selectedProvider.collectAsStateWithLifecycle()
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val isEnabled by viewModel.isEnabled.collectAsStateWithLifecycle()
@@ -91,8 +90,12 @@ fun DebridSection(
     val isLoadingDownloads by viewModel.isLoadingDownloads.collectAsStateWithLifecycle()
 
     var isEditingKey by remember { mutableStateOf(false) }
+    var isKeyVisible by remember { mutableStateOf(false) }
     var tempKey by remember { mutableStateOf("") }
-    var resolvingItemId by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(apiKey, selectedProvider) {
+        tempKey = apiKey
+    }
 
     Column(
         modifier = Modifier
@@ -662,14 +665,26 @@ fun DebridSection(
                                 fontSize = 14.sp,
                                 fontFamily = FontFamily.Monospace
                             ),
+                            visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                             singleLine = true
                         )
+
+                        IconButton(
+                            onClick = { isKeyVisible = !isKeyVisible },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (isKeyVisible) "Hide Key" else "Show Key",
+                                tint = Color.LightGray,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
 
                         // Testing Button on the right side of input field
                         Button(
                             onClick = {
                                 viewModel.saveApiKey(tempKey)
-                                viewModel.validateStatus()
                                 Toast.makeText(context, "Testing ${selectedProvider.displayName} Key...", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.colors(
@@ -686,6 +701,7 @@ fun DebridSection(
                             onClick = {
                                 viewModel.saveApiKey(tempKey)
                                 isEditingKey = false
+                                isKeyVisible = false
                                 Toast.makeText(context, "Key Saved for ${selectedProvider.displayName}", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.colors(
@@ -696,7 +712,11 @@ fun DebridSection(
                         }
 
                         Button(
-                            onClick = { isEditingKey = false },
+                            onClick = {
+                                tempKey = apiKey
+                                isEditingKey = false
+                                isKeyVisible = false
+                            },
                             colors = ButtonDefaults.colors(
                                 focusedContainerColor = MaterialTheme.colorScheme.error
                             )
@@ -897,7 +917,6 @@ fun DebridSection(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     cloudDownloads.forEach { item ->
-                        val isResolvingThis = resolvingItemId == item.id
                         val isReady = item.isCached || item.downloadState.equals("completed", ignoreCase = true) || item.progress >= 1.0f
 
                         Box(
@@ -955,55 +974,31 @@ fun DebridSection(
 
                                     Spacer(modifier = Modifier.width(16.dp))
 
-                                    // Action Buttons: Play & Delete
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        if (isReady) {
-                                            Button(
-                                                onClick = {
-                                                    coroutineScope.launch {
-                                                        resolvingItemId = item.id
-                                                        val streamUrl = viewModel.getStreamUrl(item.id)
-                                                        resolvingItemId = null
-                                                        if (!streamUrl.isNullOrBlank()) {
-                                                            val movie = Movie(
-                                                                id = "torbox_${item.id}",
-                                                                videoUri = streamUrl,
-                                                                posterUri = "",
-                                                                name = item.name,
-                                                                description = "Playing directly from your TorBox Cloud Storage (${item.formattedSize})"
-                                                            )
-                                                            onPlayItem(movie)
-                                                        } else {
-                                                            Toast.makeText(context, "Could not fetch TorBox CDN stream URL", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    }
-                                                },
-                                                colors = ButtonDefaults.colors(
-                                                    containerColor = Color(0xFF1B5E20),
-                                                    focusedContainerColor = Color(0xFF4CAF50)
-                                                )
-                                            ) {
-                                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = if (isResolvingThis) "Opening..." else "▶ Play Now",
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
+                                    var isDeletingThis by remember { mutableStateOf(false) }
 
+                                    // Action Button: Delete
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Button(
                                             onClick = {
-                                                viewModel.deleteCloudTorrent(item.id)
-                                                Toast.makeText(context, "Deleted from TorBox cloud", Toast.LENGTH_SHORT).show()
+                                                isDeletingThis = true
+                                                viewModel.deleteCloudTorrent(item.id) { success, msg ->
+                                                    isDeletingThis = false
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                }
                                             },
+                                            enabled = !isDeletingThis,
                                             colors = ButtonDefaults.colors(
                                                 containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp),
                                                 focusedContainerColor = MaterialTheme.colorScheme.error
                                             )
                                         ) {
-                                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete from TorBox", modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (isDeletingThis) "Deleting..." else "Delete",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
                                         }
                                     }
                                 }

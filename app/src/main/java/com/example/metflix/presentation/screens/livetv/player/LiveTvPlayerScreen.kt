@@ -12,6 +12,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import android.util.Log
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -357,10 +358,9 @@ private fun LiveTvPlayerContent(
             delay(backoffDelayMs)
             reconnectAttempt++
             try {
-                exoPlayer.prepare()
-                exoPlayer.play()
-            } catch (_: Exception) {
-                // Next attempt will fire if error triggers again
+                loadCurrentStream()
+            } catch (e: Exception) {
+                Log.w("LiveTvPlayerScreen", "Auto-reconnect attempt $reconnectAttempt failed: ${e.message}")
             }
         } else if (reconnectAttempt >= 8) {
             isReconnecting = false
@@ -391,7 +391,9 @@ private fun LiveTvPlayerContent(
             .build()
         try {
             connectivityManager?.registerNetworkCallback(request, networkCallback)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w("LiveTvPlayerScreen", "Failed to register network callback for Live TV: ${e.message}")
+        }
 
         onDispose {
             runCatching { connectivityManager?.unregisterNetworkCallback(networkCallback) }

@@ -170,6 +170,7 @@ fun VideoPlayerScreen(
                     onCapturedDirectStream = { url, headers ->
                         videoPlayerScreenViewModel.onCapturedDirectStream(url, headers)
                     },
+                    showSetupDialog = showSetupDialog,
                     onBackPressed = onBackPressed
                 )
 
@@ -213,6 +214,7 @@ fun VideoPlayerScreenContent(
     onSelectServer: (StreamServer) -> Unit,
     onRetryNextServer: () -> Unit,
     onCapturedDirectStream: (String, Map<String, String>) -> Unit = { _, _ -> },
+    showSetupDialog: Boolean = false,
     onBackPressed: () -> Unit
 ) {
     val context = LocalContext.current
@@ -223,9 +225,10 @@ fun VideoPlayerScreenContent(
         hideSeconds = 4,
     )
 
+    val subtitlePreferences = remember { com.example.metflix.data.settings.SubtitlePreferences(context) }
     var currentContentScale by remember { mutableStateOf(ContentScale.Fit) }
     var currentSpeed by remember { mutableFloatStateOf(1.0f) }
-    var isSubtitlesEnabled by remember { mutableStateOf(false) }
+    var isSubtitlesEnabled by remember { mutableStateOf(subtitlePreferences.isSubtitlesEnabled.value) }
     var currentCues by remember { mutableStateOf<List<Cue>>(emptyList()) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isPlaylistOpen by remember { mutableStateOf(false) }
@@ -393,6 +396,23 @@ fun VideoPlayerScreenContent(
                 if (subNames.isEmpty()) {
                     selectedSubtitleTrackIndex = -1
                     isSubtitlesEnabled = false
+                } else if (subtitlePreferences.isSubtitlesEnabled.value) {
+                    val prefLang = subtitlePreferences.preferredLanguage.value
+                    val matchingIdx = subNames.indexOfFirst { it.contains(prefLang, ignoreCase = true) }
+                    val targetIdx = if (matchingIdx >= 0) matchingIdx else 0
+                    selectedSubtitleTrackIndex = targetIdx
+                    isSubtitlesEnabled = true
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setPreferredTextLanguage(prefLang.lowercase())
+                        .build()
+                } else {
+                    isSubtitlesEnabled = false
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                        .build()
                 }
                 audioInfo = currentAudio?.let { fmt ->
                     val lang = fmt.language?.uppercase() ?: "STEREO"
@@ -436,28 +456,41 @@ fun VideoPlayerScreenContent(
         }
     }
 
-    LaunchedEffect(exoPlayer, movieDetails, resolvedStream, isWebPlayerActive) {
+    var currentLoadedUrl by remember { mutableStateOf<String?>(null) }
+    val activeStreamUrl = resolvedStream?.streamUrl?.takeIf { it.isNotBlank() } ?: movieDetails.videoUri
+
+    LaunchedEffect(exoPlayer, movieDetails.id, activeStreamUrl, isWebPlayerActive, showSetupDialog) {
         playbackError = null
         hasAutoSelectedHindi = false
-        if (isWebPlayerActive) {
+        if (showSetupDialog) {
+            // Keep player idle while setup dialog is displayed so no network or chances are spent
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
+            currentLoadedUrl = null
+            isBuffering = false
+        } else if (isWebPlayerActive) {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
+            currentLoadedUrl = null
             isBuffering = false
         } else {
-            isBuffering = true
-            exoPlayer.stop()
-            exoPlayer.clearMediaItems()
+            // Only re-prepare if the URL changed or player was in an idle/stopped state
+            if (activeStreamUrl != currentLoadedUrl || exoPlayer.playbackState == Player.STATE_IDLE) {
+                isBuffering = true
+                currentLoadedUrl = activeStreamUrl
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
 
-            val activeStreamUrl = resolvedStream?.streamUrl?.takeIf { it.isNotBlank() } ?: movieDetails.videoUri
-            val items = buildList {
-                add(movieDetails.intoMediaItem(activeStreamUrl, resolvedStream))
-                movieDetails.similarMovies.forEach {
-                    add(it.intoMediaItem())
+                val items = buildList {
+                    add(movieDetails.intoMediaItem(activeStreamUrl, resolvedStream))
+                    movieDetails.similarMovies.forEach {
+                        add(it.intoMediaItem())
+                    }
                 }
+                exoPlayer.setMediaItems(items)
+                exoPlayer.prepare()
+                exoPlayer.playWhenReady = true
             }
-            exoPlayer.setMediaItems(items)
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
         }
     }
 
@@ -515,7 +548,7 @@ fun VideoPlayerScreenContent(
         modifier = Modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyUp) {
+                if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.Menu, Key.Settings -> {
                             val target = !isSettingsOpen
@@ -626,6 +659,7 @@ fun VideoPlayerScreenContent(
                     onToggleSubtitles = {
                         val newEnabled = !isSubtitlesEnabled
                         isSubtitlesEnabled = newEnabled
+                        subtitlePreferences.setSubtitlesEnabled(newEnabled)
                         selectedSubtitleTrackIndex = if (newEnabled) {
                             if (availableSubtitleTracks.isNotEmpty()) 0 else 0
                         } else {
@@ -636,7 +670,7 @@ fun VideoPlayerScreenContent(
                             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !newEnabled)
                             .apply {
                                 if (newEnabled) {
-                                    val lang = availableSubtitleTracks.firstOrNull()?.lowercase() ?: "en"
+                                    val lang = availableSubtitleTracks.firstOrNull()?.lowercase() ?: subtitlePreferences.preferredLanguage.value.lowercase()
                                     setPreferredTextLanguage(lang)
                                 } else {
                                     setPreferredTextLanguage(null)
@@ -951,10 +985,19 @@ private fun Modifier.mediaKeyEvents(
     pulseState: VideoPlayerPulseState,
     onToggleSettings: () -> Unit
 ): Modifier = this.onPreviewKeyEvent { event ->
-    if (event.type == KeyEventType.KeyUp) {
+    if (event.type == KeyEventType.KeyDown) {
         when (event.key) {
             Key.Menu, Key.Settings -> {
                 onToggleSettings()
+                return@onPreviewKeyEvent true
+            }
+            else -> {}
+        }
+    }
+    if (event.type == KeyEventType.KeyUp) {
+        when (event.key) {
+            Key.Menu, Key.Settings -> {
+                // Handled on KeyDown
                 true
             }
             Key.MediaPlay -> {

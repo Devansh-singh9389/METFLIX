@@ -34,7 +34,9 @@ import com.example.metflix.presentation.theme.MetFlixCardShape
 @Composable
 fun SubtitlesSection(
     isSubtitlesChecked: Boolean,
-    onSubtitleCheckChange: (isChecked: Boolean) -> Unit
+    onSubtitleCheckChange: (isChecked: Boolean) -> Unit,
+    preferredLanguage: String = "English",
+    onPreferredLanguageChange: (String) -> Unit = {}
 ) {
     with(StringConstants.Composable.Placeholders) {
         Column(modifier = Modifier.padding(horizontal = 72.dp)) {
@@ -70,10 +72,15 @@ fun SubtitlesSection(
             ListItem(
                 modifier = Modifier.padding(top = 16.dp),
                 selected = false,
-                onClick = {},
+                onClick = {
+                    val langs = com.example.metflix.data.settings.SubtitlePreferences.AVAILABLE_SUBTITLE_LANGUAGES
+                    val currentIdx = langs.indexOf(preferredLanguage)
+                    val nextIdx = if (currentIdx < 0 || currentIdx + 1 >= langs.size) 0 else currentIdx + 1
+                    onPreferredLanguageChange(langs[nextIdx])
+                },
                 trailingContent = {
                     Text(
-                        text = SubtitlesSectionLanguageValue,
+                        text = "$preferredLanguage ▾",
                         style = MaterialTheme.typography.labelLarge
                     )
                 },
@@ -81,6 +88,13 @@ fun SubtitlesSection(
                     Text(
                         text = SubtitlesSectionLanguageItem,
                         style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Click to cycle through available subtitle languages",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
                 colors = ListItemDefaults.colors(

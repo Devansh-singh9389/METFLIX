@@ -34,48 +34,46 @@ import com.example.metflix.R
 import com.example.metflix.data.util.StringConstants
 import com.example.metflix.presentation.theme.MetFlixCardShape
 
+import com.example.metflix.data.settings.LanguagePreferences
+
 @Composable
 fun LanguageSection(
-    selectedIndex: Int,
-    onSelectedIndexChange: (currentIndex: Int) -> Unit
+    currentLanguageCode: String,
+    onLanguageSelected: (String) -> Unit
 ) {
-    with(StringConstants.Composable.Placeholders) {
-        LazyColumn(modifier = Modifier.padding(horizontal = 72.dp)) {
-            item {
-                Text(
-                    text = LanguageSectionTitle,
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            }
-            items(LanguageSectionItems.size) { index ->
-                ListItem(
-                    modifier = Modifier.padding(top = 16.dp),
-                    selected = false,
-                    onClick = { onSelectedIndexChange(index) },
-                    trailingContent = if (selectedIndex == index) {
-                        {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = stringResource(
-                                    id =
-                                    R.string.language_section_listItem_icon_content_description,
-                                    LanguageSectionItems[index]
-                                )
-                            )
-                        }
-                    } else null,
-                    headlineContent = {
-                        Text(
-                            text = LanguageSectionItems[index],
-                            style = MaterialTheme.typography.titleMedium
+    LazyColumn(modifier = Modifier.padding(horizontal = 72.dp)) {
+        item {
+            Text(
+                text = "Application Language",
+                style = MaterialTheme.typography.headlineSmall
+            )
+        }
+        items(LanguagePreferences.AVAILABLE_LANGUAGES.size) { index ->
+            val lang = LanguagePreferences.AVAILABLE_LANGUAGES[index]
+            val isSelected = lang.code == currentLanguageCode
+            ListItem(
+                modifier = Modifier.padding(top = 16.dp),
+                selected = false,
+                onClick = { onLanguageSelected(lang.code) },
+                trailingContent = if (isSelected) {
+                    {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Selected language: ${lang.displayName}"
                         )
-                    },
-                    colors = ListItemDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
-                    ),
-                    shape = ListItemDefaults.shape(shape = MetFlixCardShape)
-                )
-            }
+                    }
+                } else null,
+                headlineContent = {
+                    Text(
+                        text = lang.displayName,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                ),
+                shape = ListItemDefaults.shape(shape = MetFlixCardShape)
+            )
         }
     }
 }

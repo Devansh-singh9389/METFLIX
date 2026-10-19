@@ -1,5 +1,6 @@
 package com.example.metflix.presentation.screens.profile
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.network.alldebrid.AllDebridClient
@@ -59,6 +60,7 @@ class DebridViewModel @Inject constructor(
     val isLoadingDownloads: StateFlow<Boolean> = _isLoadingDownloads.asStateFlow()
 
     private var pollingJob: Job? = null
+    private var validationJob: Job? = null
 
     init {
         // Automatically validate account on load if key is present
@@ -69,6 +71,7 @@ class DebridViewModel @Inject constructor(
 
     fun selectProvider(provider: DebridProviderType) {
         cancelTorBoxDeviceAuth()
+        validationJob?.cancel()
         preferences.selectProvider(provider)
         _userStatus.value = null
         _torBoxStats.value = null
@@ -93,9 +96,11 @@ class DebridViewModel @Inject constructor(
 
     fun disconnect() {
         cancelTorBoxDeviceAuth()
+        validationJob?.cancel()
         preferences.clearApiKey()
         _userStatus.value = null
         _torBoxStats.value = null
+        _cloudDownloads.value = emptyList()
     }
 
     /**
@@ -106,7 +111,12 @@ class DebridViewModel @Inject constructor(
         pollingJob?.cancel()
         pollingJob = viewModelScope.launch {
             _deviceAuthState.value = TorBoxDeviceAuthUiState.Loading
-            val auth = torBoxClient.startDeviceAuth()
+            val auth = try {
+                torBoxClient.startDeviceAuth()
+            } catch (e: Exception) {
+                _deviceAuthState.value = TorBoxDeviceAuthUiState.Error("Failed to start device authorization: ${e.localizedMessage}")
+                return@launch
+            }
             if (auth == null) {
                 _deviceAuthState.value = TorBoxDeviceAuthUiState.Error("Failed to start device authorization with TorBox.")
                 return@launch
@@ -126,28 +136,36 @@ class DebridViewModel @Inject constructor(
                 delay(intervalMs)
                 secondsLeft -= (intervalMs / 1000).toInt()
 
-                when (val result = torBoxClient.pollDeviceToken(auth.deviceCode)) {
-                    is TorBoxTokenResult.Success -> {
-                        _deviceAuthState.value = TorBoxDeviceAuthUiState.Approved(result.token)
-                        saveApiKey(result.token)
-                        break
+                try {
+                    when (val result = torBoxClient.pollDeviceToken(auth.deviceCode)) {
+                        is TorBoxTokenResult.Success -> {
+                            _deviceAuthState.value = TorBoxDeviceAuthUiState.Approved(result.token)
+                            saveApiKey(result.token)
+                            break
+                        }
+                        is TorBoxTokenResult.Pending -> {
+                            _deviceAuthState.value = TorBoxDeviceAuthUiState.WaitingForApproval(
+                                userCode = auth.userCode,
+                                verificationUrl = auth.verificationUrl,
+                                verificationUrlComplete = auth.verificationUrlComplete,
+                                secondsRemaining = secondsLeft.coerceAtLeast(0)
+                            )
+                        }
+                        is TorBoxTokenResult.Expired -> {
+                            _deviceAuthState.value = TorBoxDeviceAuthUiState.Error("Code expired. Please request a new code.")
+                            break
+                        }
+                        is TorBoxTokenResult.Error -> {
+                            if (result.message.contains("expired", ignoreCase = true)) {
+                                _deviceAuthState.value = TorBoxDeviceAuthUiState.Error(result.message)
+                                break
+                            } else {
+                                Log.w("DebridViewModel", "Transient TorBox polling notice: ${result.message}")
+                            }
+                        }
                     }
-                    is TorBoxTokenResult.Pending -> {
-                        _deviceAuthState.value = TorBoxDeviceAuthUiState.WaitingForApproval(
-                            userCode = auth.userCode,
-                            verificationUrl = auth.verificationUrl,
-                            verificationUrlComplete = auth.verificationUrlComplete,
-                            secondsRemaining = secondsLeft.coerceAtLeast(0)
-                        )
-                    }
-                    is TorBoxTokenResult.Expired -> {
-                        _deviceAuthState.value = TorBoxDeviceAuthUiState.Error("Code expired. Please request a new code.")
-                        break
-                    }
-                    is TorBoxTokenResult.Error -> {
-                        _deviceAuthState.value = TorBoxDeviceAuthUiState.Error(result.message)
-                        break
-                    }
+                } catch (e: Exception) {
+                    Log.w("DebridViewModel", "Transient exception while polling TorBox token: ${e.message}")
                 }
             }
         }
@@ -160,6 +178,7 @@ class DebridViewModel @Inject constructor(
     }
 
     fun validateStatus() {
+        validationJob?.cancel()
         val rawKey = preferences.apiKey.value
         val currentKey = preferences.sanitizeApiKey(rawKey)
         if (currentKey != rawKey && currentKey.isNotBlank()) {
@@ -175,7 +194,7 @@ class DebridViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        validationJob = viewModelScope.launch {
             _isValidating.value = true
             try {
                 val status = client.checkStatus(provider, currentKey)
@@ -186,13 +205,14 @@ class DebridViewModel @Inject constructor(
                     } else {
                         "Free / Expired • @${status.username}"
                     }
-                    preferences.saveUserInfo(summary)
+                    preferences.saveUserInfo(summary, provider)
                     preferences.saveVerificationStatus(
                         isVerified = true,
                         isPremium = status.isPremium,
                         email = status.username,
                         days = status.daysRemaining,
-                        plan = if (status.isPremium) "Premium" else "Free"
+                        plan = if (status.isPremium) "Premium" else "Free",
+                        provider = provider
                     )
 
                     // Fetch extended stats & cloud downloads for TorBox
@@ -203,8 +223,8 @@ class DebridViewModel @Inject constructor(
                         loadCloudDownloads()
                     }
                 } else {
-                    preferences.saveUserInfo("Invalid / Error: ${status.message}")
-                    preferences.clearVerification()
+                    preferences.saveUserInfo("Invalid / Error: ${status.message}", provider)
+                    preferences.clearVerification(provider)
                 }
             } catch (e: Exception) {
                 _userStatus.value = AllDebridUserStatus(
@@ -236,14 +256,20 @@ class DebridViewModel @Inject constructor(
         }
     }
 
-    fun deleteCloudTorrent(torrentId: Int) {
+    fun deleteCloudTorrent(torrentId: Int, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         val currentKey = preferences.apiKey.value.trim()
-        if (currentKey.isBlank() || torrentId <= 0) return
+        if (currentKey.isBlank() || torrentId <= 0) {
+            onResult(false, "Invalid TorBox configuration or torrent ID")
+            return
+        }
 
         viewModelScope.launch {
             val success = torBoxClient.controlTorrent(currentKey, torrentId, "delete")
             if (success) {
                 _cloudDownloads.value = _cloudDownloads.value.filter { it.id != torrentId }
+                onResult(true, "Torrent successfully deleted from TorBox cloud")
+            } else {
+                onResult(false, "Could not delete torrent from TorBox cloud")
             }
         }
     }

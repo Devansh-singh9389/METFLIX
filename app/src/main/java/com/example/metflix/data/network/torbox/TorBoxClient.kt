@@ -414,16 +414,16 @@ class TorBoxClient @Inject constructor(
     }
 
     /**
-     * Obtains the direct, unthrottled high-speed CDN download/streaming link for a torrent file.
+     * Retrieves specific torrent info and file list by its torrent ID.
      */
-    suspend fun requestDownloadLink(apiKey: String, torrentId: Int, fileId: Int? = null): String? = withContext(Dispatchers.IO) {
+    suspend fun getTorrentDetails(apiKey: String, torrentId: Int): TorBoxCachedItem? = withContext(Dispatchers.IO) {
         val cleanKey = apiKey.trim()
         if (cleanKey.isBlank() || torrentId <= 0) return@withContext null
 
         try {
-            val fileParam = if (fileId != null && fileId >= 0) "&file_id=$fileId" else ""
             val req = Request.Builder()
-                .url("$BASE_URL/torrents/requestdl?token=$cleanKey&torrent_id=$torrentId$fileParam&redirect=false")
+                .url("$BASE_URL/torrents/mylist?id=$torrentId&bypass_cache=true")
+                .header("Authorization", "Bearer $cleanKey")
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
@@ -432,14 +432,138 @@ class TorBoxClient @Inject constructor(
                 val body = resp.body?.string().orEmpty()
                 if (!resp.isSuccessful) return@withContext null
 
-                val json = JSONObject(body)
-                val dataObj = json.opt("data")
+                val json = try { JSONObject(body) } catch (_: Exception) { null } ?: return@withContext null
+                val data = json.opt("data") ?: return@withContext null
+
+                val obj = when (data) {
+                    is JSONObject -> data
+                    is JSONArray -> if (data.length() > 0) data.optJSONObject(0) else null
+                    else -> null
+                } ?: return@withContext null
+
+                val hash = obj.optString("hash")
+                val name = obj.optString("name")
+                val size = obj.optLong("size", 0L)
+                val filesArr = obj.optJSONArray("files")
+                val filesList = mutableListOf<TorBoxCachedFile>()
+                if (filesArr != null) {
+                    for (j in 0 until filesArr.length()) {
+                        val f = filesArr.optJSONObject(j) ?: continue
+                        filesList.add(
+                            TorBoxCachedFile(
+                                id = f.optInt("id", j),
+                                name = f.optString("name"),
+                                size = f.optLong("size", 0L)
+                            )
+                        )
+                    }
+                }
+
+                val rawProgress = obj.optDouble("progress", 1.0).toFloat()
+                val downloadState = obj.optString("download_state", if (obj.optBoolean("cached", true)) "cached" else "downloading")
+
+                TorBoxCachedItem(
+                    id = obj.optInt("id", torrentId),
+                    hash = hash,
+                    isCached = obj.optBoolean("cached", true) || downloadState == "completed" || downloadState == "cached",
+                    name = name,
+                    size = size,
+                    progress = rawProgress,
+                    downloadState = downloadState,
+                    files = filesList
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching torrent details for $torrentId: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Obtains the direct, unthrottled high-speed CDN download/streaming link for a torrent file.
+     */
+    suspend fun requestDownloadLink(apiKey: String, torrentId: Int, fileId: Int? = null): String? = withContext(Dispatchers.IO) {
+        val cleanKey = apiKey.trim()
+        if (cleanKey.isBlank() || torrentId <= 0) return@withContext null
+
+        try {
+            var targetFileId = fileId
+            // If fileId is null or <= 0, query getTorrentDetails to locate the largest media file
+            if (targetFileId == null || targetFileId < 0) {
+                val details = getTorrentDetails(cleanKey, torrentId)
+                val bestVideo = details?.files?.filter { f ->
+                    val ext = f.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                    ext in listOf("mkv", "mp4", "avi", "mov", "ts", "m4v")
+                }?.maxByOrNull { it.size } ?: details?.files?.maxByOrNull { it.size }
+                targetFileId = bestVideo?.id
+            }
+
+            val fileParam = if (targetFileId != null && targetFileId >= 0) "&file_id=$targetFileId" else ""
+
+            // Method 1: Request JSON download link with redirect=false
+            val req = Request.Builder()
+                .url("$BASE_URL/torrents/requestdl?token=$cleanKey&torrent_id=$torrentId$fileParam&redirect=false")
+                .header("User-Agent", USER_AGENT)
+                .get()
+                .build()
+
+            val rawUrl = okHttpClient.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "TorBox requestdl failed HTTP ${resp.code}: $body")
+                    return@use null
+                }
+
+                val json = try { JSONObject(body) } catch (_: Exception) { null }
+                val dataObj = json?.opt("data")
                 when (dataObj) {
                     is String -> if (dataObj.isNotBlank() && dataObj != "null") dataObj else null
                     is JSONObject -> dataObj.optString("url").takeIf { it.isNotBlank() }
                     else -> null
                 }
             }
+
+            // Fallback to TorBox permalink with redirect=true if rawUrl was not returned
+            val candidateUrl = rawUrl ?: if (targetFileId != null && targetFileId >= 0) {
+                "$BASE_URL/torrents/requestdl?token=$cleanKey&torrent_id=$torrentId&file_id=$targetFileId&redirect=true"
+            } else null
+
+            if (candidateUrl.isNullOrBlank()) return@withContext null
+
+            // Validate that the stream URL does not return an S3/Wasabi XML error or 404/403
+            val testReq = Request.Builder()
+                .url(candidateUrl)
+                .header("Range", "bytes=0-1024")
+                .header("User-Agent", USER_AGENT)
+                .get()
+                .build()
+
+            val isValid = try {
+                okHttpClient.newCall(testReq).execute().use { testResp ->
+                    val contentType = testResp.header("Content-Type").orEmpty().lowercase(Locale.ROOT)
+                    val isHttpOk = testResp.isSuccessful || testResp.code in 200..399
+                    if (!isHttpOk) {
+                        Log.w(TAG, "Stream validation rejected: HTTP ${testResp.code}")
+                        false
+                    } else if (contentType.contains("xml") || contentType.contains("html")) {
+                        val bodySample = testResp.body?.string().orEmpty()
+                        val hasXmlError = bodySample.contains("<Error>") || 
+                            bodySample.contains("NoSuchKey") || 
+                            bodySample.contains("AccessDenied")
+                        if (hasXmlError) {
+                            Log.w(TAG, "Stream validation rejected: S3 XML error body: $bodySample")
+                            false
+                        } else true
+                    } else {
+                        true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Stream validation check exception: ${e.message}")
+                false
+            }
+
+            if (isValid) candidateUrl else null
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting download link: ${e.message}")
             null
@@ -562,24 +686,58 @@ class TorBoxClient @Inject constructor(
         val cleanKey = apiKey.trim()
         if (cleanKey.isBlank() || torrentId <= 0) return@withContext false
 
+        // Attempt 1: Standard JSON body
         try {
             val jsonPayload = JSONObject().apply {
                 put("torrent_id", torrentId)
                 put("operation", operation)
             }
 
-            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val mediaType = "application/json".toMediaType()
             val requestBody = jsonPayload.toString().toRequestBody(mediaType)
 
             val req = Request.Builder()
                 .url("$BASE_URL/torrents/controltorrent")
                 .header("Authorization", "Bearer $cleanKey")
+                .header("Content-Type", "application/json")
                 .header("User-Agent", USER_AGENT)
                 .post(requestBody)
                 .build()
 
+            val success = okHttpClient.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                Log.d(TAG, "controlTorrent JSON response (HTTP ${resp.code}): $body")
+                if (resp.isSuccessful) {
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    json?.optBoolean("success", false) == true
+                } else false
+            }
+            if (success) return@withContext true
+        } catch (e: Exception) {
+            Log.w(TAG, "controlTorrent JSON attempt failed: ${e.message}")
+        }
+
+        // Attempt 2: FormBody fallback
+        try {
+            val formBody = FormBody.Builder()
+                .add("torrent_id", torrentId.toString())
+                .add("operation", operation)
+                .build()
+
+            val req = Request.Builder()
+                .url("$BASE_URL/torrents/controltorrent")
+                .header("Authorization", "Bearer $cleanKey")
+                .header("User-Agent", USER_AGENT)
+                .post(formBody)
+                .build()
+
             okHttpClient.newCall(req).execute().use { resp ->
-                resp.isSuccessful
+                val body = resp.body?.string().orEmpty()
+                Log.d(TAG, "controlTorrent Form response (HTTP ${resp.code}): $body")
+                if (resp.isSuccessful) {
+                    val json = try { JSONObject(body) } catch (_: Exception) { null }
+                    json?.optBoolean("success", false) == true
+                } else false
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error controlling torrent $torrentId: ${e.message}")

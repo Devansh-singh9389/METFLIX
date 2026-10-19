@@ -114,7 +114,7 @@ fun WebStreamPlayer(
                         domStorageEnabled = true
                         databaseEnabled = true
                         mediaPlaybackRequiresUserGesture = false
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         userAgentString = DESKTOP_USER_AGENT
                         useWideViewPort = true
                         loadWithOverviewMode = true
@@ -146,28 +146,32 @@ fun WebStreamPlayer(
                     }
 
                     webViewClient = object : WebViewClient() {
+                        private var hasCapturedPrimaryStream = false
+
                         override fun shouldOverrideUrlLoading(
                             view: WebView?,
                             request: WebResourceRequest?
                         ): Boolean {
                             val targetUrl = request?.url?.toString() ?: return false
-                            val uri = Uri.parse(targetUrl)
-                            val initialHost = Uri.parse(url).host.orEmpty()
-                            val targetHost = uri.host.orEmpty()
+                            val uri = request.url ?: return false
+                            val initialHost = Uri.parse(url).host.orEmpty().lowercase()
+                            val targetHost = uri.host.orEmpty().lowercase()
 
                             // Allow same domain or subdomains
-                            if (targetHost.endsWith(initialHost) || initialHost.endsWith(targetHost)) {
+                            if (targetHost.isNotEmpty() && (targetHost == initialHost || targetHost.endsWith(".$initialHost"))) {
                                 return false
                             }
 
                             // Allow known video streaming endpoints and CDNs
-                            val isAllowedCdn = targetHost.contains("vidlink") ||
-                                    targetHost.contains("embed") ||
-                                    targetHost.contains("stream") ||
-                                    targetHost.contains("cloudflare") ||
-                                    targetHost.contains("googleapis") ||
-                                    targetHost.contains("fastly") ||
-                                    targetHost.contains("akamai") ||
+                            val isAllowedCdn = targetHost.endsWith("vidlink.pro") ||
+                                    targetHost.endsWith("vidsrc.to") ||
+                                    targetHost.endsWith("vidsrc.me") ||
+                                    targetHost.endsWith("superembed.stream") ||
+                                    targetHost.endsWith("autoembed.to") ||
+                                    targetHost.endsWith("cloudflare.com") ||
+                                    targetHost.endsWith("cloudflarestorage.com") ||
+                                    targetHost.endsWith("fastly.net") ||
+                                    targetHost.endsWith("akamaihd.net") ||
                                     targetUrl.contains(".m3u8") ||
                                     targetUrl.contains(".mp4")
 
@@ -185,14 +189,18 @@ fun WebStreamPlayer(
                             request: WebResourceRequest?
                         ): WebResourceResponse? {
                             val reqUrl = request?.url?.toString()
-                            if (reqUrl != null) {
+                            if (reqUrl != null && !hasCapturedPrimaryStream) {
                                 val lower = reqUrl.lowercase()
-                                if ((lower.contains(".m3u8") || lower.contains(".mp4")) &&
-                                    !lower.contains("doubleclick") &&
-                                    !lower.contains("googleads") &&
-                                    !lower.contains("adnxs")
-                                ) {
-                                    Log.d(TAG, "Captured direct stream URL: $reqUrl")
+                                val isMedia = (lower.contains(".m3u8") || lower.contains(".mp4"))
+                                val isAdOrTracking = lower.contains("doubleclick") ||
+                                        lower.contains("googleads") ||
+                                        lower.contains("adnxs") ||
+                                        lower.contains("analytics")
+                                val isSubtitleOrAudio = lower.contains("sub") || lower.contains(".vtt") || lower.contains("audio")
+
+                                if (isMedia && !isAdOrTracking && !isSubtitleOrAudio) {
+                                    hasCapturedPrimaryStream = true
+                                    Log.d(TAG, "Captured primary direct stream URL: $reqUrl")
                                     onCapturedDirectStream(reqUrl, request.requestHeaders.orEmpty())
                                 }
                             }
