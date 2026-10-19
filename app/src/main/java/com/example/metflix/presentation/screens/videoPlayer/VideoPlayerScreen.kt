@@ -827,7 +827,7 @@ fun VideoPlayerScreenContent(
                     availableSubtitleTracks.getOrNull(selectedSubtitleTrackIndex) ?: "English"
                 } else "Off",
                 playbackSpeed = "${currentSpeed}x",
-                downloadSpeed = torformatDataRate(downloadSpeedBps),
+                downloadSpeed = formatDataRate(downloadSpeedBps),
                 dataUsed = formatDataSize(totalMediaBytesLoaded),
                 bufferHealthMs = bufferHealthMs,
                 currentPositionText = formatDurationTime(exoPlayer.currentPosition),

@@ -82,12 +82,28 @@ fun CachedVideoPlayerScreen(
     var hasError by remember(sessionId) { mutableStateOf(session == null) }
     var errorMessage by remember(sessionId) { mutableStateOf("Unable to open the cached TorBox file") }
     var retryUsed by remember(sessionId) { mutableStateOf(false) }
+    var isRefreshing by remember(sessionId) { mutableStateOf(false) }
+    var refreshAttempted by remember(sessionId) { mutableStateOf(false) }
     var bytesLoaded by remember(sessionId) { mutableStateOf(0L) }
     var bufferMs by remember(sessionId) { mutableStateOf(0L) }
     var isPlaying by remember(player) { mutableStateOf(player.isPlaying) }
     var audioTracks by remember(player) { mutableStateOf<List<Pair<Tracks.Group, Int>>>(emptyList()) }
     var selectedAudioIndex by remember(player) { mutableStateOf(0) }
     var videoQuality by remember(player) { mutableStateOf("Original") }
+
+    fun isExpiredLinkError(error: androidx.media3.common.PlaybackException): Boolean {
+        val details = buildString {
+            append(error.message.orEmpty())
+            append(' ')
+            append(error.cause?.message.orEmpty())
+            append(' ')
+            append(error.cause?.javaClass?.name.orEmpty())
+        }.lowercase()
+        return listOf(
+            "401", "403", "404", "unauthorized", "forbidden", "expired",
+            "invalidresponsecodeexception"
+        ).any(details::contains)
+    }
 
     BackHandler(onBack = onBackPressed)
 
@@ -100,6 +116,21 @@ fun CachedVideoPlayerScreen(
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 hasError = true
                 errorMessage = error.localizedMessage ?: "The cached TorBox link could not be played"
+                if (!refreshAttempted && session != null && !isRefreshing && isExpiredLinkError(error)) {
+                    refreshAttempted = true
+                    isRefreshing = true
+                    coroutineScope.launch {
+                        val refreshed = viewModel.refresh(sessionId)
+                        isRefreshing = false
+                        if (refreshed != null) {
+                            session = refreshed
+                            hasError = false
+                            errorMessage = ""
+                        } else {
+                            errorMessage = "The cached TorBox link expired and could not be refreshed"
+                        }
+                    }
+                }
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -173,19 +204,24 @@ fun CachedVideoPlayerScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color.White)
                 Text(errorMessage, color = Color.White)
-                if (!retryUsed && session != null) {
+                if (isRefreshing) {
+                    Text("Refreshing the expired TorBox link…", color = Color.White)
+                } else if (!retryUsed && session != null) {
                     Button(
                         onClick = {
                             retryUsed = true
                             hasError = false
                             bytesLoaded = 0L
                             coroutineScope.launch {
+                                isRefreshing = true
                                 val refreshed = viewModel.refresh(sessionId)
+                                isRefreshing = false
                                 if (refreshed == null) {
                                     hasError = true
                                     errorMessage = "TorBox could not refresh this cached link"
                                 } else {
                                     session = refreshed
+                                    refreshAttempted = true
                                 }
                             }
                         },
