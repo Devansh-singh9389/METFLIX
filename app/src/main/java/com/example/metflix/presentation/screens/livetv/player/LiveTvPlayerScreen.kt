@@ -180,6 +180,26 @@ private fun LiveTvPlayerContent(
     var lastUserInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var currentTimeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
+    fun isTerminalPlaybackError(error: PlaybackException): Boolean {
+        return when {
+            error.errorCode in 3000..3999 -> true // Media/container/format errors
+            error.errorCode in 4000..7999 -> true // Decoder, audio/video, and DRM errors
+            error.cause?.javaClass?.name?.contains("Drm", ignoreCase = true) == true -> true
+            error.cause?.javaClass?.name?.contains("Decoder", ignoreCase = true) == true -> true
+            else -> false
+        }
+    }
+
+    fun terminalErrorMessage(error: PlaybackException): String {
+        return when {
+            error.errorCode in 6000..6999 -> "DRM playback failed. Check the channel license or device support."
+            error.errorCode in 3000..3999 -> "This channel uses an unsupported media format."
+            error.errorCode in 4000..5999 || error.errorCode in 7000..7999 ->
+                "This channel uses an unsupported audio or video codec."
+            else -> error.localizedMessage ?: "Stream unavailable"
+        }
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             delay(15_000)
@@ -457,8 +477,12 @@ private fun LiveTvPlayerContent(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (reconnectAttempt < 8) {
-                    isBuffering = false
+                isBuffering = false
+                if (isTerminalPlaybackError(error)) {
+                    isReconnecting = false
+                    isManualError = true
+                    playbackError = terminalErrorMessage(error)
+                } else if (reconnectAttempt < 8) {
                     isReconnecting = true
                 } else {
                     isReconnecting = false
