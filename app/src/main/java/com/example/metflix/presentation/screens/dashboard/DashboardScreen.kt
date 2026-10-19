@@ -16,9 +16,7 @@
 
 package com.example.metflix.presentation.screens.dashboard
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -27,9 +25,7 @@ import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -53,12 +49,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.presentation.screens.Screens
 import com.example.metflix.presentation.screens.categories.CategoriesScreen
@@ -96,13 +86,10 @@ fun DashboardScreen(
     onBackPressed: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
-    val navController = rememberNavController()
-
     var isTopBarVisible by remember { mutableStateOf(true) }
     var isTopBarFocused by remember { mutableStateOf(false) }
-    var isTabChanging by remember { mutableStateOf(false) }
 
-    var currentDestination: String? by remember { mutableStateOf(null) }
+    var currentDestination: String? by remember { mutableStateOf(Screens.Home()) }
     val currentTopBarSelectedTabIndex by remember(currentDestination) {
         derivedStateOf {
             currentDestination?.let { dest ->
@@ -110,24 +97,6 @@ fun DashboardScreen(
                 val screen = try { Screens.valueOf(screenName) } catch (_: Exception) { null }
                 screen?.let { TopBarTabs.indexOf(it).takeIf { idx -> idx >= 0 } }
             } ?: 0
-        }
-    }
-
-    DisposableEffect(Unit) {
-        val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
-            currentDestination = destination.route
-        }
-
-        navController.addOnDestinationChangedListener(listener)
-
-        onDispose {
-            navController.removeOnDestinationChangedListener(listener)
-        }
-    }
-
-    LaunchedEffect(currentDestination) {
-        if (currentDestination != null) {
-            isTabChanging = false
         }
     }
 
@@ -156,7 +125,7 @@ fun DashboardScreen(
         // Used to show/hide DashboardTopBar
         val topBarYOffsetPx by animateIntAsState(
             targetValue = if (isTopBarVisible) 0 else -topBarHeightPx,
-            animationSpec = if (isTabChanging) snap() else tween(durationMillis = 150),
+            animationSpec = tween(durationMillis = 150),
             label = "",
             finishedListener = {
                 if (it == -topBarHeightPx && isComingBackFromDifferentScreen) {
@@ -166,13 +135,7 @@ fun DashboardScreen(
             }
         )
 
-        // Used to push down/pull up NavHost when DashboardTopBar is shown/hidden
-        val navHostTopPaddingPx by animateIntAsState(
-            targetValue = if (isTopBarVisible) topBarHeightPx else 0,
-            animationSpec = if (isTabChanging) snap() else tween(durationMillis = 150),
-            label = "",
-        )
-
+        // Keep the tab body in a stable layout while the top bar is shown or hidden.
         LaunchedEffect(Unit) {
             if (!wasTopBarFocusRequestedBefore) {
                 TopBarFocusRequesters[currentTopBarSelectedTabIndex + 1].requestFocus()
@@ -182,7 +145,7 @@ fun DashboardScreen(
 
         DashboardTopBar(
             modifier = Modifier
-                .graphicsLayer { translationY = topBarYOffsetPx.toFloat() }
+                .offset { IntOffset(0, topBarYOffsetPx) }
                 .onSizeChanged { topBarHeightPx = it.height }
                 .onFocusChanged { isTopBarFocused = it.hasFocus }
                 .padding(
@@ -199,14 +162,7 @@ fun DashboardScreen(
             val targetRoute = screen()
             if (currentDestination != targetRoute) {
                 isTopBarVisible = true
-                isTabChanging = true
-                navController.navigate(targetRoute) {
-                    popUpTo(navController.graph.findStartDestination().id) {
-                        saveState = true
-                    }
-                    launchSingleTop = true
-                    restoreState = true
-                }
+                currentDestination = targetRoute
             }
         }
 
@@ -218,9 +174,9 @@ fun DashboardScreen(
             openLiveTvPlayer = openLiveTvPlayer,
             updateTopBarVisibility = { isTopBarVisible = it },
             isTopBarVisible = isTopBarVisible,
-            navController = navController,
+            currentRoute = currentDestination ?: Screens.Home(),
             modifier = Modifier.padding(
-                top = with(LocalDensity.current) { navHostTopPaddingPx.toDp() }
+                top = with(LocalDensity.current) { topBarHeightPx.toDp() }
             ),
         )
     }
@@ -255,21 +211,18 @@ private fun Body(
     openLiveTvPlayer: (channelId: String) -> Unit,
     updateTopBarVisibility: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    navController: NavHostController = rememberNavController(),
+    currentRoute: String,
     isTopBarVisible: Boolean = true,
-) =
-    NavHost(
-        modifier = modifier,
-        navController = navController,
-        startDestination = Screens.Home(),
-    ) {
-        composable(Screens.Profile()) {
+) {
+    Box(modifier = modifier) {
+        when (currentRoute.substringBefore('/')) {
+            Screens.Profile.name -> {
             ProfileScreen(
                 onPlayMovie = openVideoPlayer,
                 onCachedPlaybackRequested = openCachedPlayback
             )
-        }
-        composable(Screens.Home()) {
+            }
+            Screens.Home.name -> {
             HomeScreen(
                 onMovieClick = { selectedMovie ->
                     openMovieDetailsScreen(selectedMovie.id)
@@ -278,52 +231,54 @@ private fun Body(
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )
-        }
-        composable(Screens.Categories()) {
+            }
+            Screens.Categories.name -> {
             CategoriesScreen(
                 onCategoryClick = openCategoryMovieList,
                 onScroll = updateTopBarVisibility
             )
-        }
-        composable(Screens.Movies()) {
+            }
+            Screens.Movies.name -> {
             MoviesScreen(
                 onMovieClick = { movie -> openMovieDetailsScreen(movie.id) },
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )
-        }
-        composable(Screens.Shows()) {
+            }
+            Screens.Shows.name -> {
             ShowsScreen(
                 onTVShowClick = { movie -> openMovieDetailsScreen("tv:${movie.id}") },
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )
-        }
-        composable(Screens.Anime()) {
+            }
+            Screens.Anime.name -> {
             com.example.metflix.presentation.screens.anime.AnimeScreen(
                 onAnimeClick = { movie -> openMovieDetailsScreen("tv:${movie.id}") },
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )
-        }
-        composable(Screens.LiveTv()) {
+            }
+            Screens.LiveTv.name -> {
             com.example.metflix.presentation.screens.livetv.LiveTvScreen(
                 onChannelClick = { channel -> openLiveTvPlayer(channel.id) },
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )
-        }
-        composable(Screens.Favourites()) {
+            }
+            Screens.Favourites.name -> {
             FavouritesScreen(
                 onMovieClick = openMovieDetailsScreen,
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )
-        }
-        composable(Screens.Search()) {
+            }
+            Screens.Search.name -> {
             SearchScreen(
                 onMovieClick = { movie -> openMovieDetailsScreen(movie.id) },
                 onScroll = updateTopBarVisibility
             )
+            }
         }
     }
+}

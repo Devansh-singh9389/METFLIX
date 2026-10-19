@@ -28,6 +28,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.C
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.tv.material3.Icon
@@ -70,6 +71,7 @@ class CachedVideoPlayerViewModel @Inject constructor(
 }
 
 @Composable
+@androidx.annotation.OptIn(UnstableApi::class)
 fun CachedVideoPlayerScreen(
     sessionId: String,
     onBackPressed: () -> Unit,
