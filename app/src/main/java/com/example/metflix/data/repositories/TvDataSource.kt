@@ -22,10 +22,14 @@ import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
 import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 @Singleton
@@ -34,10 +38,42 @@ class TvDataSource @Inject constructor(
     private val tmdbApiClient: TmdbApiClient,
     private val diskCache: TmdbDiskCache
 ) {
+    /**
+     * Application-process-lived coroutine scope dedicated to non-blocking background stale-while-revalidate
+     * cache refreshes. Because [TvDataSource] is a [@Singleton], this scope intentionally matches the
+     * application process lifecycle so that in-flight background disk cache updates are not abruptly cancelled
+     * when the user navigates between screens. Uses [SupervisorJob] so failures in an individual row
+     * revalidation never cancel other ongoing cache updates.
+     */
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val activeRefreshes = ConcurrentHashMap<String, Boolean>()
+
+    private fun refreshIfStale(key: String, block: suspend () -> Unit) {
+        if (diskCache.isCacheStale(key)) {
+            if (activeRefreshes.putIfAbsent(key, true) == null) {
+                applicationScope.launch {
+                    try {
+                        block()
+                    } finally {
+                        activeRefreshes.remove(key)
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun fetchTwoPages(
+        fetch: suspend (page: Int) -> Result<List<Movie>>
+    ): List<Movie> = coroutineScope {
+        val p1 = async { fetch(1).getOrNull().orEmpty() }
+        val p2 = async { fetch(2).getOrNull().orEmpty() }
+        (p1.await() + p2.await()).distinctBy { it.id }
+    }
+
     private val mostPopularTvShowsReader: CachedDataReader<Movie> = CachedDataReader {
         val cached = diskCache.loadMovies("tv_shows")
         if (cached.isNotEmpty()) {
-            CoroutineScope(Dispatchers.IO).launch {
+            refreshIfStale("tv_shows") {
                 fetchTvShowsLive()?.let { mostPopularTvShowsReader.update(it) }
             }
             return@CachedDataReader cached
@@ -48,7 +84,7 @@ class TvDataSource @Inject constructor(
     private val topRatedTvShowsReader: CachedDataReader<Movie> = CachedDataReader {
         val cached = diskCache.loadMovies("tv_shows_top_rated")
         if (cached.isNotEmpty()) {
-            CoroutineScope(Dispatchers.IO).launch {
+            refreshIfStale("tv_shows_top_rated") {
                 fetchTopRatedTvShowsLive()?.let { topRatedTvShowsReader.update(it) }
             }
             return@CachedDataReader cached
@@ -58,9 +94,7 @@ class TvDataSource @Inject constructor(
 
     private suspend fun fetchTvShowsLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getPopularTvShows(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getPopularTvShows(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getPopularTvShows(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("tv_shows", combined)
                 return combined
@@ -79,9 +113,7 @@ class TvDataSource @Inject constructor(
 
     private suspend fun fetchTopRatedTvShowsLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getTopRatedTvShows(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getTopRatedTvShows(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getTopRatedTvShows(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("tv_shows_top_rated", combined)
                 return combined

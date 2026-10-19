@@ -27,7 +27,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import com.example.metflix.data.settings.DebridPreferences
+import com.example.metflix.data.settings.DebridProviderType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -40,10 +45,13 @@ import javax.inject.Singleton
 
 @Singleton
 class StreamResolverRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val okHttpClient: OkHttpClient,
     private val liveTvRepository: LiveTvRepository,
-    private val dualAudioScraper: DualAudioScraper
+    private val dualAudioScraper: DualAudioScraper,
+    private val animeScraper: AnimeScraper,
+    private val streamRankingEngine: StreamRankingEngine,
+    private val debridPreferences: DebridPreferences
 ) {
     companion object {
         private const val TAG = "StreamResolverRepo"
@@ -53,69 +61,95 @@ class StreamResolverRepository @Inject constructor(
         private const val TUNNEL_DECRYPTOR_BASE = "https://representative-grams-take-incoming.trycloudflare.com"
     }
 
-    val availableServers: List<StreamServer> = listOf(
-        StreamServer(
-            id = "dualaudio",
-            name = "Server 1 (Dual-Audio • Hindi + English)",
-            description = "Hollywood & Regional Blockbusters • Hindi + English Dual-Audio",
-            badge = "Hindi+Eng",
-            speed = "Ultra",
-            isPrimary = true,
-            audioLanguages = listOf("Hindi", "English")
-        ),
-        StreamServer(
-            id = "vidlink",
-            name = "Server 2 (VidLink Pro)",
-            description = "Direct On-Device Decryption • 1080p FHD",
-            badge = "VIP",
-            speed = "Ultra",
-            audioLanguages = listOf("Original")
-        ),
-        StreamServer(
-            id = "streamflix",
-            name = "Server 3 (StreamFlix Direct)",
-            description = "Direct High-Speed CDN • 5,000+ Direct MKV/MP4",
-            badge = "Direct",
-            speed = "Ultra",
-            audioLanguages = listOf("English", "Original")
-        ),
-        StreamServer(
-            id = "stremio",
-            name = "Server 4 (Multi-Source Engine)",
-            description = "TMDB-Embed Multi-Source • Hindi + English Dual-Audio",
-            badge = "Dual-Audio",
-            speed = "Fast",
-            audioLanguages = listOf("Hindi", "English")
-        ),
-        StreamServer(
-            id = "iptv",
-            name = "Server 5 (Regional IPTV VOD)",
-            description = "Direct stream matched from loaded M3U playlist",
-            badge = "IPTV",
-            speed = "Direct"
-        ),
-        StreamServer(
-            id = "superembed",
-            name = "Server 6 (SuperEmbed Direct)",
-            description = "High Bandwidth Mirror • 1080p/720p HLS",
-            badge = "HD",
-            speed = "Fast"
-        ),
-        StreamServer(
-            id = "autoembed",
-            name = "Server 7 (AutoEmbed)",
-            description = "Global Edge Mirror • 1080p",
-            badge = "CDN",
-            speed = "Fast"
-        ),
-        StreamServer(
-            id = "vidsrc",
-            name = "Server 8 (VidSrc Cloud)",
-            description = "Alternative Cloud Mirror • 1080p",
-            badge = "Cloud",
-            speed = "Normal"
-        )
-    )
+    val availableServers: List<StreamServer>
+        get() {
+            val debridProvider = debridPreferences.selectedProvider.value
+            val isTorBox = debridProvider == DebridProviderType.TORBOX
+            val debridName = if (isTorBox) "Premium Stream · TorBox" else "Premium Stream · AllDebrid"
+            val debridBadge = if (isTorBox) "TorBox" else "AllDebrid"
+
+            return listOf(
+                StreamServer(
+                    id = "alldebrid",
+                    name = debridName,
+                    description = "High-Speed Cached Cloud Stream • 4K/1080p Direct Play",
+                    badge = debridBadge,
+                    speed = "Ultra",
+                    isPrimary = true,
+                    audioLanguages = listOf("Hindi", "English", "Original")
+                ),
+                StreamServer(
+                    id = "dualaudio",
+                    name = "Hindi + English Dual-Audio",
+                    description = "Hollywood & Regional Blockbusters • Hindi + English Audio",
+                    badge = "Hindi+Eng",
+                    speed = "Ultra",
+                    isPrimary = false,
+                    audioLanguages = listOf("Hindi", "English")
+                ),
+                StreamServer(
+                    id = "anime",
+                    name = "AnimeWorld (Dub & Sub)",
+                    description = "Japanese + Hindi + English Multi-Audio • HLS Direct",
+                    badge = "Multi-Audio",
+                    speed = "Ultra",
+                    isPrimary = false,
+                    audioLanguages = listOf("Japanese", "Hindi", "English")
+                ),
+                StreamServer(
+                    id = "vidlink",
+                    name = "Standard Source (1080p Fast)",
+                    description = "Direct On-Device Decryption • 1080p FHD",
+                    badge = "1080p",
+                    speed = "Fast",
+                    audioLanguages = listOf("Original")
+                ),
+                StreamServer(
+                    id = "streamflix",
+                    name = "Direct CDN Stream",
+                    description = "Direct High-Speed CDN • 5,000+ Direct MKV/MP4",
+                    badge = "Direct",
+                    speed = "Ultra",
+                    audioLanguages = listOf("English", "Original")
+                ),
+                StreamServer(
+                    id = "stremio",
+                    name = "Multi-Source Engine",
+                    description = "TMDB-Embed Multi-Source • Regional Mirrors",
+                    badge = "Multi-Source",
+                    speed = "Fast",
+                    audioLanguages = listOf("Hindi", "English")
+                ),
+                StreamServer(
+                    id = "iptv",
+                    name = "Live TV & Regional VOD",
+                    description = "Direct stream matched from loaded M3U playlist",
+                    badge = "IPTV",
+                    speed = "Direct"
+                ),
+                StreamServer(
+                    id = "superembed",
+                    name = "High-Definition Mirror",
+                    description = "High Bandwidth Mirror • 1080p/720p HLS",
+                    badge = "HD",
+                    speed = "Fast"
+                ),
+                StreamServer(
+                    id = "autoembed",
+                    name = "Global Edge CDN",
+                    description = "Global Edge Mirror • 1080p",
+                    badge = "CDN",
+                    speed = "Fast"
+                ),
+                StreamServer(
+                    id = "vidsrc",
+                    name = "Cloud Backup Mirror",
+                    description = "Alternative Cloud Mirror • 1080p",
+                    badge = "Cloud",
+                    speed = "Normal"
+                )
+            )
+        }
 
     /**
      * Resolves a video stream for a given movie using the requested or default server.
@@ -127,31 +161,41 @@ class StreamResolverRepository @Inject constructor(
         server: StreamServer? = null,
         isTvShow: Boolean = false,
         season: Int = 1,
-        episode: Int = 1
+        episode: Int = 1,
+        imdbId: String? = null
     ): ResolvedStream = withContext(Dispatchers.IO) {
         val targetServer = server ?: availableServers.first()
         val mediaType = if (isTvShow) "TV S${season}E${episode}" else "Movie"
-        Log.d(TAG, "Resolving stream for '$movieTitle' ($mediaType, TMDB: $tmdbId) on ${targetServer.name}")
+        Log.d(TAG, "Resolving stream for '$movieTitle' ($mediaType, TMDB: $tmdbId, IMDb: $imdbId) on ${targetServer.name}")
 
         when (targetServer.id) {
-            "dualaudio" -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode)
+            "alldebrid" -> {
+                try {
+                    resolveAllDebrid(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode, imdbId)
+                } catch (e: Exception) {
+                    Log.d(TAG, "Debrid direct resolve returned no cached stream, falling back to DualAudio: ${e.message}")
+                    resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer.copy(badge = "Fallback"), isTvShow, season, episode, imdbId)
+                }
+            }
+            "anime" -> resolveAnime(tmdbId, movieTitle, season, episode, targetServer)
+            "dualaudio" -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode, imdbId)
             "vidlink" -> resolveVidLink(tmdbId, targetServer, isTvShow, season, episode)
             "streamflix" -> resolveStreamFlix(tmdbId, movieTitle, targetServer)
-            "stremio" -> resolveStremioMultiSource(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode)
-            "superembed" -> resolveSuperEmbed(tmdbId, targetServer, isTvShow, season, episode)
+            "stremio" -> resolveStremioMultiSource(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode, imdbId)
+            "superembed" -> resolveSuperEmbed(tmdbId, targetServer, isTvShow, season, episode, imdbId)
             "iptv" -> resolveIptvMatch(movieTitle, releaseYear, targetServer)
             "autoembed" -> resolveAutoEmbed(tmdbId, targetServer, isTvShow, season, episode)
-            "twoembed" -> resolve2Embed(tmdbId, targetServer, isTvShow, season, episode)
+            "twoembed" -> resolve2Embed(tmdbId, targetServer, isTvShow, season, episode, imdbId)
             "vidsrc" -> resolveVidSrc(tmdbId, targetServer, isTvShow, season, episode)
-            else -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode)
+            else -> resolveDualAudio(tmdbId, movieTitle, releaseYear, targetServer, isTvShow, season, episode, imdbId)
         }
     }
 
     /**
-     * Simultaneously queries all available servers in parallel, measures round-trip latency,
-     * verifies stream availability, prioritizes regional and direct streams,
-     * and streams progressive rank updates.
-     * The fastest responding valid stream is emitted immediately to minimize player startup time.
+     * Hierarchical stream resolution:
+     * Tier 1: If verified Debrid is linked, queries Debrid cache ONLY with a strict 3.5s timeout.
+     *         If cached, playback starts in < 1.5s with ZERO free scraper overhead.
+     * Tier 2: Free scrapers run if Debrid is unconfigured, on Live TV, or on cache miss (auto-fallback).
      */
     fun raceAndRankStreams(
         tmdbId: String,
@@ -160,12 +204,104 @@ class StreamResolverRepository @Inject constructor(
         originalLanguage: String = "",
         isTvShow: Boolean = false,
         season: Int = 1,
-        episode: Int = 1
+        episode: Int = 1,
+        imdbId: String? = null,
+        forceNonDebrid: Boolean = false,
+        preferHindi: Boolean = true,
+        preferredQuality: String = "720p"
     ): Flow<ServerRaceResult> = channelFlow {
         val isRegional = originalLanguage.isNotBlank() && originalLanguage.lowercase() !in listOf("en", "eng")
-        Log.d(TAG, "Starting parallel server race for '$movieTitle' (TMDB: $tmdbId, Lang: $originalLanguage, isRegional: $isRegional)")
+        val isLiveChannel = tmdbId.startsWith("iptv") || tmdbId.startsWith("channel")
 
-        val servers = availableServers
+        Log.d(TAG, "Starting resolver pipeline for '$movieTitle' (TMDB: $tmdbId, IMDb: $imdbId, isLive: $isLiveChannel, forceNonDebrid: $forceNonDebrid, preferHindi: $preferHindi, quality: $preferredQuality)")
+
+        val allServers = availableServers
+        val debridServer = allServers.first { it.id == "alldebrid" }
+
+        // =========================================================================
+        // TIER 1: DEBRID FAST-PATH (Direct Cloud Cache Check with 3.5s Strict Timeout)
+        // =========================================================================
+        val hasVerifiedDebrid = debridPreferences.hasVerifiedPremiumDebrid()
+        if (hasVerifiedDebrid && !forceNonDebrid && !isLiveChannel) {
+            val providerName = debridPreferences.selectedProvider.value.displayName
+            Log.d(TAG, "Tier 1: Verified Debrid active ($providerName). Checking cache (preferHindi=$preferHindi, quality=$preferredQuality)...")
+            val startTime = System.currentTimeMillis()
+
+            val debridResult: ResolvedStream? = withTimeoutOrNull(3500L) {
+                try {
+                    resolveAllDebrid(
+                        tmdbId = tmdbId,
+                        movieTitle = movieTitle,
+                        releaseYear = releaseYear,
+                        server = debridServer,
+                        isTvShow = isTvShow,
+                        season = season,
+                        episode = episode,
+                        imdbId = imdbId,
+                        preferHindi = preferHindi,
+                        preferredQuality = preferredQuality
+                    )
+                } catch (e: Exception) {
+                    Log.d(TAG, "Tier 1 Debrid returned no cached stream: ${e.message}")
+                    null
+                }
+            }
+
+            if (debridResult != null && (debridResult.isDirectStream || debridResult.streamUrl.startsWith("http"))) {
+                val elapsed = System.currentTimeMillis() - startTime
+                Log.d(TAG, "Tier 1 FAST-PATH HIT: ${debridServer.name} resolved in ${elapsed}ms! Skipping all free scrapers.")
+
+                val updatedDebridServer = debridServer.copy(
+                    latencyMs = elapsed,
+                    isAvailable = true,
+                    isDirect = true,
+                    badge = if (debridResult.audioLanguages.any { it.equals("Hindi", true) }) "Hindi+Eng" else debridServer.badge,
+                    audioLanguages = debridResult.audioLanguages.takeIf { it.isNotEmpty() } ?: debridServer.audioLanguages,
+                    speed = "Ultra",
+                    rank = 1
+                )
+
+                val rankedList = listOf(updatedDebridServer) + allServers.filterNot { it.id == "alldebrid" }.mapIndexed { idx, s -> s.copy(rank = idx + 2) }
+
+                send(
+                    ServerRaceResult(
+                        rankedServers = rankedList,
+                        bestStream = debridResult.copy(server = updatedDebridServer),
+                        isFinal = true
+                    )
+                )
+                // Fast-path success: return immediately, zero scraping overhead!
+                return@channelFlow
+            }
+
+            Log.d(TAG, "Tier 1 Debrid fast-path missed or timed out (>3.5s). Auto-fallback: ${debridPreferences.autoFallbackToFree.value}")
+
+            if (!debridPreferences.autoFallbackToFree.value) {
+                // User disabled auto-fallback: notify UI that Debrid did not have cached stream
+                val unavailDebrid = debridServer.copy(
+                    isAvailable = false,
+                    badge = "Uncached"
+                )
+                send(
+                    ServerRaceResult(
+                        rankedServers = listOf(unavailDebrid) + allServers.filterNot { it.id == "alldebrid" },
+                        bestStream = null,
+                        isFinal = true
+                    )
+                )
+                return@channelFlow
+            }
+        }
+
+        // =========================================================================
+        // TIER 2: STANDARD / FREE SCRAPERS (DualAudio, Anime, VidLink, IPTV, Embeds)
+        // Rate-limited with Semaphore(3) to protect Android TV chipsets & network pool
+        // =========================================================================
+        val candidateServers = allServers.filterNot { s ->
+            // If Debrid was already verified and missed, skip querying it again in Tier 2
+            s.id == "alldebrid" && hasVerifiedDebrid
+        }
+
         val resolvedResults = ConcurrentHashMap<String, Pair<StreamServer, ResolvedStream?>>()
         val serverScores = ConcurrentHashMap<String, Long>()
         val hasEmittedAnyStream = AtomicBoolean(false)
@@ -173,7 +309,7 @@ class StreamResolverRepository @Inject constructor(
         fun buildRankedList(): List<StreamServer> {
             val completed = resolvedResults.values.map { it.first }
             val completedIds = completed.map { it.id }.toSet()
-            val remaining = servers.filterNot { it.id in completedIds }
+            val remaining = candidateServers.filterNot { it.id in completedIds }
 
             val sortedCompleted = completed.sortedByDescending { serverScores[it.id] ?: -9999L }
             val combined = sortedCompleted + remaining
@@ -182,110 +318,119 @@ class StreamResolverRepository @Inject constructor(
             }
         }
 
-        val jobs = servers.map { server ->
+        val scrapeSemaphore = Semaphore(3)
+        val jobs = candidateServers.map { server ->
             launch(Dispatchers.IO) {
-                val startTime = System.currentTimeMillis()
-                var resolved: ResolvedStream? = null
-                var isRealIptvMatch = false
-                var isAvailable = false
-                var latencyMs: Long? = null
+                scrapeSemaphore.withPermit {
+                    val startTime = System.currentTimeMillis()
+                    var resolved: ResolvedStream? = null
+                    var isRealIptvMatch = false
+                    var isAvailable = false
+                    var latencyMs: Long? = null
 
-                try {
-                    if (server.id == "iptv") {
-                        val (iptvStream, matched) = resolveIptvMatchInternal(movieTitle, releaseYear, server)
-                        if (matched && iptvStream != null) {
-                            resolved = iptvStream
-                            isRealIptvMatch = true
-                            isAvailable = true
-                            latencyMs = System.currentTimeMillis() - startTime
+                    try {
+                        if (server.id == "iptv") {
+                            val (iptvStream, matched) = resolveIptvMatchInternal(movieTitle, releaseYear, server)
+                            if (matched && iptvStream != null) {
+                                resolved = iptvStream
+                                isRealIptvMatch = true
+                                isAvailable = true
+                                latencyMs = System.currentTimeMillis() - startTime
+                            } else {
+                                isAvailable = false
+                                latencyMs = System.currentTimeMillis() - startTime
+                            }
                         } else {
-                            isAvailable = false
-                            latencyMs = System.currentTimeMillis() - startTime
+                            val stream = resolveMovieStream(tmdbId, movieTitle, releaseYear, server, isTvShow, season, episode, imdbId)
+                            val probeResult = probeServer(stream)
+                            isAvailable = probeResult.isAvailable
+                            latencyMs = probeResult.latencyMs ?: (System.currentTimeMillis() - startTime)
+                            val isUnverifiedEmbed = probeResult.isUnverifiedEmbed
+                            resolved = if (probeResult.directStreamUrl != null) {
+                                stream.copy(
+                                    streamUrl = probeResult.directStreamUrl,
+                                    isHls = probeResult.directStreamUrl.contains(".m3u8"),
+                                    latencyMs = latencyMs
+                                )
+                            } else {
+                                stream.copy(latencyMs = latencyMs)
+                            }
                         }
-                    } else {
-                        val stream = resolveMovieStream(tmdbId, movieTitle, releaseYear, server, isTvShow, season, episode)
-                        val probeResult = probeServer(stream)
-                        isAvailable = probeResult.first
-                        latencyMs = probeResult.second ?: (System.currentTimeMillis() - startTime)
-                        resolved = if (probeResult.third != null) {
-                            stream.copy(
-                                streamUrl = probeResult.third!!,
-                                isHls = probeResult.third!!.contains(".m3u8"),
-                                latencyMs = latencyMs
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Server ${server.name} error: ${e.message}")
+                        isAvailable = false
+                        latencyMs = System.currentTimeMillis() - startTime
+                    }
+
+                    val score = computeScore(
+                        server = server,
+                        resolved = resolved,
+                        isAvailable = isAvailable,
+                        isRealIptvMatch = isRealIptvMatch,
+                        latencyMs = latencyMs,
+                        isRegional = isRegional
+                    )
+                    serverScores[server.id] = score
+
+                    val isEmbedServer = server.id == "vidlink" || server.id == "vidsrc" || server.id == "superembed" || resolved?.streamUrl?.contains("/embed/") == true
+                    val updatedServer = server.copy(
+                        latencyMs = latencyMs,
+                        isAvailable = isAvailable,
+                        isRegionalMatch = isRegional && (isRealIptvMatch || server.id == "dualaudio" || server.id == "vidlink" || server.id == "stremio" || server.id == "superembed"),
+                        isDirect = resolved?.isDirectStream == true,
+                        audioLanguages = resolved?.audioLanguages?.takeIf { it.isNotEmpty() } ?: server.audioLanguages,
+                        badge = when {
+                            !isAvailable && isEmbedServer -> "Dead Embed"
+                            !isAvailable -> "Offline"
+                            isEmbedServer && resolved?.isDirectStream != true -> "Unverified"
+                            resolved?.audioLanguages?.any { it.equals("Hindi", ignoreCase = true) } == true -> "Hindi+Eng"
+                            resolved?.audioLanguages?.size ?: 0 > 1 -> "Multi-Audio"
+                            isRegional && isRealIptvMatch -> "Regional"
+                            resolved?.isDirectStream == true -> "Direct"
+                            latencyMs < 350 -> "${latencyMs}ms"
+                            else -> server.badge
+                        },
+                        speed = when {
+                            !isAvailable && isEmbedServer -> "Unverified Embed"
+                            !isAvailable -> "Unavailable"
+                            isEmbedServer && resolved?.isDirectStream != true -> "Unverified Embed"
+                            latencyMs < 200 -> "Ultra"
+                            latencyMs < 500 -> "Fast"
+                            latencyMs < 1200 -> "Normal"
+                            else -> server.speed
+                        }
+                    )
+
+                    resolvedResults[server.id] = Pair(updatedServer, resolved)
+                    val currentRanked = buildRankedList()
+
+                    // If this is the FIRST valid server to complete, emit it right away to start video!
+                    if (isAvailable && resolved != null && !hasEmittedAnyStream.getAndSet(true)) {
+                        Log.d(TAG, "Tier 2 fast winner: ${updatedServer.name} (${latencyMs}ms) - playback starts")
+                        send(
+                            ServerRaceResult(
+                                rankedServers = currentRanked,
+                                bestStream = resolved.copy(server = updatedServer),
+                                isFinal = false
                             )
-                        } else {
-                            stream.copy(latencyMs = latencyMs)
+                        )
+                    } else {
+                        val topValidServer = currentRanked.firstOrNull { s ->
+                            resolvedResults[s.id]?.first?.isAvailable == true && resolvedResults[s.id]?.second != null
                         }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Server ${server.name} error during race: ${e.message}")
-                    isAvailable = false
-                    latencyMs = System.currentTimeMillis() - startTime
-                }
+                        val topStream = topValidServer?.let { s ->
+                            val pair = resolvedResults[s.id]
+                            pair?.second?.copy(server = pair.first)
+                        }
 
-                val score = computeScore(
-                    server = server,
-                    resolved = resolved,
-                    isAvailable = isAvailable,
-                    isRealIptvMatch = isRealIptvMatch,
-                    latencyMs = latencyMs,
-                    isRegional = isRegional
-                )
-                serverScores[server.id] = score
-
-                val updatedServer = server.copy(
-                    latencyMs = latencyMs,
-                    isAvailable = isAvailable,
-                    isRegionalMatch = isRegional && (isRealIptvMatch || server.id == "dualaudio" || server.id == "vidlink" || server.id == "stremio" || server.id == "superembed"),
-                    isDirect = resolved?.isDirectStream == true,
-                    audioLanguages = resolved?.audioLanguages?.takeIf { it.isNotEmpty() } ?: server.audioLanguages,
-                    badge = when {
-                        resolved?.audioLanguages?.any { it.equals("Hindi", ignoreCase = true) } == true -> "Hindi+Eng"
-                        resolved?.audioLanguages?.size ?: 0 > 1 -> "Multi-Audio"
-                        isRegional && isRealIptvMatch -> "Regional"
-                        resolved?.isDirectStream == true -> "Direct"
-                        latencyMs != null && latencyMs < 350 -> "${latencyMs}ms"
-                        !isAvailable -> "Offline"
-                        else -> server.badge
-                    },
-                    speed = when {
-                        latencyMs != null && latencyMs < 200 -> "Ultra"
-                        latencyMs != null && latencyMs < 500 -> "Fast"
-                        latencyMs != null && latencyMs < 1200 -> "Normal"
-                        else -> server.speed
-                    }
-                )
-
-                resolvedResults[server.id] = Pair(updatedServer, resolved)
-
-                val currentRanked = buildRankedList()
-
-                // If this is the FIRST valid server to complete, emit it right away to start video!
-                if (isAvailable && resolved != null && !hasEmittedAnyStream.getAndSet(true)) {
-                    Log.d(TAG, "Fastest server won race: ${updatedServer.name} (${latencyMs}ms)")
-                    send(
-                        ServerRaceResult(
-                            rankedServers = currentRanked,
-                            bestStream = resolved.copy(server = updatedServer),
-                            isFinal = false
+                        send(
+                            ServerRaceResult(
+                                rankedServers = currentRanked,
+                                bestStream = topStream,
+                                isFinal = false
+                            )
                         )
-                    )
-                } else {
-                    val topValidServer = currentRanked.firstOrNull { s ->
-                        resolvedResults[s.id]?.first?.isAvailable == true && resolvedResults[s.id]?.second != null
                     }
-                    val topStream = topValidServer?.let { s ->
-                        val pair = resolvedResults[s.id]
-                        pair?.second?.copy(server = pair.first)
-                    }
-
-                    send(
-                        ServerRaceResult(
-                            rankedServers = currentRanked,
-                            bestStream = topStream,
-                            isFinal = false
-                        )
-                    )
                 }
             }
         }
@@ -299,9 +444,9 @@ class StreamResolverRepository @Inject constructor(
         val finalBestStream = finalTopServer?.let { s ->
             val pair = resolvedResults[s.id]
             pair?.second?.copy(server = pair.first)
-        } ?: resolveVidLink(tmdbId, servers.first(), isTvShow, season, episode)
+        } ?: resolveVidLink(tmdbId, candidateServers.first(), isTvShow, season, episode)
 
-        Log.d(TAG, "Server race finished. Top ranked server: ${finalRanked.firstOrNull()?.name}")
+        Log.d(TAG, "Tier 2 resolver finished. Top server: ${finalRanked.firstOrNull()?.name}")
         send(
             ServerRaceResult(
                 rankedServers = finalRanked,
@@ -311,6 +456,43 @@ class StreamResolverRepository @Inject constructor(
         )
     }
 
+    private suspend fun resolveAllDebrid(
+        tmdbId: String,
+        movieTitle: String,
+        releaseYear: String,
+        server: StreamServer,
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1,
+        imdbId: String? = null,
+        preferHindi: Boolean = true,
+        preferredQuality: String = "720p"
+    ): ResolvedStream = withContext(Dispatchers.IO) {
+        val mediaId = if (isTvShow) {
+            com.example.metflix.data.entities.MediaId.TvShow(tmdbId, season, episode, imdbId)
+        } else {
+            com.example.metflix.data.entities.MediaId.Movie(tmdbId, imdbId)
+        }
+
+        val candidates = streamRankingEngine.collectAndRankCandidates(
+            mediaId = mediaId,
+            title = movieTitle,
+            releaseYear = releaseYear,
+            preferHindi = preferHindi,
+            preferredQuality = preferredQuality
+        )
+
+        val debridCandidate = candidates.firstOrNull { it.providerId == "alldebrid" || it.providerId == "torbox" }
+            ?: candidates.firstOrNull { it.isDirectStream && (it.providerName.contains("Debrid", true) || it.providerName.contains("TorBox", true)) }
+
+        if (debridCandidate != null) {
+            Log.d(TAG, "Debrid direct stream matched: ${debridCandidate.streamUrl} (verified: ${debridCandidate.isAudioVerified})")
+            return@withContext debridCandidate.toResolvedStream(server)
+        }
+
+        throw IllegalStateException("Debrid cache miss: No cached torrent streams found for '$movieTitle'")
+    }
+
     private suspend fun resolveDualAudio(
         tmdbId: String,
         movieTitle: String,
@@ -318,15 +500,66 @@ class StreamResolverRepository @Inject constructor(
         server: StreamServer,
         isTvShow: Boolean = false,
         season: Int = 1,
-        episode: Int = 1
+        episode: Int = 1,
+        imdbId: String? = null
     ): ResolvedStream = withContext(Dispatchers.IO) {
-        val dualStream = dualAudioScraper.resolveDualAudioStream(tmdbId, movieTitle, releaseYear, server, isTvShow, season, episode)
-        if (dualStream != null) {
-            Log.d(TAG, "DualAudioScraper successfully resolved dual-audio stream: ${dualStream.streamUrl}")
-            return@withContext dualStream
+        val mediaId = if (isTvShow) {
+            com.example.metflix.data.entities.MediaId.TvShow(tmdbId, season, episode, imdbId)
+        } else {
+            com.example.metflix.data.entities.MediaId.Movie(tmdbId, imdbId)
         }
+
+        val candidates = streamRankingEngine.collectAndRankCandidates(
+            mediaId = mediaId,
+            title = movieTitle,
+            releaseYear = releaseYear,
+            preferHindi = true
+        )
+
+        val bestCandidate = candidates.firstOrNull()
+        if (bestCandidate != null) {
+            Log.d(TAG, "StreamRankingEngine selected best candidate: ${bestCandidate.streamUrl} (verified: ${bestCandidate.isAudioVerified})")
+            return@withContext bestCandidate.toResolvedStream(server)
+        }
+
         Log.d(TAG, "DualAudioScraper found no direct dual-audio match, falling back to VidLink")
-        resolveVidLink(tmdbId, server.copy(audioLanguages = listOf("English", "Original")), isTvShow, season, episode)
+        val fallback = resolveVidLink(tmdbId, server.copy(audioLanguages = listOf("English", "Original")), isTvShow, season, episode)
+        fallback.copy(
+            server = server.copy(
+                audioLanguages = listOf("English", "Original"),
+                badge = "English Only"
+            ),
+            audioLanguages = listOf("English")
+        )
+    }
+
+    private suspend fun resolveAnime(
+        tmdbId: String,
+        animeTitle: String,
+        season: Int = 1,
+        episode: Int = 1,
+        server: StreamServer
+    ): ResolvedStream = withContext(Dispatchers.IO) {
+        val mediaId = com.example.metflix.data.entities.MediaId.Anime(
+            title = animeTitle,
+            episodeNumber = episode,
+            seasonNumber = season
+        )
+
+        val candidates = streamRankingEngine.collectAndRankCandidates(
+            mediaId = mediaId,
+            title = animeTitle,
+            preferHindi = true
+        )
+
+        val bestCandidate = candidates.firstOrNull()
+        if (bestCandidate != null) {
+            Log.d(TAG, "StreamRankingEngine selected best anime candidate: ${bestCandidate.streamUrl}")
+            return@withContext bestCandidate.toResolvedStream(server)
+        }
+
+        Log.d(TAG, "AnimeScraper found no direct stream, falling back to VidLink")
+        resolveVidLink(tmdbId, server, isTvShow = true, season = season, episode = episode)
     }
 
     private suspend fun resolveVidLink(
@@ -353,12 +586,19 @@ class StreamResolverRepository @Inject constructor(
             return nativeStream
         }
 
-        // 2. Fallback to external decryptor endpoints (if running)
+        // 2. Fallback to external decryptor endpoints (only if configured or in DEBUG)
         val path = if (isTvShow) "tv/$tmdbId/$season/$episode" else "movie/$tmdbId"
-        val decryptorEndpoints = listOf(
-            "$LOCAL_DECRYPTOR_BASE/$path",
-            "$TUNNEL_DECRYPTOR_BASE/$path"
-        )
+        val decryptorEndpoints = mutableListOf<String>()
+        if (com.example.metflix.BuildConfig.DEBUG) {
+            decryptorEndpoints.add("$LOCAL_DECRYPTOR_BASE/$path")
+            decryptorEndpoints.add("$TUNNEL_DECRYPTOR_BASE/$path")
+        }
+        if (com.example.metflix.data.network.NetworkConfig.USE_REMOTE_BACKEND) {
+            val base = com.example.metflix.data.network.NetworkConfig.BASE_URL.trimEnd('/')
+            if (base.isNotBlank() && !base.contains("example.com")) {
+                decryptorEndpoints.add("$base/$path")
+            }
+        }
 
         for (endpoint in decryptorEndpoints) {
             val streamResult = fetchFromDecryptor(endpoint, server)
@@ -435,6 +675,7 @@ class StreamResolverRepository @Inject constructor(
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
                 .header("Origin", "https://vidlink.pro")
                 .header("Referer", "https://vidlink.pro/")
+                .header("x-playback-environment", "browser")
                 .build()
 
             val fastClient = okHttpClient.newBuilder()
@@ -463,26 +704,34 @@ class StreamResolverRepository @Inject constructor(
         return try {
             val rootJson = JSONObject(bodyString)
             val streamObj = rootJson.optJSONObject("stream") ?: return null
-            val qualitiesObj = streamObj.optJSONObject("qualities") ?: return null
+            val qualitiesObj = streamObj.optJSONObject("qualities")
+
+            // Check for direct master HLS playlist
+            val playlistUrl = streamObj.optString("playlist").takeIf { it.isNotBlank() }
+                ?: streamObj.optString("hls").takeIf { it.isNotBlank() }
 
             // Parse available qualities in priority order
             val qualityList = mutableListOf<QualityTrack>()
             val qualityOrder = listOf("1080", "720", "480", "360")
-            for (q in qualityOrder) {
-                val qItem = qualitiesObj.optJSONObject(q) ?: continue
-                val url = qItem.optString("url")
-                if (!url.isNullOrBlank()) {
-                    val height = q.toIntOrNull() ?: 0
-                    qualityList.add(QualityTrack(quality = "${q}p", height = height, url = url))
+            if (qualitiesObj != null) {
+                for (q in qualityOrder) {
+                    val qItem = qualitiesObj.optJSONObject(q) ?: continue
+                    val url = qItem.optString("url")
+                    if (!url.isNullOrBlank()) {
+                        val height = q.toIntOrNull() ?: 0
+                        qualityList.add(QualityTrack(quality = "${q}p", height = height, url = url))
+                    }
                 }
             }
 
-            if (qualityList.isEmpty()) {
-                return null
-            }
+            val finalStreamUrl = playlistUrl ?: qualityList.firstOrNull()?.url ?: return null
+            val isHls = finalStreamUrl.contains(".m3u8") || playlistUrl != null
 
-            val bestQuality = qualityList.first()
-            val backupUrls = qualityList.drop(1).map { it.url }
+            val backupUrls = if (playlistUrl != null) {
+                qualityList.map { it.url }
+            } else {
+                qualityList.drop(1).map { it.url }
+            }
 
             // Parse captions
             val subtitles = mutableListOf<SubtitleTrack>()
@@ -504,14 +753,28 @@ class StreamResolverRepository @Inject constructor(
                 }
             }
 
+            // Parse multi-audio languages if returned in stream payload
+            val audioLangs = mutableListOf<String>()
+            val audioArr = streamObj.optJSONArray("audio") ?: streamObj.optJSONArray("audioTracks")
+            if (audioArr != null) {
+                for (i in 0 until audioArr.length()) {
+                    val aItem = audioArr.optJSONObject(i)
+                    val lang = aItem?.optString("language") ?: audioArr.optString(i)
+                    if (!lang.isNullOrBlank()) {
+                        audioLangs.add(lang)
+                    }
+                }
+            }
+
             ResolvedStream(
-                server = server,
-                streamUrl = bestQuality.url,
-                isHls = false,
+                server = if (audioLangs.isNotEmpty()) server.copy(audioLanguages = audioLangs) else server,
+                streamUrl = finalStreamUrl,
+                isHls = isHls,
                 headers = emptyMap(), // Direct CDN streams must NOT have Referer
                 subtitles = subtitles,
                 qualities = qualityList,
-                backupUrls = backupUrls
+                backupUrls = backupUrls,
+                audioLanguages = audioLangs
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse VidLink stream JSON: ${e.message}")
@@ -553,12 +816,14 @@ class StreamResolverRepository @Inject constructor(
         server: StreamServer,
         isTvShow: Boolean = false,
         season: Int = 1,
-        episode: Int = 1
+        episode: Int = 1,
+        imdbId: String? = null
     ): ResolvedStream {
+        val idParam = if (!imdbId.isNullOrBlank()) "video_id=$imdbId" else "video_id=$tmdbId&tmdb=1"
         val embedUrl = if (isTvShow) {
-            "https://multiembed.mov/?video_id=$tmdbId&tmdb=1&s=$season&e=$episode"
+            "https://multiembed.mov/?$idParam&s=$season&e=$episode"
         } else {
-            "https://multiembed.mov/?video_id=$tmdbId&tmdb=1"
+            "https://multiembed.mov/?$idParam"
         }
         val headers = mapOf(
             "User-Agent" to BROWSER_USER_AGENT,
@@ -566,9 +831,9 @@ class StreamResolverRepository @Inject constructor(
         )
 
         val backup = if (isTvShow) {
-            "https://multiembed.mov/directstream.php?video_id=$tmdbId&tmdb=1&s=$season&e=$episode"
+            "https://multiembed.mov/directstream.php?$idParam&s=$season&e=$episode"
         } else {
-            "https://multiembed.mov/directstream.php?video_id=$tmdbId&tmdb=1"
+            "https://multiembed.mov/directstream.php?$idParam"
         }
 
         return ResolvedStream(
@@ -611,7 +876,8 @@ class StreamResolverRepository @Inject constructor(
         server: StreamServer,
         isTvShow: Boolean = false,
         season: Int = 1,
-        episode: Int = 1
+        episode: Int = 1,
+        imdbId: String? = null
     ): ResolvedStream {
         val embedUrl = if (isTvShow) {
             "https://www.2embed.cc/embedtv/$tmdbId&s=$season&e=$episode"
@@ -623,10 +889,11 @@ class StreamResolverRepository @Inject constructor(
             "Referer" to "https://www.2embed.cc/"
         )
 
+        val targetImdb = imdbId?.takeIf { it.isNotBlank() } ?: tmdbId
         val backup = if (isTvShow) {
-            "https://www.2embed.to/embed/imdb/tv?id=$tmdbId&s=$season&e=$episode"
+            "https://www.2embed.to/embed/imdb/tv?id=$targetImdb&s=$season&e=$episode"
         } else {
-            "https://www.2embed.to/embed/imdb/movie?id=$tmdbId"
+            "https://www.2embed.to/embed/imdb/movie?id=$targetImdb"
         }
 
         return ResolvedStream(
@@ -715,11 +982,24 @@ class StreamResolverRepository @Inject constructor(
         return resolveVidLink(movieTitle, availableServers.first())
     }
 
-    private fun probeServer(stream: ResolvedStream): Triple<Boolean, Long?, String?> {
+    private data class StreamProbeResult(
+        val isAvailable: Boolean,
+        val latencyMs: Long?,
+        val directStreamUrl: String?,
+        val isUnverifiedEmbed: Boolean
+    )
+
+    private fun probeServer(stream: ResolvedStream): StreamProbeResult {
         if (stream.isDirectStream) {
-            return Triple(true, 45L, null)
+            return StreamProbeResult(
+                isAvailable = true,
+                latencyMs = 45L,
+                directStreamUrl = null,
+                isUnverifiedEmbed = false
+            )
         }
         val startTime = System.currentTimeMillis()
+        val isEmbed = !stream.isDirectStream && stream.streamUrl.contains("/embed/")
         return try {
             val fastClient = okHttpClient.newBuilder()
                 .connectTimeout(java.time.Duration.ofMillis(2500))
@@ -734,19 +1014,36 @@ class StreamResolverRepository @Inject constructor(
             response.use { resp ->
                 val elapsed = System.currentTimeMillis() - startTime
                 val isOk = resp.isSuccessful || resp.code in 200..399
-                if (!isOk) return Triple(false, elapsed, null)
+                if (!isOk) {
+                    return StreamProbeResult(
+                        isAvailable = false,
+                        latencyMs = elapsed,
+                        directStreamUrl = null,
+                        isUnverifiedEmbed = isEmbed
+                    )
+                }
 
                 val directStream = if (!stream.isDirectStream) {
                     val htmlSnippet = resp.body?.string().orEmpty()
                     extractDirectStreamFromString(htmlSnippet)
                 } else null
 
-                Triple(true, elapsed, directStream)
+                StreamProbeResult(
+                    isAvailable = true,
+                    latencyMs = elapsed,
+                    directStreamUrl = directStream,
+                    isUnverifiedEmbed = false
+                )
             }
         } catch (e: Exception) {
             val elapsed = System.currentTimeMillis() - startTime
-            // Embed URLs may have bot protection, but still render fine in WebView
-            Triple(true, elapsed, null)
+            // Failed probe: dead embed streams are marked unavailable (isAvailable = false) and tagged as unverified embed
+            StreamProbeResult(
+                isAvailable = false,
+                latencyMs = elapsed,
+                directStreamUrl = null,
+                isUnverifiedEmbed = isEmbed
+            )
         }
     }
 
@@ -1010,14 +1307,20 @@ class StreamResolverRepository @Inject constructor(
         server: StreamServer,
         isTvShow: Boolean = false,
         season: Int = 1,
-        episode: Int = 1
+        episode: Int = 1,
+        imdbId: String? = null
     ): ResolvedStream = withContext(Dispatchers.IO) {
         val path = if (isTvShow) "tv/$tmdbId/$season/$episode" else "movie/$tmdbId"
-        val endpoints = listOf(
+        val endpoints = mutableListOf(
             "http://10.227.10.225:8787/api/streams/$path",
             "http://127.0.0.1:8787/api/streams/$path",
             "https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/$path"
         )
+        val mediaId = imdbId?.takeIf { it.isNotBlank() } ?: tmdbId
+        if (mediaId.isNotBlank()) {
+            val stremioPath = if (isTvShow) "series/$mediaId:$season:$episode.json" else "movie/$mediaId.json"
+            endpoints.add("https://mediafusion.elfhosted.com/stream/$stremioPath")
+        }
 
         for (endpoint in endpoints) {
             try {

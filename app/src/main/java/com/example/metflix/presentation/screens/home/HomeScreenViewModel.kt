@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Google LLC
+ * Copyright 2026 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,15 @@ import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.entities.MovieList
 import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
+import javax.inject.Inject
 
 @HiltViewModel
 class HomeScreeViewModel @Inject constructor(
@@ -37,138 +40,175 @@ class HomeScreeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<HomeScreenUiState>(HomeScreenUiState.Loading)
     val uiState: StateFlow<HomeScreenUiState> = _uiState.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         loadData()
     }
 
+    fun retry() {
+        _uiState.value = HomeScreenUiState.Loading
+        loadData()
+    }
+
     private fun loadData() {
-        var featured: MovieList = emptyList()
-        var trending: MovieList = emptyList()
-        var top10: MovieList = emptyList()
-        var nowPlaying: MovieList = emptyList()
-        var popularThisWeek: MovieList = emptyList()
-        var netflix: MovieList = emptyList()
-        var prime: MovieList = emptyList()
-        var disney: MovieList = emptyList()
-        var upcoming: MovieList = emptyList()
-        var topRated: MovieList = emptyList()
-        var bingeDramas: MovieList = emptyList()
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            var featured: MovieList = emptyList()
+            var trending: MovieList = emptyList()
+            var top10: MovieList = emptyList()
+            var nowPlaying: MovieList = emptyList()
+            var popularThisWeek: MovieList = emptyList()
+            var netflix: MovieList = emptyList()
+            var prime: MovieList = emptyList()
+            var disney: MovieList = emptyList()
+            var upcoming: MovieList = emptyList()
+            var topRated: MovieList = emptyList()
+            var bingeDramas: MovieList = emptyList()
 
-        fun emitState() {
-            if (featured.isNotEmpty() || trending.isNotEmpty() || top10.isNotEmpty() || nowPlaying.isNotEmpty()) {
-                _uiState.value = HomeScreenUiState.Ready(
-                    featuredMovieList = featured,
-                    trendingMovieList = trending,
-                    top10MovieList = top10,
-                    nowPlayingMovieList = nowPlaying,
-                    popularThisWeekList = popularThisWeek,
-                    netflixMovieList = netflix,
-                    primeMovieList = prime,
-                    disneyMovieList = disney,
-                    upcomingMovieList = upcoming,
-                    topRatedMovieList = topRated,
-                    bingeDramasMovieList = bingeDramas
-                )
+            val essentialCompleted = AtomicInteger(0)
+            val totalEssential = 4
+
+            var debounceJob: Job? = null
+
+            fun scheduleStateEmission() {
+                debounceJob?.cancel()
+                debounceJob = launch {
+                    delay(120) // Batch state updates to prevent rapid UI recomposition churn
+                    val hasContent = featured.isNotEmpty() || trending.isNotEmpty() || top10.isNotEmpty() || nowPlaying.isNotEmpty()
+                    if (hasContent) {
+                        _uiState.value = HomeScreenUiState.Ready(
+                            featuredMovieList = featured,
+                            trendingMovieList = trending,
+                            top10MovieList = top10,
+                            nowPlayingMovieList = nowPlaying,
+                            popularThisWeekList = popularThisWeek,
+                            netflixMovieList = netflix,
+                            primeMovieList = prime,
+                            disneyMovieList = disney,
+                            upcomingMovieList = upcoming,
+                            topRatedMovieList = topRated,
+                            bingeDramasMovieList = bingeDramas
+                        )
+                    } else if (essentialCompleted.get() >= totalEssential && _uiState.value is HomeScreenUiState.Loading) {
+                        // All essential loads finished with 0 items -> show Error state with retry
+                        _uiState.value = HomeScreenUiState.Error
+                    }
+                }
             }
-        }
 
-        viewModelScope.launch {
-            movieRepository.getFeaturedMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    featured = list
-                    emitState()
+            fun onEssentialFinished() {
+                if (essentialCompleted.incrementAndGet() >= totalEssential) {
+                    scheduleStateEmission()
                 }
-        }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getTrendingMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    trending = list
-                    emitState()
-                }
-        }
+            // Phase 1: High Priority (Above-the-fold essential rows)
+            launch {
+                movieRepository.getFeaturedMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        featured = list
+                        onEssentialFinished()
+                        scheduleStateEmission()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getTop10Movies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    top10 = list
-                    emitState()
-                }
-        }
+            launch {
+                movieRepository.getTrendingMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        trending = list
+                        onEssentialFinished()
+                        scheduleStateEmission()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getNowPlayingMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    nowPlaying = list
-                    emitState()
-                }
-        }
+            launch {
+                movieRepository.getTop10Movies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        top10 = list
+                        onEssentialFinished()
+                        scheduleStateEmission()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getPopularFilmsThisWeek()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    popularThisWeek = list
-                    emitState()
-                }
-        }
+            launch {
+                movieRepository.getNowPlayingMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        nowPlaying = list
+                        onEssentialFinished()
+                        scheduleStateEmission()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getNetflixMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    netflix = list
-                    emitState()
-                }
-        }
+            // Phase 2: Staggered Secondary Rows (Below-the-fold)
+            delay(200) // Allow top rows and posters to establish network priority
 
-        viewModelScope.launch {
-            movieRepository.getPrimeMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    prime = list
-                    emitState()
-                }
-        }
+            launch {
+                movieRepository.getPopularFilmsThisWeek()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        popularThisWeek = list
+                        scheduleStateEmission()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getDisneyMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    disney = list
-                    emitState()
-                }
-        }
+            launch {
+                movieRepository.getNetflixMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        netflix = list
+                        scheduleStateEmission()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getUpcomingMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    upcoming = list
-                    emitState()
-                }
-        }
+            launch {
+                movieRepository.getPrimeMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        prime = list
+                        scheduleStateEmission()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getMostVotedMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    topRated = list
-                    emitState()
-                }
-        }
+            launch {
+                movieRepository.getDisneyMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        disney = list
+                        scheduleStateEmission()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getBingeWatchDramas()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    bingeDramas = list
-                    emitState()
-                }
+            launch {
+                movieRepository.getUpcomingMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        upcoming = list
+                        scheduleStateEmission()
+                    }
+            }
+
+            launch {
+                movieRepository.getMostVotedMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        topRated = list
+                        scheduleStateEmission()
+                    }
+            }
+
+            launch {
+                movieRepository.getBingeWatchDramas()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        bingeDramas = list
+                        scheduleStateEmission()
+                    }
+            }
         }
     }
 }

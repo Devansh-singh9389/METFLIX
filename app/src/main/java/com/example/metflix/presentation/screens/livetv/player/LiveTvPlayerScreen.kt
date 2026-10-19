@@ -225,12 +225,11 @@ private fun LiveTvPlayerContent(
 
         val targetNum = dialedDigits.toIntOrNull()
         if (targetNum != null) {
-            val matchedChannel = state.channels.firstOrNull { it.channelNumber == targetNum }
-            if (matchedChannel != null) {
+            val success = onSelectChannelByNumber(targetNum)
+            if (success) {
                 dialedDigits = ""
                 isInvalidChannelNumber = false
                 invalidDismissJob?.cancel()
-                onSelectChannel(matchedChannel)
             } else {
                 isInvalidChannelNumber = true
                 invalidDismissJob?.cancel()
@@ -1145,7 +1144,7 @@ private fun LiveTvPlayerContent(
         LiveTvChannelDrawer(
             isPresented = isDrawerOpen,
             currentChannel = state.currentChannel,
-            channels = state.channels,
+            channels = if (state.filteredChannels.isNotEmpty()) state.filteredChannels else state.channels,
             onSelectChannel = { ch ->
                 onSelectChannel(ch)
                 isDrawerOpen = false

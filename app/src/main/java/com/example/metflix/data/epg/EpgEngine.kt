@@ -131,6 +131,30 @@ class EpgEngine @Inject constructor() {
         return result
     }
 
+    /**
+     * Replaces channel template schedules with real parsed XMLTV schedules when available.
+     */
+    fun applyRealEpg(
+        channels: List<LiveChannel>,
+        epgMap: Map<String, List<EpgProgram>>,
+        nowMs: Long = System.currentTimeMillis()
+    ): List<LiveChannel> {
+        if (epgMap.isEmpty()) return channels
+        return channels.map { channel ->
+            val programs = channel.epgId?.let { epgMap[it] } ?: epgMap[channel.id] ?: epgMap[channel.name]
+            if (!programs.isNullOrEmpty()) {
+                val liveProg = programs.firstOrNull { it.isLive(nowMs) } ?: programs.firstOrNull()
+                channel.copy(
+                    schedule = programs,
+                    currentProgram = liveProg?.title ?: channel.currentProgram,
+                    programDescription = liveProg?.description ?: channel.programDescription
+                )
+            } else {
+                channel
+            }
+        }
+    }
+
     private fun extractTagValue(xmlLine: String): String {
         val start = xmlLine.indexOf('>')
         val end = xmlLine.lastIndexOf('<')

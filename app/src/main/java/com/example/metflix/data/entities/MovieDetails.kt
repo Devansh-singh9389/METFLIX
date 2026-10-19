@@ -44,7 +44,8 @@ data class MovieDetails(
     val isTvShow: Boolean = false,
     val seasons: List<TvSeason> = emptyList(),
     val totalSeasons: Int = 0,
-    val totalEpisodes: Int = 0
+    val totalEpisodes: Int = 0,
+    val imdbId: String? = null
 )
 
 @Immutable

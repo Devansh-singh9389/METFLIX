@@ -195,7 +195,7 @@ class TmdbApiClient @Inject constructor(
 
     suspend fun getTvShowDetails(seriesId: String): Result<MovieDetails> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
-        return fetchJson("${TmdbConfig.BASE_URL}/tv/$seriesId?append_to_response=credits,similar,watch/providers") { raw ->
+        return fetchJson("${TmdbConfig.BASE_URL}/tv/$seriesId?append_to_response=credits,similar,watch/providers,external_ids") { raw ->
             val response = json.decodeFromString<TmdbTvDetailsResponse>(raw)
             response.toMovieDetails()
         }
@@ -206,6 +206,45 @@ class TmdbApiClient @Inject constructor(
         return fetchJson("${TmdbConfig.BASE_URL}/tv/$seriesId/season/$seasonNumber") { raw ->
             val response = json.decodeFromString<TmdbSeasonDetailsResponse>(raw)
             response.toTvEpisodes()
+        }
+    }
+
+    suspend fun getTrendingAnime(page: Int = 1): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        // Discover Anime TV series (Genre 16 = Animation, origin_country = JP)
+        val url = appendPage("${TmdbConfig.BASE_URL}/discover/tv?with_genres=16&with_origin_country=JP&sort_by=popularity.desc", page)
+        return fetchJson(url) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbTvItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
+    suspend fun getPopularAnimeMovies(page: Int = 1): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        // Discover Anime Movies (Genre 16 = Animation, origin_country = JP)
+        val url = appendPage("${TmdbConfig.BASE_URL}/discover/movie?with_genres=16&with_origin_country=JP&sort_by=popularity.desc", page)
+        return fetchJson(url) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
+    suspend fun getAnimatedCartoonsAndKids(page: Int = 1): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        // Popular worldwide cartoons & animated shows (Genre 16 = Animation)
+        val url = appendPage("${TmdbConfig.BASE_URL}/discover/tv?with_genres=16&sort_by=vote_count.desc", page)
+        return fetchJson(url) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbTvItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
+    suspend fun getTopRatedAnime(page: Int = 1): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        val url = appendPage("${TmdbConfig.BASE_URL}/discover/tv?with_genres=16&with_origin_country=JP&sort_by=vote_average.desc&vote_count.gte=200", page)
+        return fetchJson(url) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbTvItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
         }
     }
 

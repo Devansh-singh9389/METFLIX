@@ -57,10 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
+
 import androidx.tv.material3.Icon
 import androidx.tv.material3.ListItem
 import androidx.tv.material3.ListItemDefaults
@@ -70,18 +67,21 @@ import com.example.metflix.R
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import com.example.metflix.presentation.theme.MetFlixTheme
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+
+import com.example.metflix.data.entities.Movie
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ProfileScreen(
     @FloatRange(from = 0.0, to = 1.0)
-    sidebarWidthFraction: Float = 0.32f
+    sidebarWidthFraction: Float = 0.32f,
+    onPlayMovie: (Movie) -> Unit = {}
 ) {
     val childPadding = rememberChildPadding()
-    val profileNavController = rememberNavController()
+    var selectedScreen by rememberSaveable { mutableStateOf(ProfileScreens.Accounts) }
 
-    val backStack by profileNavController.currentBackStackEntryAsState()
-    val currentDestination =
-        remember(backStack?.destination?.route) { backStack?.destination?.route }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     var isLeftColumnFocused by remember { mutableStateOf(false) }
@@ -106,8 +106,7 @@ fun ProfileScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             ProfileScreens.entries.forEachIndexed { index, profileScreen ->
-                // TODO: make this dense list item
-                key(index) {
+                key(profileScreen) {
                     ListItem(
                         trailingContent = {
                             Icon(
@@ -131,8 +130,11 @@ fun ProfileScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                         },
-                        selected = currentDestination == profileScreen.name,
-                        onClick = { focusManager.moveFocus(FocusDirection.Right) },
+                        selected = selectedScreen == profileScreen,
+                        onClick = {
+                            selectedScreen = profileScreen
+                            focusManager.moveFocus(FocusDirection.Right)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
@@ -140,13 +142,8 @@ fun ProfileScreen(
                                 else Modifier
                             )
                             .onFocusChanged {
-                                if (it.isFocused && currentDestination != profileScreen.name) {
-                                    profileNavController.navigate(profileScreen()) {
-                                        currentDestination?.let { nnCurrentDestination ->
-                                            popUpTo(nnCurrentDestination) { inclusive = true }
-                                        }
-                                        launchSingleTop = true
-                                    }
+                                if (it.isFocused) {
+                                    selectedScreen = profileScreen
                                 }
                             },
                         scale = ListItemDefaults.scale(focusedScale = 1f),
@@ -164,58 +161,48 @@ fun ProfileScreen(
 
         var selectedLanguageIndex by rememberSaveable { mutableIntStateOf(0) }
         var isSubtitlesChecked by rememberSaveable { mutableStateOf(true) }
-        NavHost(
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .onPreviewKeyEvent {
                     if (it.key == Key.Back && it.type == KeyEventType.KeyUp) {
-                        // Using 'while' because AccountsScreen has a grid that has multiple items
-                        // in a row for which we would need to press D-Pad Left multiple times
                         while (!isLeftColumnFocused) {
                             focusManager.moveFocus(FocusDirection.Left)
                         }
                         return@onPreviewKeyEvent true
                     }
                     false
-                },
-            navController = profileNavController,
-            startDestination = ProfileScreens.Accounts(),
-            builder = {
-                composable(ProfileScreens.Accounts()) {
-                    AccountsSection(
-                        onOpenPerformanceSettings = {
-                            profileNavController.navigate(ProfileScreens.Performance()) {
-                                launchSingleTop = true
-                            }
-                        }
+                }
+        ) {
+            Crossfade(
+                targetState = selectedScreen,
+                animationSpec = tween(durationMillis = 150),
+                label = "ProfilePaneCrossfade"
+            ) { screen ->
+                when (screen) {
+                    ProfileScreens.Accounts -> AccountsSection(
+                        onOpenPerformanceSettings = { selectedScreen = ProfileScreens.Performance },
+                        onOpenDebridSettings = { selectedScreen = ProfileScreens.Debrid }
                     )
-                }
-                composable(ProfileScreens.Performance()) {
-                    PerformanceSection()
-                }
-                composable(ProfileScreens.About()) {
-                    AboutSection()
-                }
-                composable(ProfileScreens.Subtitles()) {
-                    SubtitlesSection(
+                    ProfileScreens.Debrid -> DebridSection(
+                        onPlayItem = onPlayMovie
+                    )
+                    ProfileScreens.Performance -> PerformanceSection()
+                    ProfileScreens.About -> AboutSection()
+                    ProfileScreens.Subtitles -> SubtitlesSection(
                         isSubtitlesChecked = isSubtitlesChecked,
                         onSubtitleCheckChange = { isSubtitlesChecked = it }
                     )
-                }
-                composable(ProfileScreens.Language()) {
-                    LanguageSection(
+                    ProfileScreens.Language -> LanguageSection(
                         selectedIndex = selectedLanguageIndex,
                         onSelectedIndexChange = { selectedLanguageIndex = it }
                     )
-                }
-                composable(ProfileScreens.SearchHistory()) {
-                    SearchHistorySection()
-                }
-                composable(ProfileScreens.HelpAndSupport()) {
-                    HelpAndSupportSection()
+                    ProfileScreens.SearchHistory -> SearchHistorySection()
+                    ProfileScreens.HelpAndSupport -> HelpAndSupportSection()
                 }
             }
-        )
+        }
     }
 }
 

@@ -25,11 +25,13 @@ class LiveTvPlayerViewModel @Inject constructor(
         android.net.Uri.decode(it)
     }
     private val currentChannelIdFlow = MutableStateFlow(initialChannelId)
+    private val activeCategoryFlow = MutableStateFlow<String?>(null)
 
     val uiState: StateFlow<LiveTvPlayerUiState> = combine(
         repository.getChannels(),
-        currentChannelIdFlow
-    ) { channels, selectedId ->
+        currentChannelIdFlow,
+        activeCategoryFlow
+    ) { channels, selectedId, category ->
         if (channels.isEmpty()) {
             LiveTvPlayerUiState.Loading
         } else {
@@ -39,10 +41,22 @@ class LiveTvPlayerViewModel @Inject constructor(
             if (channel == null) {
                 LiveTvPlayerUiState.Error("No channel found")
             } else {
-                val currentIndex = channels.indexOfFirst { it.id == channel.id }.coerceAtLeast(0)
+                val effectiveCategory = category ?: channel.category
+                val filtered = if (effectiveCategory.isBlank() || effectiveCategory.equals("All", ignoreCase = true)) {
+                    channels
+                } else {
+                    val matching = channels.filter { it.category.equals(effectiveCategory, ignoreCase = true) }
+                    if (matching.isNotEmpty()) matching else channels
+                }
+
+                val currentIndex = filtered.indexOfFirst { it.id == channel.id }
+                    .let { if (it >= 0) it else channels.indexOfFirst { ch -> ch.id == channel.id }.coerceAtLeast(0) }
+
                 LiveTvPlayerUiState.Ready(
                     currentChannel = channel,
                     channels = channels,
+                    filteredChannels = filtered,
+                    currentCategory = effectiveCategory,
                     currentIndex = currentIndex
                 )
             }
@@ -54,6 +68,7 @@ class LiveTvPlayerViewModel @Inject constructor(
     )
 
     fun selectChannel(channel: LiveChannel) {
+        activeCategoryFlow.value = channel.category
         currentChannelIdFlow.value = channel.id
     }
 
@@ -61,6 +76,7 @@ class LiveTvPlayerViewModel @Inject constructor(
         val state = uiState.value as? LiveTvPlayerUiState.Ready ?: return false
         val matchedChannel = state.channels.firstOrNull { it.channelNumber == channelNumber }
         return if (matchedChannel != null) {
+            activeCategoryFlow.value = matchedChannel.category
             currentChannelIdFlow.value = matchedChannel.id
             true
         } else {
@@ -70,18 +86,28 @@ class LiveTvPlayerViewModel @Inject constructor(
 
     fun nextChannel() {
         val state = uiState.value as? LiveTvPlayerUiState.Ready ?: return
-        if (state.channels.isNotEmpty()) {
-            val nextIndex = (state.currentIndex + 1) % state.channels.size
-            currentChannelIdFlow.value = state.channels[nextIndex].id
+        val list = if (state.filteredChannels.isNotEmpty()) state.filteredChannels else state.channels
+        if (list.isNotEmpty()) {
+            val currIdx = list.indexOfFirst { it.id == state.currentChannel.id }
+            val nextIndex = if (currIdx != -1) (currIdx + 1) % list.size else 0
+            currentChannelIdFlow.value = list[nextIndex].id
         }
     }
 
     fun previousChannel() {
         val state = uiState.value as? LiveTvPlayerUiState.Ready ?: return
-        if (state.channels.isNotEmpty()) {
-            val prevIndex = if (state.currentIndex - 1 < 0) state.channels.size - 1 else state.currentIndex - 1
-            currentChannelIdFlow.value = state.channels[prevIndex].id
+        val list = if (state.filteredChannels.isNotEmpty()) state.filteredChannels else state.channels
+        if (list.isNotEmpty()) {
+            val currIdx = list.indexOfFirst { it.id == state.currentChannel.id }
+            val prevIndex = if (currIdx != -1) {
+                if (currIdx - 1 < 0) list.size - 1 else currIdx - 1
+            } else 0
+            currentChannelIdFlow.value = list[prevIndex].id
         }
+    }
+
+    fun setCategory(category: String) {
+        activeCategoryFlow.value = category
     }
 
     fun toggleFavorite() {
@@ -99,6 +125,8 @@ sealed interface LiveTvPlayerUiState {
     data class Ready(
         val currentChannel: LiveChannel,
         val channels: List<LiveChannel>,
+        val filteredChannels: List<LiveChannel> = channels,
+        val currentCategory: String = currentChannel.category,
         val currentIndex: Int
     ) : LiveTvPlayerUiState
 }

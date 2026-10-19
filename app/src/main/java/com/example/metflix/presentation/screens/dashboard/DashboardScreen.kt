@@ -250,7 +250,9 @@ private fun Body(
         startDestination = Screens.Home(),
     ) {
         composable(Screens.Profile()) {
-            ProfileScreen()
+            ProfileScreen(
+                onPlayMovie = openVideoPlayer
+            )
         }
         composable(Screens.Home()) {
             HomeScreen(
@@ -277,7 +279,14 @@ private fun Body(
         }
         composable(Screens.Shows()) {
             ShowsScreen(
-                onTVShowClick = { movie -> openMovieDetailsScreen(movie.id) },
+                onTVShowClick = { movie -> openMovieDetailsScreen("tv:${movie.id}") },
+                onScroll = updateTopBarVisibility,
+                isTopBarVisible = isTopBarVisible
+            )
+        }
+        composable(Screens.Anime()) {
+            com.example.metflix.presentation.screens.anime.AnimeScreen(
+                onAnimeClick = { movie -> openMovieDetailsScreen("tv:${movie.id}") },
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )

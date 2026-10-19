@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -11,15 +13,68 @@ android {
         version = release(37)
     }
 
+val envFile = rootProject.file(".env")
+val envProperties = Properties()
+if (envFile.exists()) {
+    envFile.forEachLine { line ->
+        val trimmed = line.trim()
+        if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && trimmed.contains("=")) {
+            val parts = trimmed.split("=", limit = 2)
+            envProperties[parts[0].trim()] = parts[1].trim()
+        }
+    }
+}
+val defaultDebridApiKey: String = envProperties.getProperty("ALLDEBRID_API_KEY")
+    ?: System.getenv("ALLDEBRID_API_KEY") ?: ""
+val defaultTorBoxApiKey: String = envProperties.getProperty("TORBOX_API_KEY")
+    ?: System.getenv("TORBOX_API_KEY") ?: ""
+val defaultTmdbApiKey: String = envProperties.getProperty("TMDB_API_KEY")
+    ?: System.getenv("TMDB_API_KEY") ?: ""
+
     defaultConfig {
         applicationId = "com.example.metflix"
         minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
+        buildConfigField("String", "DEFAULT_TMDB_KEY", "\"$defaultTmdbApiKey\"")
+        buildConfigField("String", "DEFAULT_ALLDEBRID_KEY", "\"\"")
+        buildConfigField("String", "DEFAULT_TORBOX_KEY", "\"\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = envProperties.getProperty("KEYSTORE_PATH")
+                ?: System.getenv("KEYSTORE_PATH")
+                ?: (project.findProperty("KEYSTORE_PATH") as? String)
+            if (keystorePath != null && file(keystorePath).exists()) {
+                storeFile = file(keystorePath)
+                storePassword = envProperties.getProperty("KEYSTORE_PASSWORD")
+                    ?: System.getenv("KEYSTORE_PASSWORD")
+                    ?: (project.findProperty("KEYSTORE_PASSWORD") as? String) ?: ""
+                keyAlias = envProperties.getProperty("KEY_ALIAS")
+                    ?: System.getenv("KEY_ALIAS")
+                    ?: (project.findProperty("KEY_ALIAS") as? String) ?: ""
+                keyPassword = envProperties.getProperty("KEY_PASSWORD")
+                    ?: System.getenv("KEY_PASSWORD")
+                    ?: (project.findProperty("KEY_PASSWORD") as? String) ?: ""
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            // Local developer convenience only: allow .env keys in debug builds
+            buildConfigField("String", "DEFAULT_ALLDEBRID_KEY", "\"$defaultDebridApiKey\"")
+            buildConfigField("String", "DEFAULT_TORBOX_KEY", "\"$defaultTorBoxApiKey\"")
+        }
+        create("releaseTest") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("String", "DEFAULT_ALLDEBRID_KEY", "\"\"")
+            buildConfigField("String", "DEFAULT_TORBOX_KEY", "\"\"")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -27,6 +82,14 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Use release signing when a keystore is configured; otherwise build unsigned (NEVER debug signed).
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
+            // Production releases NEVER bundle creator debrid keys
+            buildConfigField("String", "DEFAULT_ALLDEBRID_KEY", "\"\"")
+            buildConfigField("String", "DEFAULT_TORBOX_KEY", "\"\"")
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -100,6 +163,9 @@ dependencies {
 
     // Profile Installer
     implementation(libs.androidx.profileinstaller)
+
+    // QR Code generation (ZXing Core - offline & lightweight)
+    implementation("com.google.zxing:core:3.5.3")
 
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)

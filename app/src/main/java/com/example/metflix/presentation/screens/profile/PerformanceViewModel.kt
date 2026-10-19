@@ -67,7 +67,6 @@ class PerformanceViewModel @Inject constructor(
         viewModelScope.launch {
             preferences.clearCaches()
             tmdbApiClient.resetCircuit()
-            movieRepository.refreshAllCatalogs()
         }
     }
 }

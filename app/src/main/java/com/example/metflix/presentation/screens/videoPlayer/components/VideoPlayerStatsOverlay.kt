@@ -30,7 +30,10 @@ fun VideoPlayerStatsOverlay(
     bufferHealthMs: Long,
     currentPositionText: String,
     durationText: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    serverName: String = "",
+    streamFormat: String = "",
+    audioBadge: String = ""
 ) {
     Box(
         modifier = modifier
@@ -38,7 +41,7 @@ fun VideoPlayerStatsOverlay(
             .clip(RoundedCornerShape(8.dp))
             .background(Color.Black.copy(alpha = 0.82f))
             .padding(14.dp)
-            .widthIn(max = 400.dp)
+            .widthIn(max = 420.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
@@ -51,6 +54,9 @@ fun VideoPlayerStatsOverlay(
             )
 
             StatRow("Title", movieTitle)
+            if (serverName.isNotBlank()) StatRow("Server", serverName)
+            if (streamFormat.isNotBlank()) StatRow("Format", streamFormat)
+            if (audioBadge.isNotBlank()) StatRow("Audio Status", audioBadge)
             StatRow("Resolution", videoResolution.ifBlank { "Detecting…" })
             StatRow("Bitrate", videoBitrate.ifBlank { "Adaptive Auto" })
             StatRow("Audio Track", audioInfo.ifBlank { "Standard Stereo" })

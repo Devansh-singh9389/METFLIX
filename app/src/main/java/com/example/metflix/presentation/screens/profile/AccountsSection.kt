@@ -46,13 +46,19 @@ data class AccountsSectionData(
 
 @Composable
 fun AccountsSection(
-    onOpenPerformanceSettings: () -> Unit = {}
+    onOpenPerformanceSettings: () -> Unit = {},
+    onOpenDebridSettings: () -> Unit = {}
 ) {
     val childPadding = rememberChildPadding()
     var showDeleteDialog by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val isLowSpec = PerformancePreferences.instance?.lowSpecMode?.collectAsStateWithLifecycle()?.value ?: true
     val accountsSectionListItems = listOf(
+        AccountsSectionData(
+            title = "AllDebrid Cloud Streaming",
+            value = "Dual-Audio Hindi • Instant Cache",
+            onClick = onOpenDebridSettings
+        ),
         AccountsSectionData(
             title = "Performance Mode",
             value = if (isLowSpec) "Low-Spec (Optimized)" else "High-Performance (Active)",

@@ -94,7 +94,13 @@ data class TmdbTvDetailsResponse(
     val original_language: String = "en",
     val credits: TmdbCreditsResponse? = null,
     val similar: TmdbPageResponse<TmdbTvItem>? = null,
+    @SerialName("external_ids") val externalIds: TmdbExternalIdsResponse? = null,
     @SerialName("watch/providers") val watchProviders: TmdbWatchProvidersResponse? = null
+)
+
+@Serializable
+data class TmdbExternalIdsResponse(
+    val imdb_id: String? = null
 )
 
 @Serializable
@@ -149,7 +155,8 @@ data class TmdbMovieDetailsResponse(
     val genres: List<TmdbGenreItem> = emptyList(),
     val credits: TmdbCreditsResponse? = null,
     val similar: TmdbPageResponse<TmdbMovieItem>? = null,
-    @SerialName("watch/providers") val watchProviders: TmdbWatchProvidersResponse? = null
+    @SerialName("watch/providers") val watchProviders: TmdbWatchProvidersResponse? = null,
+    val imdb_id: String? = null
 )
 
 @Serializable
@@ -361,7 +368,8 @@ fun TmdbMovieDetailsResponse.toMovieDetails(): MovieDetails {
                 reviewRating = String.format("%.1f", vote_average)
             )
         ),
-        watchProviders = watchProviders?.toWatchProvidersInfo()
+        watchProviders = watchProviders?.toWatchProvidersInfo(),
+        imdbId = imdb_id
     )
 }
 
@@ -428,7 +436,8 @@ fun TmdbTvDetailsResponse.toMovieDetails(): MovieDetails {
         isTvShow = true,
         seasons = seasonList,
         totalSeasons = number_of_seasons,
-        totalEpisodes = number_of_episodes
+        totalEpisodes = number_of_episodes,
+        imdbId = externalIds?.imdb_id
     )
 }
 

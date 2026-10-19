@@ -23,10 +23,14 @@ import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
 import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 @Singleton
@@ -35,6 +39,37 @@ class MovieDataSource @Inject constructor(
     private val tmdbApiClient: TmdbApiClient,
     private val diskCache: TmdbDiskCache
 ) {
+    /**
+     * Application-process-lived coroutine scope dedicated to non-blocking background stale-while-revalidate
+     * cache refreshes. Because [MovieDataSource] is a [@Singleton], this scope intentionally matches the
+     * application process lifecycle so that in-flight background disk cache updates are not abruptly cancelled
+     * when the user navigates between screens. Uses [SupervisorJob] so failures in an individual row
+     * revalidation never cancel other ongoing cache updates.
+     */
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val activeRefreshes = ConcurrentHashMap<String, Boolean>()
+
+    private fun refreshIfStale(key: String, block: suspend () -> Unit) {
+        if (diskCache.isCacheStale(key)) {
+            if (activeRefreshes.putIfAbsent(key, true) == null) {
+                applicationScope.launch {
+                    try {
+                        block()
+                    } finally {
+                        activeRefreshes.remove(key)
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun fetchTwoPages(
+        fetch: suspend (page: Int) -> Result<List<Movie>>
+    ): List<Movie> = coroutineScope {
+        val p1 = async { fetch(1).getOrNull().orEmpty() }
+        val p2 = async { fetch(2).getOrNull().orEmpty() }
+        (p1.await() + p2.await()).distinctBy { it.id }
+    }
 
     private val remoteMovieCache = CachedDataReader {
         if (NetworkConfig.USE_REMOTE_BACKEND) {
@@ -47,10 +82,8 @@ class MovieDataSource @Inject constructor(
     private val trendingMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("trending")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("trending")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchTrendingLive()?.let { trendingMovieDataReader.update(it) }
-                }
+            refreshIfStale("trending") {
+                fetchTrendingLive()?.let { trendingMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -59,9 +92,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchTrendingLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getTrendingMovies(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getTrendingMovies(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getTrendingMovies(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("trending", combined)
                 return combined
@@ -81,10 +112,8 @@ class MovieDataSource @Inject constructor(
     private val popularMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("popular")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("popular")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchPopularLive()?.let { popularMovieDataReader.update(it) }
-                }
+            refreshIfStale("popular") {
+                fetchPopularLive()?.let { popularMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -93,9 +122,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchPopularLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getPopularMovies(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getPopularMovies(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getPopularMovies(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("popular", combined)
                 return combined
@@ -114,10 +141,8 @@ class MovieDataSource @Inject constructor(
     private val nowPlayingMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("now_playing")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("now_playing")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchNowPlayingLive()?.let { nowPlayingMovieDataReader.update(it) }
-                }
+            refreshIfStale("now_playing") {
+                fetchNowPlayingLive()?.let { nowPlayingMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -126,9 +151,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchNowPlayingLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getNowPlayingMovies(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getNowPlayingMovies(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getNowPlayingMovies(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("now_playing", combined)
                 return combined
@@ -148,10 +171,8 @@ class MovieDataSource @Inject constructor(
     private val topRatedMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("top_rated")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("top_rated")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchTopRatedLive()?.let { topRatedMovieDataReader.update(it) }
-                }
+            refreshIfStale("top_rated") {
+                fetchTopRatedLive()?.let { topRatedMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -160,9 +181,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchTopRatedLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getTopRatedMovies(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getTopRatedMovies(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getTopRatedMovies(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("top_rated", combined)
                 return combined
@@ -190,10 +209,8 @@ class MovieDataSource @Inject constructor(
     private val trendingDayMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("trending_day")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("trending_day")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchTrendingDayLive()?.let { trendingDayMovieDataReader.update(it) }
-                }
+            refreshIfStale("trending_day") {
+                fetchTrendingDayLive()?.let { trendingDayMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -202,9 +219,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchTrendingDayLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getTrendingMoviesDay(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getTrendingMoviesDay(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getTrendingMoviesDay(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("trending_day", combined)
                 return combined
@@ -216,10 +231,8 @@ class MovieDataSource @Inject constructor(
     private val upcomingMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("upcoming")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("upcoming")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchUpcomingLive()?.let { upcomingMovieDataReader.update(it) }
-                }
+            refreshIfStale("upcoming") {
+                fetchUpcomingLive()?.let { upcomingMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -228,9 +241,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchUpcomingLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getUpcomingMovies(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getUpcomingMovies(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getUpcomingMovies(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("upcoming", combined)
                 return combined
@@ -242,10 +253,8 @@ class MovieDataSource @Inject constructor(
     private val topRevenueMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("top_revenue")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("top_revenue")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchTopRevenueLive()?.let { topRevenueMovieDataReader.update(it) }
-                }
+            refreshIfStale("top_revenue") {
+                fetchTopRevenueLive()?.let { topRevenueMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -254,9 +263,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchTopRevenueLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getTopRevenueMovies(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getTopRevenueMovies(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getTopRevenueMovies(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("top_revenue", combined)
                 return combined
@@ -268,10 +275,8 @@ class MovieDataSource @Inject constructor(
     private val mostVotedMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("most_voted")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("most_voted")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchMostVotedLive()?.let { mostVotedMovieDataReader.update(it) }
-                }
+            refreshIfStale("most_voted") {
+                fetchMostVotedLive()?.let { mostVotedMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -280,9 +285,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchMostVotedLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getMostVotedMovies(page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getMostVotedMovies(page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getMostVotedMovies(page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("most_voted", combined)
                 return combined
@@ -294,10 +297,8 @@ class MovieDataSource @Inject constructor(
     private val netflixMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("netflix")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("netflix")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchNetflixLive()?.let { netflixMovieDataReader.update(it) }
-                }
+            refreshIfStale("netflix") {
+                fetchNetflixLive()?.let { netflixMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -306,9 +307,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchNetflixLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getMoviesByWatchProvider(providerId = 8, page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getMoviesByWatchProvider(providerId = 8, page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getMoviesByWatchProvider(providerId = 8, page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("netflix", combined)
                 return combined
@@ -320,10 +319,8 @@ class MovieDataSource @Inject constructor(
     private val primeMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("prime")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("prime")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchPrimeLive()?.let { primeMovieDataReader.update(it) }
-                }
+            refreshIfStale("prime") {
+                fetchPrimeLive()?.let { primeMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -332,9 +329,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchPrimeLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getMoviesByWatchProvider(providerId = 119, page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getMoviesByWatchProvider(providerId = 119, page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.getMoviesByWatchProvider(providerId = 119, page = page) }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("prime", combined)
                 return combined
@@ -346,10 +341,8 @@ class MovieDataSource @Inject constructor(
     private val disneyMovieDataReader: MovieDataReader = MovieDataReader {
         val cached = diskCache.loadMovies("disney")
         if (cached.isNotEmpty()) {
-            if (diskCache.isCacheStale("disney")) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    fetchDisneyLive()?.let { disneyMovieDataReader.update(it) }
-                }
+            refreshIfStale("disney") {
+                fetchDisneyLive()?.let { disneyMovieDataReader.update(it) }
             }
             return@MovieDataReader cached
         }
@@ -358,11 +351,17 @@ class MovieDataSource @Inject constructor(
 
     suspend fun fetchDisneyLive(): List<Movie>? {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.getMoviesByWatchProvider(providerId = 337, page = 1).getOrNull()
-                ?: tmdbApiClient.getMoviesByWatchProvider(providerId = 122, page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.getMoviesByWatchProvider(providerId = 337, page = 2).getOrNull()
-                ?: tmdbApiClient.getMoviesByWatchProvider(providerId = 122, page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = coroutineScope {
+                val p1 = async {
+                    tmdbApiClient.getMoviesByWatchProvider(providerId = 337, page = 1).getOrNull()
+                        ?: tmdbApiClient.getMoviesByWatchProvider(providerId = 122, page = 1).getOrNull().orEmpty()
+                }
+                val p2 = async {
+                    tmdbApiClient.getMoviesByWatchProvider(providerId = 337, page = 2).getOrNull()
+                        ?: tmdbApiClient.getMoviesByWatchProvider(providerId = 122, page = 2).getOrNull().orEmpty()
+                }
+                (p1.await() + p2.await()).distinctBy { it.id }
+            }
             if (combined.isNotEmpty()) {
                 diskCache.saveMovies("disney", combined)
                 return combined
@@ -422,9 +421,7 @@ class MovieDataSource @Inject constructor(
 
     suspend fun searchMovies(query: String): List<Movie> {
         if (TmdbConfig.USE_TMDB) {
-            val p1 = tmdbApiClient.searchMovies(query, page = 1).getOrNull().orEmpty()
-            val p2 = tmdbApiClient.searchMovies(query, page = 2).getOrNull().orEmpty()
-            val combined = (p1 + p2).distinctBy { it.id }
+            val combined = fetchTwoPages { page -> tmdbApiClient.searchMovies(query, page = page) }
             if (combined.isNotEmpty()) return combined
         }
         if (NetworkConfig.USE_REMOTE_BACKEND) {

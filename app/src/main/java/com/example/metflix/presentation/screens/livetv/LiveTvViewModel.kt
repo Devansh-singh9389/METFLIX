@@ -7,13 +7,11 @@ import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.data.repositories.LiveTvRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -35,14 +33,6 @@ class LiveTvViewModel @Inject constructor(
     private val statusMessage = MutableStateFlow<String?>(null)
     private val sortOrder = MutableStateFlow(LiveTvSortOrder.ChannelNumber)
 
-    // Ticks every 30s to smoothly update live progress bars without full-screen reloads
-    private val currentTimeFlow = flow {
-        while (true) {
-            emit(System.currentTimeMillis())
-            delay(30_000)
-        }
-    }
-
     val currentPlaylistUrl: StateFlow<String> = repository.getCurrentPlaylistUrl()
         .stateIn(
             scope = viewModelScope,
@@ -50,48 +40,37 @@ class LiveTvViewModel @Inject constructor(
             initialValue = ""
         )
 
-    private val filteredChannelsFlow = combine(
-        repository.getChannels(),
-        selectedCategory,
-        sortOrder
-    ) { channels, category, sort ->
-        val categoryFiltered = when {
-            category.equals("All", ignoreCase = true) -> channels
-            category.equals("Favorites", ignoreCase = true) -> channels.filter { it.isFavorite }
-            else -> channels.filter { it.category.equals(category, ignoreCase = true) }
-        }
-
-        when (sort) {
-            LiveTvSortOrder.ChannelNumber -> categoryFiltered.sortedBy { it.channelNumber }
-            LiveTvSortOrder.NameAsc -> categoryFiltered.sortedBy { it.name.lowercase() }
-        }
-    }
-
     val uiState: StateFlow<LiveTvUiState> = combine(
         repository.getChannels(),
-        filteredChannelsFlow,
-        repository.getCategories(),
         selectedCategory,
-        isRefreshing,
         sortOrder,
-        repository.getCurrentPlaylistUrl(),
-        currentTimeFlow
-    ) { args ->
-        @Suppress("UNCHECKED_CAST")
-        val channels = args[0] as List<LiveChannel>
-        @Suppress("UNCHECKED_CAST")
-        val sorted = args[1] as List<LiveChannel>
-        @Suppress("UNCHECKED_CAST")
-        val categories = args[2] as List<String>
-        val category = args[3] as String
-        val refreshing = args[4] as Boolean
-        val sort = args[5] as LiveTvSortOrder
-        val playlistUrl = args[6] as String
-        val nowMs = args[7] as Long
-
+        isRefreshing,
+        repository.getCurrentPlaylistUrl()
+    ) { channels, category, sort, refreshing, playlistUrl ->
         if (channels.isEmpty() && refreshing) {
             LiveTvUiState.Loading
         } else {
+            val categories = buildList {
+                add("All")
+                add("Favorites")
+                val dynamic = channels.map { it.category }
+                    .distinct()
+                    .filter { it.isNotBlank() && !it.equals("All", ignoreCase = true) && !it.equals("Favorites", ignoreCase = true) }
+                    .sorted()
+                addAll(dynamic)
+            }
+
+            val categoryFiltered = when {
+                category.equals("All", ignoreCase = true) -> channels
+                category.equals("Favorites", ignoreCase = true) -> channels.filter { it.isFavorite }
+                else -> channels.filter { it.category.equals(category, ignoreCase = true) }
+            }
+
+            val sorted = when (sort) {
+                LiveTvSortOrder.ChannelNumber -> categoryFiltered.sortedBy { it.channelNumber }
+                LiveTvSortOrder.NameAsc -> categoryFiltered.sortedBy { it.name.lowercase() }
+            }
+
             // Keep focusedChannel in sync if current is null or not in category
             if (_focusedChannel.value == null || sorted.none { it.id == _focusedChannel.value?.id }) {
                 _focusedChannel.value = sorted.firstOrNull()
@@ -107,13 +86,12 @@ class LiveTvViewModel @Inject constructor(
                 totalCount = channels.size,
                 searchQuery = "",
                 sortOrder = sort,
-                currentPlaylistUrl = playlistUrl,
-                currentTimeMs = nowMs
+                currentPlaylistUrl = playlistUrl
             )
         }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.Lazily,
+        started = SharingStarted.WhileSubscribed(5_000),
         initialValue = LiveTvUiState.Loading
     )
 
@@ -142,8 +120,13 @@ class LiveTvViewModel @Inject constructor(
     fun selectPlaylistUrl(url: String) {
         viewModelScope.launch {
             isRefreshing.value = true
-            repository.setPlaylistUrl(url)
+            val result = repository.setPlaylistUrl(url)
             isRefreshing.value = false
+            result.onSuccess { count ->
+                statusMessage.value = "Loaded $count channels"
+            }.onFailure { err ->
+                statusMessage.value = "Failed to switch playlist: ${err.message}"
+            }
         }
     }
 

@@ -34,9 +34,9 @@ object TmdbConfig {
     var USE_TMDB: Boolean = true
 
     /**
-     * Paste your TMDB v3 API Key here.
+     * TMDB v3 API Key loaded securely from BuildConfig / .env
      */
-    var API_KEY: String = "6eba1b274252e8a563ebdaf9abacbf36"
+    var API_KEY: String = com.example.metflix.BuildConfig.DEFAULT_TMDB_KEY.takeIf { it.isNotBlank() } ?: ""
 
     /**
      * TMDB Base URL
@@ -44,10 +44,10 @@ object TmdbConfig {
     const val BASE_URL: String = "https://api.themoviedb.org/3"
 
     /**
-     * Image CDN paths
+     * Image CDN paths (dynamically scaled based on Low-Spec Mode / PerformancePreferences)
      */
-    const val IMAGE_BASE_URL_POSTER: String = "https://image.tmdb.org/t/p/w500"
-    const val IMAGE_BASE_URL_BACKDROP: String = "https://image.tmdb.org/t/p/w780"
+    var IMAGE_BASE_URL_POSTER: String = "https://image.tmdb.org/t/p/w500"
+    var IMAGE_BASE_URL_BACKDROP: String = "https://image.tmdb.org/t/p/w780"
 
     /**
      * Default video and subtitle stream URLs for playback in ExoPlayer.

@@ -45,9 +45,16 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -123,6 +130,11 @@ fun VideoPlayerSettingsOverlay(
     onTogglePlayerEngine: (Boolean) -> Unit = {},
     onToggleStats: () -> Unit = {},
     onRestartMovie: () -> Unit = {},
+    debridStatus: String = "",
+    isDebridActive: Boolean = false,
+    onSelectDebridProvider: (com.example.metflix.data.settings.DebridProviderType) -> Unit = {},
+    onSaveDebridKey: (String) -> Unit = {},
+    onToggleDebrid: (Boolean) -> Unit = {},
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -396,6 +408,142 @@ fun VideoPlayerSettingsOverlay(
                     )
                 }
 
+                // 2. AllDebrid Cloud Account & High-Speed Dual-Audio
+                SettingsSectionHeader(
+                    icon = Icons.Default.VpnKey,
+                    title = "AllDebrid Cloud Streaming (Instant Dual-Audio)"
+                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = if (isDebridActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+                    onClick = {}
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isDebridActive) "Cloud Debrid Active" else "Cloud Debrid Disabled / Unconfigured",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDebridActive) MaterialTheme.colorScheme.primary else Color.White
+                                )
+                                Text(
+                                    text = if (debridStatus.isNotBlank()) debridStatus else "High-speed cached torrent unthrottling for Dual-Audio (Hindi+Eng) streams.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.LightGray
+                                )
+                            }
+                        }
+
+                        // Provider Selection Pills (AllDebrid vs TorBox)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            com.example.metflix.data.settings.DebridProviderType.entries.forEach { provider ->
+                                Button(
+                                    onClick = { onSelectDebridProvider(provider) },
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                        focusedContainerColor = MaterialTheme.colorScheme.primary
+                                    )
+                                ) {
+                                    Text(provider.displayName, fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        var isEditingKey by remember { mutableStateOf(false) }
+                        var tempKey by remember { mutableStateOf("") }
+
+                        if (isEditingKey) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                BasicTextField(
+                                    value = tempKey,
+                                    onValueChange = { tempKey = it },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    textStyle = TextStyle(
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                    singleLine = true
+                                )
+
+                                Button(
+                                    onClick = {
+                                        onSaveDebridKey(tempKey)
+                                    },
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = Color(0xFF2E7D32),
+                                        focusedContainerColor = Color(0xFF4CAF50)
+                                    )
+                                ) {
+                                    Text("Test & Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = { isEditingKey = false },
+                                    colors = ButtonDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.error
+                                    )
+                                ) {
+                                    Text("Cancel", fontSize = 12.sp)
+                                }
+                            }
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { isEditingKey = true },
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                        focusedContainerColor = MaterialTheme.colorScheme.primary
+                                    )
+                                ) {
+                                    Text(
+                                        text = if (isDebridActive) "Change API Key" else "Enter AllDebrid API Key",
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                if (isDebridActive) {
+                                    Button(
+                                        onClick = { onToggleDebrid(false) },
+                                        colors = ButtonDefaults.colors(
+                                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                            focusedContainerColor = MaterialTheme.colorScheme.error
+                                        )
+                                    ) {
+                                        Text("Disable", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // 3. Audio Track / Multi-Audio Selection
                 SettingsSectionHeader(
                     icon = Icons.Default.Audiotrack,
@@ -430,8 +578,45 @@ fun VideoPlayerSettingsOverlay(
                                 }
                             }
                         }
+
+                        if (availableAudioTracks.size <= 1) {
+                            val noticeText = when (selectedServer?.id) {
+                                "anime" -> "💡 AnimeWorld multi-audio stream active. If alternative dubs (Hindi/English) are available on the CDN for this episode, they appear above."
+                                "dualaudio" -> "💡 Server 1 searched Indian Dual-Audio catalogs. If no Hindi release has dropped online yet for this title, it plays in English."
+                                else -> "💡 This stream has 1 audio track. For Hindi & Regional dubs, switch to Server 1 (Dual-Audio) or Server 0 (AnimeWorld Multi-Audio)."
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        Color.White.copy(alpha = 0.05f),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = noticeText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
                     }
                 } else {
+                    val noticeText = if (selectedServer?.id == "dualaudio") {
+                        "Primary Direct Audio (Stereo / Multichannel Pass-Through) • No Hindi release found yet for this title; streaming in English"
+                    } else {
+                        "Primary Direct Audio (Stereo / Multichannel Pass-Through) • Switch to Server 1 (Dual-Audio) for Hindi / Regional dubs"
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -450,7 +635,7 @@ fun VideoPlayerSettingsOverlay(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Primary Direct Audio (Stereo / Multichannel Pass-Through)",
+                            text = noticeText,
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.LightGray,
                             fontSize = 11.sp

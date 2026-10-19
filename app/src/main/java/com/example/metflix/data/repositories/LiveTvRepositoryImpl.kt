@@ -129,9 +129,12 @@ class LiveTvRepositoryImpl @Inject constructor(
 
     override suspend fun setPlaylistUrl(url: String): Result<Int> = withContext(Dispatchers.IO) {
         val target = if (url.isBlank()) DEFAULT_IPTV_URL else url.trim()
-        prefs.edit().putString(KEY_PLAYLIST_URL, target).apply()
-        playlistUrlFlow.value = target
-        refreshChannels(target)
+        val result = refreshChannels(target)
+        if (result.isSuccess) {
+            prefs.edit().putString(KEY_PLAYLIST_URL, target).apply()
+            playlistUrlFlow.value = target
+        }
+        result
     }
 
     override suspend fun refreshChannels(playlistUrl: String?): Result<Int> = withContext(Dispatchers.IO) {
@@ -148,24 +151,34 @@ class LiveTvRepositoryImpl @Inject constructor(
 
             val statusCode = connection.responseCode
             if (statusCode in 200..299) {
-                val parsed = M3uParser.parse(
+                val playlist = M3uParser.parsePlaylist(
                     inputStream = connection.inputStream,
                     maxChannels = performancePreferences.maxChannels.value
                 )
                 connection.disconnect()
 
-                if (parsed.isNotEmpty()) {
+                if (playlist.channels.isNotEmpty()) {
                     // Prepend default curated channels only for default playlist so Hindi/World playlists show their own channels
                     val isSpecificOrRegional = targetUrl.contains("hin.m3u") ||
                                                 targetUrl.contains("in.m3u") ||
+                                                targetUrl.contains("eng.m3u") ||
                                                 targetUrl.contains("index.m3u")
                     val curated = if (isSpecificOrRegional) emptyList() else loadBundledDefaultChannels()
-                    val merged = mergeChannels(curated, parsed)
+                    val merged = mergeChannels(curated, playlist.channels)
                     val enriched = merged.map { epgEngine.enrichChannelWithSchedule(it) }
 
                     rawChannelsFlow.value = enriched
                     saveChannelsToCache(enriched)
                     Log.d(TAG, "Successfully loaded ${enriched.size} live channels with EPG")
+
+                    // Asynchronously fetch real XMLTV EPG if provided in header
+                    val epgUrl = playlist.epgUrl
+                    if (!epgUrl.isNullOrBlank()) {
+                        repositoryScope.launch {
+                            syncXmltvEpg(epgUrl)
+                        }
+                    }
+
                     enriched.size
                 } else {
                     Log.w(TAG, "M3U fetch returned 0 channels")
@@ -177,6 +190,34 @@ class LiveTvRepositoryImpl @Inject constructor(
             }
         }.onFailure { err ->
             Log.w(TAG, "Error fetching remote IPTV playlist, retaining cached/bundled channels: ${err.message}")
+        }
+    }
+
+    private suspend fun syncXmltvEpg(epgUrl: String) = withContext(Dispatchers.IO) {
+        runCatching {
+            Log.d(TAG, "Fetching real XMLTV EPG from: $epgUrl")
+            val url = URL(epgUrl)
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 20000
+                readTimeout = 30000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Android TV; MetFlix)")
+            }
+            if (connection.responseCode in 200..299) {
+                val isGzip = epgUrl.endsWith(".gz", ignoreCase = true) ||
+                        "gzip".equals(connection.contentEncoding, ignoreCase = true)
+                val epgMap = epgEngine.parseXmltv(connection.inputStream, isGzip = isGzip)
+                connection.disconnect()
+                if (epgMap.isNotEmpty()) {
+                    val updated = epgEngine.applyRealEpg(rawChannelsFlow.value, epgMap)
+                    rawChannelsFlow.value = updated
+                    Log.d(TAG, "Successfully applied real XMLTV EPG to channels (${epgMap.size} guide feeds)")
+                }
+            } else {
+                connection.disconnect()
+            }
+        }.onFailure { err ->
+            Log.w(TAG, "Failed to sync XMLTV EPG: ${err.message}")
         }
     }
 
@@ -195,8 +236,9 @@ class LiveTvRepositoryImpl @Inject constructor(
         // 1. Try cache file first
         val cached = loadChannelsFromCache()
         if (cached.isNotEmpty()) {
-            rawChannelsFlow.value = cached
-            Log.d(TAG, "Loaded ${cached.size} channels from local cache")
+            val enriched = cached.map { epgEngine.enrichChannelWithSchedule(it) }
+            rawChannelsFlow.value = enriched
+            Log.d(TAG, "Loaded ${enriched.size} channels from local cache with EPG")
             return@withContext
         }
 
@@ -255,14 +297,19 @@ class LiveTvRepositoryImpl @Inject constructor(
             result.add(it)
         }
 
-        var counter = if (primary.isNotEmpty()) primary.maxOf { it.channelNumber } + 1 else 101
+        var counter = if (primary.isNotEmpty()) primary.maxOf { it.channelNumber } + 1 else 1
 
         secondary.forEach { ch ->
             val normalizedName = ch.name.lowercase()
             if (!seenUrls.contains(ch.streamUrl) && !seenNames.contains(normalizedName)) {
                 seenUrls.add(ch.streamUrl)
                 seenNames.add(normalizedName)
-                result.add(ch.copy(channelNumber = counter++))
+                val assignedNumber = if (ch.channelNumber > 0 && !result.any { it.channelNumber == ch.channelNumber }) {
+                    ch.channelNumber
+                } else {
+                    counter++
+                }
+                result.add(ch.copy(channelNumber = assignedNumber))
             }
         }
 

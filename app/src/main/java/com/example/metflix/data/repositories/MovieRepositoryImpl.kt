@@ -33,8 +33,9 @@ import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.flowOn
 class MovieRepositoryImpl @Inject constructor(
     private val movieDataSource: MovieDataSource,
     private val tvDataSource: TvDataSource,
+    private val animeDataSource: AnimeDataSource,
     private val movieCastDataSource: MovieCastDataSource,
     private val movieCategoryDataSource: MovieCategoryDataSource,
     private val tmdbApiClient: TmdbApiClient,
@@ -103,36 +105,56 @@ class MovieRepositoryImpl @Inject constructor(
         return result
     }
 
-    override suspend fun getMovieDetails(movieId: String): MovieDetails {
-        movieDetailsCache[movieId]?.let { return it }
+    override suspend fun getMovieDetails(movieId: String, isTvShow: Boolean?): MovieDetails = withContext(Dispatchers.IO) {
+        val cacheKey = if (isTvShow != null) "${movieId}_tv$isTvShow" else movieId
+        movieDetailsCache[cacheKey]?.let { return@withContext it }
 
-        // 1. Try live TMDB movie details first
+        // If explicitly requested as TV show, or checking TV first
+        val shouldCheckTvFirst = isTvShow == true || tvDataSource.getTvShowList().any { it.id == movieId } || animeDataSource.getTrendingAnimeList().any { it.id == movieId }
+
+        if (shouldCheckTvFirst) {
+            val tmdbTvDetails = tmdbApiClient.getTvShowDetails(movieId).getOrNull()
+            if (tmdbTvDetails != null) {
+                val season1Episodes = tmdbApiClient.getTvSeasonDetails(movieId, 1).getOrNull().orEmpty()
+                val enrichedSeasons = tmdbTvDetails.seasons.map { s ->
+                    if (s.seasonNumber == 1 && season1Episodes.isNotEmpty()) {
+                        s.copy(episodes = season1Episodes)
+                    } else s
+                }
+                val finalDetails = tmdbTvDetails.copy(seasons = enrichedSeasons)
+                movieDetailsCache[cacheKey] = finalDetails
+                return@withContext finalDetails
+            }
+        }
+
+        // Try movie details
         val tmdbDetails = tmdbApiClient.getMovieDetails(movieId).getOrNull()
         if (tmdbDetails != null) {
-            movieDetailsCache[movieId] = tmdbDetails
-            return tmdbDetails
+            movieDetailsCache[cacheKey] = tmdbDetails
+            return@withContext tmdbDetails
         }
 
-        // 2. If movie details failed or returned 404, try live TMDB TV show details!
-        val tmdbTvDetails = tmdbApiClient.getTvShowDetails(movieId).getOrNull()
-        if (tmdbTvDetails != null) {
-            // Pre-fetch Season 1 episodes so they are available immediately
-            val season1Episodes = tmdbApiClient.getTvSeasonDetails(movieId, 1).getOrNull().orEmpty()
-            val enrichedSeasons = tmdbTvDetails.seasons.map { s ->
-                if (s.seasonNumber == 1 && season1Episodes.isNotEmpty()) {
-                    s.copy(episodes = season1Episodes)
-                } else {
-                    s
+        // If movie details failed and wasn't checked as TV yet, try TV show details!
+        if (!shouldCheckTvFirst) {
+            val tmdbTvDetails = tmdbApiClient.getTvShowDetails(movieId).getOrNull()
+            if (tmdbTvDetails != null) {
+                val season1Episodes = tmdbApiClient.getTvSeasonDetails(movieId, 1).getOrNull().orEmpty()
+                val enrichedSeasons = tmdbTvDetails.seasons.map { s ->
+                    if (s.seasonNumber == 1 && season1Episodes.isNotEmpty()) {
+                        s.copy(episodes = season1Episodes)
+                    } else s
                 }
+                val finalDetails = tmdbTvDetails.copy(seasons = enrichedSeasons)
+                movieDetailsCache[cacheKey] = finalDetails
+                return@withContext finalDetails
             }
-            val finalDetails = tmdbTvDetails.copy(seasons = enrichedSeasons)
-            movieDetailsCache[movieId] = finalDetails
-            return finalDetails
         }
 
-        // 3. Check TV data source before fallback
-        val tvList = tvDataSource.getTvShowList()
-        val matchedTv = tvList.find { it.id == movieId }
+        // Check local / disk cached TV shows & anime before generic fallback
+        val matchedTv = tvDataSource.getTvShowList().find { it.id == movieId }
+            ?: animeDataSource.getTrendingAnimeList().find { it.id == movieId }
+            ?: animeDataSource.getCartoonsList().find { it.id == movieId }
+
         if (matchedTv != null) {
             val tvDetails = MovieDetails(
                 id = matchedTv.id,
@@ -141,37 +163,36 @@ class MovieRepositoryImpl @Inject constructor(
                 posterUri = matchedTv.posterUri,
                 name = matchedTv.name,
                 description = matchedTv.description,
-                pgRating = "TV-MA",
+                pgRating = "TV-14",
                 releaseDate = "2024",
-                categories = listOf("Drama", "TV Series"),
-                duration = "1 Season",
-                director = "MetFlix TV",
-                screenplay = "Original Series",
-                music = "Original Score",
+                categories = listOf("Animation", "Anime", "Series"),
+                duration = "TV Series",
+                director = "Animation Studios",
+                screenplay = "Original Adaptation",
+                music = "Original Soundtrack",
                 castAndCrew = emptyList(),
                 status = "Returning Series",
-                originalLanguage = "ENGLISH",
+                originalLanguage = "Japanese",
                 budget = "TV Series",
                 revenue = "Series",
                 similarMovies = emptyList(),
                 reviewsAndRatings = emptyList(),
                 isTvShow = true,
-                seasons = listOf(TvSeason(id = "${matchedTv.id}_s1", name = "Season 1", seasonNumber = 1, episodeCount = 10)),
+                seasons = listOf(TvSeason(id = "${matchedTv.id}_s1", name = "Season 1", seasonNumber = 1, episodeCount = 24)),
                 totalSeasons = 1,
-                totalEpisodes = 10
+                totalEpisodes = 24
             )
-            movieDetailsCache[movieId] = tvDetails
-            return tvDetails
+            movieDetailsCache[cacheKey] = tvDetails
+            return@withContext tvDetails
         }
 
-        // Fallback if TMDB details unavailable
+        // Exact match in local movie catalog, or build a clean fallback using the clicked item's ID
         val movieList = movieDataSource.getMovieList()
         val movie = movieList.find { it.id == movieId }
-            ?: movieList.firstOrNull()
             ?: Movie(
                 id = movieId,
                 name = "Details",
-                description = "Details currently unavailable.",
+                description = "Details currently loading or unavailable.",
                 posterUri = "",
                 videoUri = TmdbConfig.DEFAULT_STREAM_URL,
                 subtitleUri = TmdbConfig.DEFAULT_SUBTITLE_URL
@@ -215,7 +236,7 @@ class MovieRepositoryImpl @Inject constructor(
             ),
         )
         movieDetailsCache[movieId] = details
-        return details
+        details
     }
 
     override suspend fun searchMovies(query: String): MovieList {
@@ -279,6 +300,26 @@ class MovieRepositoryImpl @Inject constructor(
 
     override fun getBingeWatchDramas(): Flow<MovieList> = flow {
         val list = tvDataSource.getBingeWatchDramaList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getTrendingAnime(): Flow<MovieList> = flow {
+        val list = animeDataSource.getTrendingAnimeList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getAnimeMovies(): Flow<MovieList> = flow {
+        val list = animeDataSource.getAnimeMoviesList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getCartoons(): Flow<MovieList> = flow {
+        val list = animeDataSource.getCartoonsList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    override fun getTopRatedAnime(): Flow<MovieList> = flow {
+        val list = animeDataSource.getTopRatedAnimeList()
         emit(list)
     }.flowOn(Dispatchers.IO)
 

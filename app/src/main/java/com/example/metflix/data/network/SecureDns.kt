@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -53,6 +54,7 @@ object SecureDns : Dns {
     )
 
     private val cache = ConcurrentHashMap<String, DnsCacheEntry>()
+    private val dnsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -257,7 +259,7 @@ object SecureDns : Dns {
     }
 
     private fun refreshDohInBackground(hostname: String) {
-        CoroutineScope(Dispatchers.IO).launch {
+        dnsScope.launch {
             val freshAddrs = resolveViaGoogleDoh(hostname) ?: resolveViaCloudflareDoh(hostname)
             if (!freshAddrs.isNullOrEmpty()) {
                 cache[hostname] = DnsCacheEntry(freshAddrs, System.currentTimeMillis() + CACHE_TTL_MS)

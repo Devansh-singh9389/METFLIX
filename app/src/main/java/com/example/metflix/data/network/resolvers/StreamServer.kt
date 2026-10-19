@@ -22,7 +22,7 @@ import androidx.compose.runtime.Immutable
 data class StreamServer(
     val id: String,
     val name: String,
-    val description: String,
+    val description: String = "",
     val badge: String = "HD",
     val speed: String = "Fast",
     val isPrimary: Boolean = false,

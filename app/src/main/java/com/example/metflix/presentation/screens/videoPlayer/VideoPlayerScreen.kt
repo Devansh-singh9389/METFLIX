@@ -92,6 +92,7 @@ import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.presentation.common.Error
 import com.example.metflix.presentation.common.Loading
+import com.example.metflix.presentation.screens.videoPlayer.components.PlaybackSetupDialog
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerBufferingSpinner
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerControls
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerOverlay
@@ -132,6 +133,10 @@ fun VideoPlayerScreen(
     videoPlayerScreenViewModel: VideoPlayerScreenViewModel = hiltViewModel()
 ) {
     val uiState by videoPlayerScreenViewModel.uiState.collectAsStateWithLifecycle()
+    val showSetupDialog by videoPlayerScreenViewModel.showPlaybackSetupDialog.collectAsStateWithLifecycle()
+    val playbackSource by videoPlayerScreenViewModel.playbackSource.collectAsStateWithLifecycle()
+    val playbackQuality by videoPlayerScreenViewModel.playbackQuality.collectAsStateWithLifecycle()
+    val playbackPreferHindi by videoPlayerScreenViewModel.playbackPreferHindi.collectAsStateWithLifecycle()
 
     when (val s = uiState) {
         is VideoPlayerScreenUiState.Loading -> {
@@ -143,23 +148,46 @@ fun VideoPlayerScreen(
         }
 
         is VideoPlayerScreenUiState.Done -> {
-            VideoPlayerScreenContent(
-                movieDetails = s.movieDetails,
-                resolvedStream = s.resolvedStream,
-                currentServer = s.currentServer,
-                availableServers = s.availableServers,
-                isResolving = s.isResolving,
-                isTvShow = s.isTvShow,
-                seasonNumber = s.seasonNumber,
-                episodeNumber = s.episodeNumber,
-                episodeTitle = s.episodeTitle,
-                onSelectServer = { videoPlayerScreenViewModel.selectServer(it) },
-                onRetryNextServer = { videoPlayerScreenViewModel.retryNextServer() },
-                onCapturedDirectStream = { url, headers ->
-                    videoPlayerScreenViewModel.onCapturedDirectStream(url, headers)
-                },
-                onBackPressed = onBackPressed
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                VideoPlayerScreenContent(
+                    movieDetails = s.movieDetails,
+                    resolvedStream = s.resolvedStream,
+                    currentServer = s.currentServer,
+                    availableServers = s.availableServers,
+                    isResolving = s.isResolving,
+                    isTvShow = s.isTvShow,
+                    seasonNumber = s.seasonNumber,
+                    episodeNumber = s.episodeNumber,
+                    episodeTitle = s.episodeTitle,
+                    debridStatus = s.debridStatus,
+                    isDebridActive = s.isDebridActive,
+                    resolutionMessage = s.resolutionMessage,
+                    onSelectDebridProvider = { videoPlayerScreenViewModel.selectDebridProvider(it) },
+                    onSaveDebridKey = { videoPlayerScreenViewModel.saveDebridApiKey(it) },
+                    onToggleDebrid = { videoPlayerScreenViewModel.toggleDebrid(it) },
+                    onSelectServer = { videoPlayerScreenViewModel.selectServer(it) },
+                    onRetryNextServer = { videoPlayerScreenViewModel.retryNextServer() },
+                    onCapturedDirectStream = { url, headers ->
+                        videoPlayerScreenViewModel.onCapturedDirectStream(url, headers)
+                    },
+                    onBackPressed = onBackPressed
+                )
+
+                if (showSetupDialog) {
+                    val providerName = if (s.debridStatus.contains("TorBox", ignoreCase = true)) "TorBox" else "AllDebrid"
+                    PlaybackSetupDialog(
+                        movieDetails = s.movieDetails,
+                        initialSource = playbackSource,
+                        initialQuality = playbackQuality,
+                        initialPreferHindi = playbackPreferHindi,
+                        providerDisplayName = providerName,
+                        onConfirm = { source, quality, preferHindi ->
+                            videoPlayerScreenViewModel.confirmPlaybackSetup(source, quality, preferHindi)
+                        },
+                        onDismiss = onBackPressed
+                    )
+                }
+            }
         }
     }
 }
@@ -176,6 +204,12 @@ fun VideoPlayerScreenContent(
     seasonNumber: Int = 1,
     episodeNumber: Int = 1,
     episodeTitle: String = "",
+    debridStatus: String = "",
+    isDebridActive: Boolean = false,
+    resolutionMessage: String = "",
+    onSelectDebridProvider: (com.example.metflix.data.settings.DebridProviderType) -> Unit = {},
+    onSaveDebridKey: (String) -> Unit = {},
+    onToggleDebrid: (Boolean) -> Unit = {},
     onSelectServer: (StreamServer) -> Unit,
     onRetryNextServer: () -> Unit,
     onCapturedDirectStream: (String, Map<String, String>) -> Unit = { _, _ -> },
@@ -536,7 +570,7 @@ fun VideoPlayerScreenContent(
                     VideoPlayerPulse(pulseState)
                 } else if (isBuffering && playbackError == null) {
                     VideoPlayerBufferingSpinner(
-                        label = if (isResolving) "Connecting to ${currentServer.name}..." else "Buffering stream..."
+                        label = if (isResolving) resolutionMessage.ifBlank { "Connecting to ${currentServer.name}..." } else "Buffering stream..."
                     )
                 }
             },
@@ -615,9 +649,10 @@ fun VideoPlayerScreenContent(
             }
         )
 
-        // Error Prompt Overlay
+        // Error Prompt Overlay / Uncached Fallback
+        val isUncached = resolvedStream == null && !isResolving
         AnimatedVisibility(
-            visible = playbackError != null,
+            visible = playbackError != null || isUncached,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.Center)
@@ -632,18 +667,22 @@ fun VideoPlayerScreenContent(
                     Icon(
                         imageVector = Icons.Default.ErrorOutline,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
+                        tint = if (isUncached) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(52.dp)
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "Playback Issue on ${currentServer.name}",
+                        text = if (isUncached) "Stream Not Cached" else "Playback Issue on ${currentServer.name}",
                         style = MaterialTheme.typography.titleLarge,
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = playbackError ?: "Unable to stream. Please switch to another server.",
+                        text = if (isUncached) {
+                            "This title is not currently cached on your cloud Debrid account. Select an alternative source below to stream immediately."
+                        } else {
+                            playbackError ?: "Unable to stream. Please switch to another source."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.LightGray
                     )
@@ -667,28 +706,30 @@ fun VideoPlayerScreenContent(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.size(8.dp))
-                            Text(text = "Try Next Server")
+                            Text(text = if (isUncached) "Switch to Free Source" else "Try Next Source")
                         }
 
-                        Button(
-                            onClick = {
-                                playbackError = null
-                                isBuffering = true
-                                exoPlayer.prepare()
-                                exoPlayer.play()
-                            },
-                            colors = ButtonDefaults.colors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                focusedContainerColor = MaterialTheme.colorScheme.secondary
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.size(8.dp))
-                            Text(text = "Retry Current")
+                        if (!isUncached) {
+                            Button(
+                                onClick = {
+                                    playbackError = null
+                                    isBuffering = true
+                                    exoPlayer.prepare()
+                                    exoPlayer.play()
+                                },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    focusedContainerColor = MaterialTheme.colorScheme.secondary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.size(8.dp))
+                                Text(text = "Retry Current")
+                            }
                         }
                     }
                 }
@@ -702,6 +743,17 @@ fun VideoPlayerScreenContent(
             } else {
                 movieDetails.name
             }
+            val formatStr = when {
+                resolvedStream?.isHls == true || resolvedStream?.streamUrl?.contains(".m3u8") == true -> "HLS (.m3u8)"
+                resolvedStream?.streamUrl?.contains(".mkv") == true -> "MKV (Direct Byte-Range)"
+                resolvedStream?.streamUrl?.contains(".mp4") == true -> "MP4"
+                else -> "Direct Stream"
+            }
+            val audioStatusStr = when {
+                resolvedStream?.audioLanguages?.any { it.equals("Hindi", ignoreCase = true) } == true -> "✅ Hindi+Eng Verified"
+                playerAudioTracks.size > 1 -> "Multi-Audio (${playerAudioTracks.size} tracks)"
+                else -> "Single Audio Track"
+            }
             VideoPlayerStatsOverlay(
                 movieTitle = statsTitle,
                 videoResolution = sourceResolutionLabel,
@@ -714,6 +766,9 @@ fun VideoPlayerScreenContent(
                 bufferHealthMs = bufferHealthMs,
                 currentPositionText = formatDurationTime(exoPlayer.currentPosition),
                 durationText = formatDurationTime(exoPlayer.duration),
+                serverName = currentServer.name,
+                streamFormat = formatStr,
+                audioBadge = audioStatusStr,
                 modifier = Modifier.align(Alignment.TopEnd)
             )
         }
@@ -829,6 +884,11 @@ fun VideoPlayerScreenContent(
                 videoPlayerState.showControls(isPlaying)
                 runCatching { settingsButtonFocusRequester.requestFocus() }
             },
+            debridStatus = debridStatus,
+            isDebridActive = isDebridActive,
+            onSelectDebridProvider = onSelectDebridProvider,
+            onSaveDebridKey = onSaveDebridKey,
+            onToggleDebrid = onToggleDebrid,
             onDismiss = {
                 isSettingsOpen = false
                 videoPlayerState.showControls(isPlaying)
@@ -983,7 +1043,8 @@ private fun MovieDetails.intoMediaItem(
         )
     }
 
-    return MediaItem.Builder()
+    val isHls = resolvedStream?.isHls == true || targetUri.contains(".m3u8")
+    val builder = MediaItem.Builder()
         .setUri(targetUri)
         .setMediaMetadata(
             MediaMetadata.Builder()
@@ -993,7 +1054,12 @@ private fun MovieDetails.intoMediaItem(
                 .build()
         )
         .setSubtitleConfigurations(subConfigs)
-        .build()
+
+    if (isHls) {
+        builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+    }
+
+    return builder.build()
 }
 
 private fun Movie.intoMediaItem(): MediaItem {

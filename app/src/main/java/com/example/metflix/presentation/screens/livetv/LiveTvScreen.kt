@@ -1,27 +1,33 @@
 package com.example.metflix.presentation.screens.livetv
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,16 +41,19 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Card
+import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Tab
-import androidx.tv.material3.TabRow
 import androidx.tv.material3.Text
 import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.presentation.common.Error
@@ -128,8 +137,6 @@ private fun LiveTvCatalog(
     LaunchedEffect(Unit) {
         onScroll(true)
     }
-
-    val selectedCategoryIndex = state.categories.indexOf(state.selectedCategory).coerceAtLeast(0)
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -305,85 +312,137 @@ private fun LiveTvCatalog(
                 }
             }
 
-            // Category Filter TabRow
-            TabRow(
-                selectedTabIndex = selectedCategoryIndex,
+            // Main Channel Content: Left Vertical Category Rail + Right Channel Grid / Guide
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp)
+                    .weight(1f)
             ) {
-                state.categories.forEachIndexed { index, cat ->
-                    Tab(
-                        selected = index == selectedCategoryIndex,
-                        onFocus = { onCategorySelect(cat) },
-                        onClick = { onCategorySelect(cat) }
-                    ) {
-                        Text(
-                            text = cat,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                    }
-                }
-            }
-
-            // Main Channel Content: EPG Timeline Guide or JioTV Channel Cards Grid
-            if (state.filteredChannels.isEmpty()) {
-                Box(
+                // Vertical Category Rail (Set-Top Box Sidebar for smooth 20-50+ category surfing)
+                LazyColumn(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.Tv,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = if (state.selectedCategory.equals("Favorites", ignoreCase = true)) {
-                                "No favorite channels yet. Add channels to Favorites!"
-                            } else {
-                                "No channels found in this category."
-                            },
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else if (isTimelineGuideMode) {
-                // JioTV Full Electronic Program Guide (EPG Timeline Mode)
-                JioTvGuideTimelineView(
-                    channels = state.filteredChannels,
-                    onChannelClick = onChannelClick,
-                    onChannelFocus = debouncedOnChannelFocus,
-                    modifier = Modifier.weight(1f)
-                )
-            } else {
-                // JioTV Channel Cards Mode (with live program, progress bar & remaining time)
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    state = gridState,
-                    contentPadding = PaddingValues(bottom = MetFlixBottomListPadding),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.weight(1f)
+                        .width(200.dp)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(end = 12.dp, bottom = MetFlixBottomListPadding)
                 ) {
                     items(
-                        items = state.filteredChannels,
-                        key = { it.id },
-                        contentType = { "channel_card" }
-                    ) { channel ->
-                        JioTvChannelCard(
-                            channel = channel,
-                            onClick = { onChannelClick(channel) },
-                            onFocus = { debouncedOnChannelFocus(channel) },
-                            currentTimeMs = state.currentTimeMs,
+                        items = state.categories,
+                        key = { it }
+                    ) { cat ->
+                        val isSelected = cat.equals(state.selectedCategory, ignoreCase = true)
+                        Card(
+                            onClick = { onCategorySelect(cat) },
+                            colors = CardDefaults.colors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                focusedContainerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                focusedContentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            shape = CardDefaults.shape(RoundedCornerShape(8.dp)),
+                            scale = CardDefaults.scale(scale = 1.0f, focusedScale = 1.02f),
+                            border = CardDefaults.border(
+                                border = if (isSelected) Border(border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(8.dp)) else Border.None,
+                                focusedBorder = Border(border = BorderStroke(2.dp, Color.White), shape = RoundedCornerShape(8.dp))
+                            ),
                             modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val icon = when {
+                                    cat.equals("Favorites", ignoreCase = true) -> Icons.Default.Star
+                                    cat.equals("All", ignoreCase = true) -> Icons.Default.Tv
+                                    else -> null
+                                }
+                                if (icon != null) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(
+                                    text = cat,
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Right: Channel Cards Grid or Full EPG Timeline Guide
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
+                    if (state.filteredChannels.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.Tv,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = if (state.selectedCategory.equals("Favorites", ignoreCase = true)) {
+                                        "No favorite channels yet. Add channels to Favorites!"
+                                    } else {
+                                        "No channels found in this category."
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else if (isTimelineGuideMode) {
+                        // JioTV Full Electronic Program Guide (EPG Timeline Mode)
+                        JioTvGuideTimelineView(
+                            channels = state.filteredChannels,
+                            onChannelClick = onChannelClick,
+                            onChannelFocus = debouncedOnChannelFocus,
+                            modifier = Modifier.fillMaxSize()
                         )
+                    } else {
+                        // JioTV Channel Cards Grid (with live program, progress bar & remaining time)
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            state = gridState,
+                            contentPadding = PaddingValues(bottom = MetFlixBottomListPadding),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(
+                                items = state.filteredChannels,
+                                key = { it.id },
+                                contentType = { "channel_card" }
+                            ) { channel ->
+                                JioTvChannelCard(
+                                    channel = channel,
+                                    onClick = { onChannelClick(channel) },
+                                    onFocus = { debouncedOnChannelFocus(channel) },
+                                    currentTimeMs = state.currentTimeMs,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
                     }
                 }
             }

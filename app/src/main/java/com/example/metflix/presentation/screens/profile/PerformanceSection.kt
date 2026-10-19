@@ -56,6 +56,8 @@ import androidx.tv.material3.Text
 import androidx.tv.material3.surfaceColorAtElevation
 import com.example.metflix.presentation.theme.MetFlixCardShape
 
+import androidx.compose.foundation.lazy.LazyColumn
+
 @Composable
 fun PerformanceSection(
     viewModel: PerformanceViewModel = hiltViewModel()
@@ -67,291 +69,303 @@ fun PerformanceSection(
     val highQualityImages by viewModel.highQualityImages.collectAsStateWithLifecycle()
     val reduceAnimations by viewModel.reduceAnimations.collectAsStateWithLifecycle()
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .padding(horizontal = 72.dp)
-            .verticalScroll(rememberScrollState())
             .padding(bottom = 64.dp)
     ) {
-        Text(
-            text = "Performance & Hardware",
-            style = MaterialTheme.typography.headlineSmall
-        )
+        item {
+            Text(
+                text = "Performance & Hardware",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        item {
+            val hwProfile = viewModel.hardwareProfile
 
-        val hwProfile = viewModel.hardwareProfile
-
-        // Hardware Profile Summary Card
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                .padding(16.dp)
-        ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Memory,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp)
+            // Hardware Profile Summary Card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
+                        shape = RoundedCornerShape(12.dp)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = if (isDeviceLowRam) "Hardware: Low-RAM Device (<=1GB RAM)" else "Hardware: High-Performance Device (>1GB RAM)",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    .padding(16.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Memory,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (lowSpecMode) "Current Status: Low-Spec Mode (Instant local fallback, 16-bit RGB_565, Zero-Lag)" else "Current Status: High-Performance Mode (Full quality ARGB_8888, Live TMDB sync)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (lowSpecMode) Color(0xFF66BB6A) else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Device Specs & DRM Inspection Badges
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val drmColor = when (hwProfile.widevineLevel) {
-                        com.example.metflix.data.drm.WidevineLevel.L1 -> Color(0xFF66BB6A)
-                        com.example.metflix.data.drm.WidevineLevel.L3 -> Color(0xFFFFA726)
-                        com.example.metflix.data.drm.WidevineLevel.UNSUPPORTED -> Color(0xFFEF5350)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = if (isDeviceLowRam) "Hardware: Low-RAM Device (<=1GB RAM)" else "Hardware: High-Performance Device (>1GB RAM)",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (lowSpecMode) "Current Status: Low-Spec Mode (Instant local fallback, 16-bit RGB_565, Zero-Lag)" else "Current Status: High-Performance Mode (Full quality ARGB_8888, Live TMDB sync)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (lowSpecMode) Color(0xFF66BB6A) else MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .background(drmColor.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Device Specs & DRM Inspection Badges
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "Widevine: ${hwProfile.widevineLevel.name}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = drmColor
-                        )
-                    }
+                        val drmColor = when (hwProfile.widevineLevel) {
+                            com.example.metflix.data.drm.WidevineLevel.L1 -> Color(0xFF66BB6A)
+                            com.example.metflix.data.drm.WidevineLevel.L3 -> Color(0xFFFFA726)
+                            com.example.metflix.data.drm.WidevineLevel.UNSUPPORTED -> Color(0xFFEF5350)
+                        }
 
-                    Box(
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = if (hwProfile.supportsHevc) "HEVC (H.265): Supported" else "HEVC: Software",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (hwProfile.supportsHevc) Color.White else Color.Gray
-                        )
-                    }
+                        Box(
+                            modifier = Modifier
+                                .background(drmColor.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Widevine: ${hwProfile.widevineLevel.name}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = drmColor
+                            )
+                        }
 
-                    Box(
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = if (hwProfile.supportsEac3 || hwProfile.supportsAc3) "Dolby Audio: Yes" else "Dolby Audio: No",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (hwProfile.supportsEac3 || hwProfile.supportsAc3) Color(0xFF64B5F6) else Color.Gray
-                        )
-                    }
+                        Box(
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (hwProfile.supportsHevc) "HEVC (H.265): Supported" else "HEVC: Software",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (hwProfile.supportsHevc) Color.White else Color.Gray
+                            )
+                        }
 
-                    Box(
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "Max Safe Live: ${hwProfile.maxDecodableHeight}p",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.LightGray
-                        )
+                        Box(
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (hwProfile.supportsEac3 || hwProfile.supportsAc3) "Dolby Audio: Yes" else "Dolby Audio: No",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (hwProfile.supportsEac3 || hwProfile.supportsAc3) Color(0xFF64B5F6) else Color.Gray
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Max Safe Live: ${hwProfile.maxDecodableHeight}p",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.LightGray
+                            )
+                        }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
         // Master Low-Spec / Performance Mode Switch
-        ListItem(
-            selected = false,
-            onClick = { viewModel.toggleLowSpecMode(!lowSpecMode) },
-            trailingContent = {
-                Switch(
-                    checked = lowSpecMode,
-                    onCheckedChange = { viewModel.toggleLowSpecMode(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedTrackColor = MaterialTheme.colorScheme.primary
+        item {
+            ListItem(
+                selected = false,
+                onClick = { viewModel.toggleLowSpecMode(!lowSpecMode) },
+                trailingContent = {
+                    Switch(
+                        checked = lowSpecMode,
+                        onCheckedChange = { viewModel.toggleLowSpecMode(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primaryContainer,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = "Performance Mode (Low-RAM Optimization)",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = {
-                Text(
-                    text = "Optimizes memory, avoids slow network freezes, and downsamples graphics for smooth operation on 512MB-1GB TV sticks.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
-            ),
-            shape = ListItemDefaults.shape(shape = MetFlixCardShape)
-        )
+                },
+                headlineContent = {
+                    Text(
+                        text = "Performance Mode (Low-RAM Optimization)",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Optimizes memory, avoids slow network freezes, and downsamples graphics for smooth operation on 512MB-1GB TV sticks.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                ),
+                shape = ListItemDefaults.shape(shape = MetFlixCardShape)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         // Granular Option: Live TMDB Online Metadata
-        ListItem(
-            selected = false,
-            onClick = { viewModel.toggleTmdb(!tmdbEnabled) },
-            trailingContent = {
-                Switch(
-                    checked = tmdbEnabled,
-                    onCheckedChange = { viewModel.toggleTmdb(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedTrackColor = MaterialTheme.colorScheme.primary
+        item {
+            ListItem(
+                selected = false,
+                onClick = { viewModel.toggleTmdb(!tmdbEnabled) },
+                trailingContent = {
+                    Switch(
+                        checked = tmdbEnabled,
+                        onCheckedChange = { viewModel.toggleTmdb(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primaryContainer,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = "Live TMDB Network Metadata",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = {
-                Text(
-                    text = "Fetches real-time movies, cast, and trending data from TMDB online. Disable if your network hangs or blocks TMDB.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
-            ),
-            shape = ListItemDefaults.shape(shape = MetFlixCardShape)
-        )
+                },
+                headlineContent = {
+                    Text(
+                        text = "Live TMDB Network Metadata",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Fetches real-time movies, cast, and trending data from TMDB online. Disable if your network hangs or blocks TMDB.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                ),
+                shape = ListItemDefaults.shape(shape = MetFlixCardShape)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         // Granular Option: High Definition 32-bit Graphics
-        ListItem(
-            selected = false,
-            onClick = { viewModel.toggleHighQualityImages(!highQualityImages) },
-            trailingContent = {
-                Switch(
-                    checked = highQualityImages,
-                    onCheckedChange = { viewModel.toggleHighQualityImages(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedTrackColor = MaterialTheme.colorScheme.primary
+        item {
+            ListItem(
+                selected = false,
+                onClick = { viewModel.toggleHighQualityImages(!highQualityImages) },
+                trailingContent = {
+                    Switch(
+                        checked = highQualityImages,
+                        onCheckedChange = { viewModel.toggleHighQualityImages(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primaryContainer,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = "High-Definition Graphics (ARGB_8888)",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = {
-                Text(
-                    text = "Decodes posters and backdrops in full 32-bit color. For low-spec TVs, keep disabled to use memory-efficient 16-bit RGB_565.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
-            ),
-            shape = ListItemDefaults.shape(shape = MetFlixCardShape)
-        )
+                },
+                headlineContent = {
+                    Text(
+                        text = "High-Definition Graphics (ARGB_8888)",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Decodes posters and backdrops in full 32-bit color. For low-spec TVs, keep disabled to use memory-efficient 16-bit RGB_565.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                ),
+                shape = ListItemDefaults.shape(shape = MetFlixCardShape)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         // Granular Option: Smooth Navigation Mode
-        ListItem(
-            selected = false,
-            onClick = { viewModel.toggleReduceAnimations(!reduceAnimations) },
-            trailingContent = {
-                Switch(
-                    checked = reduceAnimations,
-                    onCheckedChange = { viewModel.toggleReduceAnimations(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedTrackColor = MaterialTheme.colorScheme.primary
+        item {
+            ListItem(
+                selected = false,
+                onClick = { viewModel.toggleReduceAnimations(!reduceAnimations) },
+                trailingContent = {
+                    Switch(
+                        checked = reduceAnimations,
+                        onCheckedChange = { viewModel.toggleReduceAnimations(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primaryContainer,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = "Smooth Navigation Mode",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = {
-                Text(
-                    text = "Reduces heavy layout and scroll animations to keep D-pad navigation instant and responsive.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
-            ),
-            shape = ListItemDefaults.shape(shape = MetFlixCardShape)
-        )
+                },
+                headlineContent = {
+                    Text(
+                        text = "Smooth Navigation Mode",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Reduces heavy layout and scroll animations to keep D-pad navigation instant and responsive.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                ),
+                shape = ListItemDefaults.shape(shape = MetFlixCardShape)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         // Memory Purge / Cache Clear Action
-        ListItem(
-            selected = false,
-            onClick = {
-                viewModel.clearCache()
-                Toast.makeText(context, "Memory and Image Cache Purged", Toast.LENGTH_SHORT).show()
-            },
-            trailingContent = {
-                Icon(
-                    imageVector = Icons.Default.CleaningServices,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = "Purge Memory & Cache",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = {
-                Text(
-                    text = "Frees image bitmap memory and resets network circuits immediately.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
-            ),
-            shape = ListItemDefaults.shape(shape = MetFlixCardShape)
-        )
+        item {
+            ListItem(
+                selected = false,
+                onClick = {
+                    viewModel.clearCache()
+                    Toast.makeText(context, "Memory and Image Cache Purged", Toast.LENGTH_SHORT).show()
+                },
+                trailingContent = {
+                    Icon(
+                        imageVector = Icons.Default.CleaningServices,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                headlineContent = {
+                    Text(
+                        text = "Purge Memory & Cache",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Frees image bitmap memory and resets network circuits immediately.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                ),
+                shape = ListItemDefaults.shape(shape = MetFlixCardShape)
+            )
+        }
     }
 }

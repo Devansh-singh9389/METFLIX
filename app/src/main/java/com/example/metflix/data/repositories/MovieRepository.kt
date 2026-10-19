@@ -30,7 +30,7 @@ interface MovieRepository {
     fun getNowPlayingMovies(): Flow<MovieList>
     fun getMovieCategories(): Flow<MovieCategoryList>
     suspend fun getMovieCategoryDetails(categoryId: String): MovieCategoryDetails
-    suspend fun getMovieDetails(movieId: String): MovieDetails
+    suspend fun getMovieDetails(movieId: String, isTvShow: Boolean? = null): MovieDetails
     suspend fun getTvSeasonEpisodes(seriesId: String, seasonNumber: Int): List<TvEpisode>
     suspend fun searchMovies(query: String): MovieList
     fun getMoviesWithLongThumbnail(): Flow<MovieList>
@@ -45,6 +45,10 @@ interface MovieRepository {
     fun getDisneyMovies(): Flow<MovieList>
     fun getTVShows(): Flow<MovieList>
     fun getBingeWatchDramas(): Flow<MovieList>
+    fun getTrendingAnime(): Flow<MovieList>
+    fun getAnimeMovies(): Flow<MovieList>
+    fun getCartoons(): Flow<MovieList>
+    fun getTopRatedAnime(): Flow<MovieList>
     fun getFavouriteMovies(): Flow<MovieList>
     suspend fun refreshAllCatalogs(): Boolean
 }

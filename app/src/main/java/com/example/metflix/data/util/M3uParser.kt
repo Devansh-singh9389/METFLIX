@@ -6,6 +6,11 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.util.Locale
 
+data class M3uPlaylist(
+    val channels: List<LiveChannel>,
+    val epgUrl: String? = null
+)
+
 object M3uParser {
 
     private val TVG_ID_REGEX = Regex("""tvg-id="([^"]*)"""", RegexOption.IGNORE_CASE)
@@ -14,27 +19,39 @@ object M3uParser {
     private val GROUP_TITLE_REGEX = Regex("""group-title="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val TVG_COUNTRY_REGEX = Regex("""tvg-country="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val TVG_LANGUAGE_REGEX = Regex("""tvg-language="([^"]*)"""", RegexOption.IGNORE_CASE)
+    private val TVG_CHNO_REGEX = Regex("""tvg-chno="([0-9]+)"""", RegexOption.IGNORE_CASE)
+    private val URL_TVG_REGEX = Regex("""(?:url-tvg|x-tvg-url)="([^"]*)"""", RegexOption.IGNORE_CASE)
 
-    fun parse(inputStream: InputStream, defaultCategory: String = "General", maxChannels: Int = 3500): List<LiveChannel> {
+    fun parsePlaylist(inputStream: InputStream, defaultCategory: String = "General", maxChannels: Int = 3500): M3uPlaylist {
         val reader = BufferedReader(InputStreamReader(inputStream))
         return parseReader(reader, defaultCategory, maxChannels)
     }
 
-    fun parse(content: String, defaultCategory: String = "General", maxChannels: Int = 3500): List<LiveChannel> {
+    fun parsePlaylist(content: String, defaultCategory: String = "General", maxChannels: Int = 3500): M3uPlaylist {
         val reader = BufferedReader(content.reader())
         return parseReader(reader, defaultCategory, maxChannels)
     }
 
-    private fun parseReader(reader: BufferedReader, defaultCategory: String, maxChannels: Int = 3500): List<LiveChannel> {
+    fun parse(inputStream: InputStream, defaultCategory: String = "General", maxChannels: Int = 3500): List<LiveChannel> {
+        return parsePlaylist(inputStream, defaultCategory, maxChannels).channels
+    }
+
+    fun parse(content: String, defaultCategory: String = "General", maxChannels: Int = 3500): List<LiveChannel> {
+        return parsePlaylist(content, defaultCategory, maxChannels).channels
+    }
+
+    private fun parseReader(reader: BufferedReader, defaultCategory: String, maxChannels: Int = 3500): M3uPlaylist {
         val channels = mutableListOf<LiveChannel>()
+        var headerEpgUrl: String? = null
         var currentTvgId: String? = null
         var currentTvgName: String? = null
+        var currentTvgChno: Int? = null
         var currentLogo: String? = null
         var currentGroup: String? = null
         var currentCountry: String? = null
         var currentLanguage: String? = null
         var currentName: String? = null
-        var channelCounter = 101
+        var channelCounter = 1
 
         reader.useLines { lines ->
             for (rawLine in lines) {
@@ -42,9 +59,14 @@ object M3uParser {
                 val line = rawLine.trim()
                 if (line.isEmpty()) continue
 
-                if (line.startsWith("#EXTINF:", ignoreCase = true)) {
+                if (line.startsWith("#EXTM3U", ignoreCase = true)) {
+                    if (headerEpgUrl == null) {
+                        headerEpgUrl = URL_TVG_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
+                    }
+                } else if (line.startsWith("#EXTINF:", ignoreCase = true)) {
                     currentTvgId = TVG_ID_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
                     currentTvgName = TVG_NAME_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
+                    currentTvgChno = TVG_CHNO_REGEX.find(line)?.groupValues?.get(1)?.toIntOrNull()
                     currentLogo = TVG_LOGO_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
                     currentGroup = GROUP_TITLE_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
                     currentCountry = TVG_COUNTRY_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
@@ -62,40 +84,43 @@ object M3uParser {
 
                     // Ignore broken or unsupported streams
                     if (streamUrl.startsWith("http://", ignoreCase = true) || streamUrl.startsWith("https://", ignoreCase = true)) {
-                        val category = normalizeCategory(currentGroup ?: defaultCategory)
-                        val id = generateId(currentTvgId, name, streamUrl)
-                        val cleanName = cleanChannelName(name)
-
-                        // Detect DRM from URL or tags
+                        // Detect unconfigured DRM streams (e.g. Widevine DASH without license config)
                         val isDrm = streamUrl.contains(".mpd", ignoreCase = true) &&
                                 (streamUrl.contains("widevine", ignoreCase = true) || streamUrl.contains("license", ignoreCase = true))
-                        val requiredSecurity = if (isDrm) "L3" else "NONE"
-                        val isFta = !isDrm
 
-                        channels.add(
-                            LiveChannel(
-                                id = id,
-                                name = cleanName,
-                                channelNumber = channelCounter++,
-                                streamUrl = streamUrl,
-                                logoUrl = currentLogo,
-                                category = category,
-                                country = currentCountry,
-                                language = currentLanguage,
-                                currentProgram = "Live Broadcast",
-                                programDescription = "Streaming live on $cleanName ($category)",
-                                isFavorite = false,
-                                epgId = currentTvgId,
-                                drmScheme = if (isDrm) "widevine" else null,
-                                requiredSecurityLevel = requiredSecurity,
-                                isFta = isFta
+                        // ExoPlayer cannot play Widevine DRM streams without a license server URL/key; skip to avoid 100% playback failures
+                        if (!isDrm) {
+                            val category = normalizeCategory(currentGroup ?: defaultCategory)
+                            val id = generateId(currentTvgId, name, streamUrl)
+                            val cleanName = cleanChannelName(name)
+                            val channelNum = currentTvgChno ?: (channelCounter++)
+
+                            channels.add(
+                                LiveChannel(
+                                    id = id,
+                                    name = cleanName,
+                                    channelNumber = channelNum,
+                                    streamUrl = streamUrl,
+                                    logoUrl = currentLogo,
+                                    category = category,
+                                    country = currentCountry,
+                                    language = currentLanguage,
+                                    currentProgram = "Live Broadcast",
+                                    programDescription = "Streaming live on $cleanName ($category)",
+                                    isFavorite = false,
+                                    epgId = currentTvgId,
+                                    drmScheme = null,
+                                    requiredSecurityLevel = "NONE",
+                                    isFta = true
+                                )
                             )
-                        )
+                        }
                     }
 
                     // Reset state for next channel entry
                     currentTvgId = null
                     currentTvgName = null
+                    currentTvgChno = null
                     currentLogo = null
                     currentGroup = null
                     currentCountry = null
@@ -105,7 +130,7 @@ object M3uParser {
             }
         }
 
-        return channels
+        return M3uPlaylist(channels, headerEpgUrl)
     }
 
     private fun normalizeCategory(group: String): String {
@@ -139,10 +164,12 @@ object M3uParser {
     }
 
     private fun generateId(tvgId: String?, name: String, streamUrl: String): String {
-        if (!tvgId.isNullOrBlank()) {
-            return tvgId.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9_]"), "_")
+        val urlHash = Integer.toHexString(streamUrl.hashCode())
+        val base = if (!tvgId.isNullOrBlank()) {
+            tvgId.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9_]"), "_")
+        } else {
+            name.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9_]"), "_")
         }
-        val seed = "$name-$streamUrl"
-        return "ch_" + Integer.toHexString(seed.hashCode())
+        return "${base}_$urlHash"
     }
 }

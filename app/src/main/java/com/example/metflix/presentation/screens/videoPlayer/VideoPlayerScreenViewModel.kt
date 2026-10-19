@@ -21,13 +21,16 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.entities.MovieDetails
+import com.example.metflix.data.network.alldebrid.AllDebridClient
 import com.example.metflix.data.network.resolvers.ResolvedStream
 import com.example.metflix.data.network.resolvers.StreamResolverRepository
 import com.example.metflix.data.network.resolvers.StreamServer
 import com.example.metflix.data.repositories.MovieRepository
+import com.example.metflix.data.settings.DebridPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +43,9 @@ import kotlinx.coroutines.launch
 class VideoPlayerScreenViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: MovieRepository,
-    private val streamResolverRepository: StreamResolverRepository
+    private val streamResolverRepository: StreamResolverRepository,
+    private val debridPreferences: DebridPreferences,
+    private val allDebridClient: AllDebridClient
 ) : ViewModel() {
 
     private val _availableServers = MutableStateFlow<List<StreamServer>>(streamResolverRepository.availableServers)
@@ -51,6 +56,9 @@ class VideoPlayerScreenViewModel @Inject constructor(
 
     private val _isResolvingStream = MutableStateFlow(false)
     val isResolvingStream: StateFlow<Boolean> = _isResolvingStream.asStateFlow()
+
+    private val _resolutionMessage = MutableStateFlow("Connecting to stream...")
+    val resolutionMessage: StateFlow<String> = _resolutionMessage.asStateFlow()
 
     private val _resolvedStream = MutableStateFlow<ResolvedStream?>(null)
     val resolvedStream: StateFlow<ResolvedStream?> = _resolvedStream.asStateFlow()
@@ -69,6 +77,13 @@ class VideoPlayerScreenViewModel @Inject constructor(
 
     private val movieIdFlow = savedStateHandle.getStateFlow<String?>(VideoPlayerScreen.MovieIdBundleKey, null)
     private val movieDetailsFlow = MutableStateFlow<MovieDetails?>(null)
+    private val _showPlaybackSetupDialog = MutableStateFlow(false)
+    val showPlaybackSetupDialog: StateFlow<Boolean> = _showPlaybackSetupDialog.asStateFlow()
+
+    val playbackSource: StateFlow<String> = debridPreferences.playbackSource
+    val playbackQuality: StateFlow<String> = debridPreferences.playbackQuality
+    val playbackPreferHindi: StateFlow<Boolean> = debridPreferences.playbackPreferHindi
+
     private val isUserExplicitSelection = MutableStateFlow(false)
     private var raceJob: Job? = null
 
@@ -76,13 +91,15 @@ class VideoPlayerScreenViewModel @Inject constructor(
         viewModelScope.launch {
             movieIdFlow.collect { rawId ->
                 if (!rawId.isNullOrBlank()) {
-                    val parts = rawId.split(":")
+                    val isTvPrefix = rawId.startsWith("tv:")
+                    val stripped = if (isTvPrefix) rawId.removePrefix("tv:") else rawId
+                    val parts = stripped.split(":")
                     val mediaId = parts[0]
                     val parsedSeason = parts.getOrNull(1)?.toIntOrNull() ?: 1
                     val parsedEpisode = parts.getOrNull(2)?.toIntOrNull() ?: 1
 
-                    var details = repository.getMovieDetails(movieId = mediaId)
-                    val isTv = details.isTvShow
+                    var details = repository.getMovieDetails(movieId = mediaId, isTvShow = if (isTvPrefix) true else null)
+                    val isTv = details.isTvShow || isTvPrefix
 
                     _isTvShow.value = isTv
                     _seasonNumber.value = parsedSeason
@@ -110,22 +127,65 @@ class VideoPlayerScreenViewModel @Inject constructor(
                     }
 
                     movieDetailsFlow.value = details
-                    startServerRace(
-                        details = details,
-                        isTv = isTv,
-                        season = parsedSeason,
-                        episode = parsedEpisode
-                    )
+
+                    val hasDebridKey = debridPreferences.hasValidKey()
+                    if (hasDebridKey) {
+                        // Present Playback Setup dialog to let user choose Debrid vs Free, Quality & Hindi
+                        _showPlaybackSetupDialog.value = true
+                    } else {
+                        _showPlaybackSetupDialog.value = false
+                        startServerRace(
+                            details = details,
+                            isTv = isTv,
+                            season = parsedSeason,
+                            episode = parsedEpisode,
+                            forceNonDebrid = true,
+                            preferHindi = debridPreferences.playbackPreferHindi.value,
+                            preferredQuality = debridPreferences.playbackQuality.value
+                        )
+                    }
                 }
             }
         }
     }
 
-    private fun startServerRace(details: MovieDetails, isTv: Boolean, season: Int, episode: Int) {
+    fun confirmPlaybackSetup(source: String, quality: String, preferHindi: Boolean) {
+        _showPlaybackSetupDialog.value = false
+        debridPreferences.savePlaybackPreferences(source, quality, preferHindi)
+        val details = movieDetailsFlow.value ?: return
+        startServerRace(
+            details = details,
+            isTv = _isTvShow.value,
+            season = _seasonNumber.value,
+            episode = _episodeNumber.value,
+            forceNonDebrid = (source == "free"),
+            preferHindi = preferHindi,
+            preferredQuality = quality
+        )
+    }
+
+    fun dismissPlaybackSetup() {
+        _showPlaybackSetupDialog.value = false
+    }
+
+    private fun startServerRace(
+        details: MovieDetails,
+        isTv: Boolean,
+        season: Int,
+        episode: Int,
+        forceNonDebrid: Boolean = (debridPreferences.playbackSource.value == "free"),
+        preferHindi: Boolean = debridPreferences.playbackPreferHindi.value,
+        preferredQuality: String = debridPreferences.playbackQuality.value
+    ) {
         raceJob?.cancel()
         raceJob = viewModelScope.launch {
             _isResolvingStream.value = true
             isUserExplicitSelection.value = false
+            _resolutionMessage.value = if (!forceNonDebrid && debridPreferences.hasVerifiedPremiumDebrid()) {
+                "Checking Premium ${debridPreferences.selectedProvider.value.displayName} cache..."
+            } else {
+                "Connecting to stream..."
+            }
 
             streamResolverRepository.raceAndRankStreams(
                 tmdbId = details.id,
@@ -134,7 +194,11 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 originalLanguage = details.originalLanguage,
                 isTvShow = isTv,
                 season = season,
-                episode = episode
+                episode = episode,
+                imdbId = details.imdbId,
+                forceNonDebrid = forceNonDebrid,
+                preferHindi = preferHindi,
+                preferredQuality = preferredQuality
             ).collect { result ->
                 _availableServers.value = result.rankedServers
 
@@ -142,6 +206,13 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 if (!isUserExplicitSelection.value && result.bestStream != null) {
                     _selectedServer.value = result.bestStream.server
                     _resolvedStream.value = result.bestStream
+                    _resolutionMessage.value = if (result.bestStream.server.id == "alldebrid") {
+                        "Connected · Premium Stream"
+                    } else {
+                        "Playing · ${result.bestStream.server.name}"
+                    }
+                } else if (!isUserExplicitSelection.value && result.bestStream == null && result.isFinal) {
+                    _resolutionMessage.value = "Premium stream uncached. Please select an alternative source."
                 }
 
                 if (result.isFinal) {
@@ -154,6 +225,7 @@ class VideoPlayerScreenViewModel @Inject constructor(
     private fun resolveCurrentStream(details: MovieDetails, server: StreamServer) {
         viewModelScope.launch {
             _isResolvingStream.value = true
+            _resolutionMessage.value = "Switching to ${server.name}..."
             val resolved = streamResolverRepository.resolveMovieStream(
                 tmdbId = details.id,
                 movieTitle = details.name,
@@ -161,9 +233,11 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 server = server,
                 isTvShow = _isTvShow.value,
                 season = _seasonNumber.value,
-                episode = _episodeNumber.value
+                episode = _episodeNumber.value,
+                imdbId = details.imdbId
             )
             _resolvedStream.value = resolved
+            _resolutionMessage.value = "Playing · ${server.name}"
             _isResolvingStream.value = false
         }
     }
@@ -196,16 +270,85 @@ class VideoPlayerScreenViewModel @Inject constructor(
         }
     }
 
+    val debridApiKey: StateFlow<String> = debridPreferences.apiKey
+    val isDebridEnabled: StateFlow<Boolean> = debridPreferences.isEnabled
+    val debridUserInfo: StateFlow<String> = debridPreferences.userInfo
+    val debridProvider: StateFlow<com.example.metflix.data.settings.DebridProviderType> = debridPreferences.selectedProvider
+
+    fun selectDebridProvider(provider: com.example.metflix.data.settings.DebridProviderType) {
+        debridPreferences.selectProvider(provider)
+        viewModelScope.launch {
+            if (debridPreferences.apiKey.value.isNotBlank()) {
+                val status = allDebridClient.checkStatus(provider, debridPreferences.apiKey.value)
+                debridPreferences.saveUserInfo(status.message)
+                if (status.isValid) {
+                    debridPreferences.saveVerificationStatus(
+                        isVerified = true,
+                        isPremium = status.isPremium,
+                        email = status.username,
+                        days = status.daysRemaining,
+                        plan = if (status.isPremium) "Premium" else "Free"
+                    )
+                } else {
+                    debridPreferences.clearVerification()
+                }
+            }
+            selectServer(_selectedServer.value)
+        }
+    }
+
+    fun saveDebridApiKey(key: String) {
+        debridPreferences.saveApiKey(key)
+        viewModelScope.launch {
+            if (key.isBlank()) {
+                debridPreferences.saveUserInfo("")
+                debridPreferences.clearVerification()
+                return@launch
+            }
+            val status = allDebridClient.checkStatus(debridPreferences.selectedProvider.value, key)
+            debridPreferences.saveUserInfo(status.message)
+            if (status.isValid) {
+                debridPreferences.saveVerificationStatus(
+                    isVerified = true,
+                    isPremium = status.isPremium,
+                    email = status.username,
+                    days = status.daysRemaining,
+                    plan = if (status.isPremium) "Premium" else "Free"
+                )
+            } else {
+                debridPreferences.clearVerification()
+            }
+            selectServer(_selectedServer.value)
+        }
+    }
+
+    fun toggleDebrid(enabled: Boolean) {
+        debridPreferences.setEnabled(enabled)
+        selectServer(_selectedServer.value)
+    }
+
     val uiState: StateFlow<VideoPlayerScreenUiState> = combine(
         movieDetailsFlow,
         _resolvedStream,
         _selectedServer,
         _isResolvingStream,
-        _availableServers
-    ) { details, resolved, currentServer, resolving, servers ->
+        _availableServers,
+        _resolutionMessage
+    ) { details, resolved, currentServer, resolving, servers, resMsg ->
         if (details == null) {
             VideoPlayerScreenUiState.Loading
         } else {
+            val isVerified = debridPreferences.hasVerifiedPremiumDebrid()
+            val debridStatus = if (isVerified) {
+                val provider = debridPreferences.selectedProvider.value.displayName
+                val plan = debridPreferences.planName.value.ifBlank { "Premium" }
+                "Connected · $provider ($plan)"
+            } else if (debridPreferences.hasValidKey()) {
+                "Pending Verification"
+            } else {
+                "Not Connected"
+            }
+
             VideoPlayerScreenUiState.Done(
                 movieDetails = details,
                 resolvedStream = resolved,
@@ -215,7 +358,10 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 isTvShow = _isTvShow.value,
                 seasonNumber = _seasonNumber.value,
                 episodeNumber = _episodeNumber.value,
-                episodeTitle = _episodeTitle.value
+                episodeTitle = _episodeTitle.value,
+                debridStatus = debridStatus,
+                isDebridActive = isVerified,
+                resolutionMessage = resMsg
             )
         }
     }.stateIn(
@@ -238,6 +384,27 @@ sealed class VideoPlayerScreenUiState {
         val isTvShow: Boolean = false,
         val seasonNumber: Int = 1,
         val episodeNumber: Int = 1,
-        val episodeTitle: String = ""
+        val episodeTitle: String = "",
+        val debridStatus: String = "",
+        val isDebridActive: Boolean = false,
+        val resolutionMessage: String = ""
     ) : VideoPlayerScreenUiState()
+}
+
+private fun <T1, T2, T3, T4, T5, T6, R> combine(
+    flow1: Flow<T1>,
+    flow2: Flow<T2>,
+    flow3: Flow<T3>,
+    flow4: Flow<T4>,
+    flow5: Flow<T5>,
+    flow6: Flow<T6>,
+    transform: suspend (T1, T2, T3, T4, T5, T6) -> R
+): Flow<R> = combine(
+    flow1,
+    flow2,
+    flow3,
+    flow4,
+    combine(flow5, flow6) { f5, f6 -> Pair(f5, f6) }
+) { f1, f2, f3, f4, f56 ->
+    transform(f1, f2, f3, f4, f56.first, f56.second)
 }

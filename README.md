@@ -52,7 +52,12 @@ A modern, high-performance Android TV streaming and Live TV application built fr
   - **Playback Adjustments:** Speed adjustment (0.5x – 2.0x), Aspect Ratio / Content Scale modes (Fit, Crop, Fill, 16:9, 4:3), and Sleep Timer (15m – 120m).
   - **Real-Time Stream Diagnostics:** Live stats overlay displaying buffer health (ms) and video bitrate (Mbps).
 
-### 6. 🎯 Android TV UI/UX Optimization
+### 6. 🎌 Dedicated Anime & Animation Ecosystem (Sub & Dub)
+* **Comprehensive Anime Discovery:** Native tab indexing Trending Anime Series, Popular Anime Movies (Studio Ghibli, Makoto Shinkai, *Doraemon Movies*), Hindi Dubbed Cartoons (*Doraemon*, *Shinchan*, *Naruto*, *Dragon Ball*), and Top Rated Anime.
+* **Otaku & Prism Architecture:** Dedicated multi-audio anime scraper (`AnimeScraper.kt`) resolving master `.m3u8` manifests with embedded Japanese, Hindi, and English audio channels (`play.zephyrix.org`, `megacloud`, `animeworld`).
+* **Multi-Season & Episode Navigation:** First-class support for series with interactive Season tabs (Season 1, 2, 3...) and scrollable Episode cards with previews, duration, and direct single-click playback.
+
+### 7. 🎯 Android TV UI/UX Optimization
 * **10-Foot Focus Navigation:** Custom D-pad event interceptors, focus memory requesters, and smooth scrolling for television remotes.
 * **Low-Memory Optimization:** Engineered to run smoothly on budget Android TV hardware (MediaTek MT5862 / 512MB RAM) by preventing frame drops, avoiding heavy background thread allocations, and leveraging memory-conscious image caching.
 * **Immersive TV Catalog:** Hero banner carousel, Top 10 rankings, personalized watchlist, category chips, and detailed movie/show info with trailer previews.

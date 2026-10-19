@@ -17,6 +17,7 @@
 package com.example.metflix.presentation.screens.profile
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
@@ -31,6 +32,7 @@ enum class ProfileScreens(
     private val title: String? = null,
 ) {
     Accounts(Icons.Default.Person),
+    Debrid(title = "AllDebrid Cloud", icon = Icons.Default.Cloud),
     Performance(title = "Performance", icon = Icons.Default.Speed),
     About(Icons.Default.Info),
     Subtitles(Icons.Default.Subtitles),

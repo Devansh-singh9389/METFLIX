@@ -46,14 +46,17 @@ class MovieDetailsScreenViewModel @Inject constructor(
     }
 
     private fun loadDetails() {
-        val id = movieId
-        if (id == null) {
+        val rawId = movieId
+        if (rawId == null) {
             _uiState.value = MovieDetailsScreenUiState.Error
             return
         }
+        val isExplicitTv = rawId.startsWith("tv:")
+        val cleanId = if (isExplicitTv) rawId.removePrefix("tv:") else rawId
+
         viewModelScope.launch {
             try {
-                val details = repository.getMovieDetails(movieId = id)
+                val details = repository.getMovieDetails(movieId = cleanId, isTvShow = if (isExplicitTv) true else null)
                 val initialSeason = details.seasons.firstOrNull()?.seasonNumber ?: 1
                 _selectedSeason.value = initialSeason
                 _uiState.value = MovieDetailsScreenUiState.Done(movieDetails = details)

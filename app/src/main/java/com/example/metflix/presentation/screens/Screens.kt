@@ -34,6 +34,7 @@ enum class Screens(
     Home(isTabItem = true),
     Movies(isTabItem = true),
     Shows(isTabItem = true),
+    Anime(isTabItem = true, tabTitle = "Anime"),
     LiveTv(isTabItem = true, tabTitle = "Live TV"),
     Categories(isTabItem = true),
     Favourites(isTabItem = true),

@@ -148,5 +148,14 @@ class PerformancePreferences @Inject constructor(
 
     private fun syncConfig() {
         TmdbConfig.USE_TMDB = _tmdbEnabled.value
+        val isHighQuality = _highQualityImages.value && !_lowSpecMode.value
+        if (isHighQuality) {
+            TmdbConfig.IMAGE_BASE_URL_POSTER = "https://image.tmdb.org/t/p/w500"
+            TmdbConfig.IMAGE_BASE_URL_BACKDROP = "https://image.tmdb.org/t/p/w780"
+        } else {
+            // Low-spec / TV-optimized: w342 for posters and w300 for backdrops saves ~65% GPU memory and speeds up decode
+            TmdbConfig.IMAGE_BASE_URL_POSTER = "https://image.tmdb.org/t/p/w342"
+            TmdbConfig.IMAGE_BASE_URL_BACKDROP = "https://image.tmdb.org/t/p/w300"
+        }
     }
 }
