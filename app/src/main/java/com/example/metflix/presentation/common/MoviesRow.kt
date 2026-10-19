@@ -25,12 +25,17 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -82,6 +87,24 @@ fun MoviesRow(
     onMovieSelected: (movie: Movie) -> Unit = {}
 ) {
     val lazyRow = remember { FocusRequester() }
+    val lazyListState = rememberLazyListState()
+    var lastLoadRequestSize by remember { mutableStateOf(-1) }
+
+    LaunchedEffect(lazyListState, onLoadMore) {
+        if (onLoadMore == null) return@LaunchedEffect
+        snapshotFlow {
+            lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+        }.distinctUntilChanged().collect { lastVisibleIndex ->
+            if (
+                lastVisibleIndex != null &&
+                lastVisibleIndex >= movieList.size - 4 &&
+                lastLoadRequestSize != movieList.size
+            ) {
+                lastLoadRequestSize = movieList.size
+                onLoadMore()
+            }
+        }
+    }
 
     Column(
         modifier = modifier.focusGroup()
@@ -103,18 +126,14 @@ fun MoviesRow(
             horizontalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier
                 .focusRequester(lazyRow)
-                .focusRestorer()
+                .focusRestorer(),
+            state = lazyListState
         ) {
             itemsIndexed(
                 movieList,
                 key = { _, movie -> movie.id },
                 contentType = { _, _ -> "movie_item" }
             ) { index, movie ->
-                if (onLoadMore != null && index == movieList.size - 1) {
-                    androidx.compose.runtime.LaunchedEffect(movieList.size) {
-                        onLoadMore()
-                    }
-                }
                 MoviesRowItem(
                     modifier = Modifier.weight(1f),
                     index = index,

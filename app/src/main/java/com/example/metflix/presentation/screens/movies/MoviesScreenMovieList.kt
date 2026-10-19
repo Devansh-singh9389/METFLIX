@@ -104,8 +104,7 @@ private fun MovieListItem(
             modifier = modifier
                 .width(itemWidth)
                 .aspectRatio(16 / 9f)
-                .onFocusChanged { isFocused = it.isFocused || it.hasFocus }
-                .graphicsLayer { },
+                .onFocusChanged { isFocused = it.isFocused || it.hasFocus },
             scale = CardDefaults.scale(focusedScale = 1f),
             border = CardDefaults.border(
                 focusedBorder = Border(
@@ -131,7 +130,7 @@ private fun MovieListItem(
                 val imageRequest = remember(movie.posterUri, isHighQuality) {
                     ImageRequest.Builder(context)
                         .data(movie.posterUri)
-                        .size(if (isHighQuality) 760 else 380, if (isHighQuality) 428 else 214)
+                        .size(if (isHighQuality) 600 else 380, if (isHighQuality) 338 else 214)
                         .bitmapConfig(if (isHighQuality) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565)
                         .allowRgb565(!isHighQuality)
                         .precision(Precision.INEXACT)

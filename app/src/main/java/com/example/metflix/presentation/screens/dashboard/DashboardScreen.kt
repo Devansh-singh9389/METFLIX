@@ -18,6 +18,7 @@ package com.example.metflix.presentation.screens.dashboard
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -88,6 +89,7 @@ fun DashboardScreen(
     openCategoryMovieList: (categoryId: String) -> Unit,
     openMovieDetailsScreen: (movieId: String) -> Unit,
     openVideoPlayer: (Movie) -> Unit,
+    openCachedPlayback: (String) -> Unit,
     openLiveTvPlayer: (channelId: String) -> Unit,
     isComingBackFromDifferentScreen: Boolean,
     resetIsComingBackFromDifferentScreen: () -> Unit,
@@ -98,6 +100,7 @@ fun DashboardScreen(
 
     var isTopBarVisible by remember { mutableStateOf(true) }
     var isTopBarFocused by remember { mutableStateOf(false) }
+    var isTabChanging by remember { mutableStateOf(false) }
 
     var currentDestination: String? by remember { mutableStateOf(null) }
     val currentTopBarSelectedTabIndex by remember(currentDestination) {
@@ -119,6 +122,12 @@ fun DashboardScreen(
 
         onDispose {
             navController.removeOnDestinationChangedListener(listener)
+        }
+    }
+
+    LaunchedEffect(currentDestination) {
+        if (currentDestination != null) {
+            isTabChanging = false
         }
     }
 
@@ -147,7 +156,7 @@ fun DashboardScreen(
         // Used to show/hide DashboardTopBar
         val topBarYOffsetPx by animateIntAsState(
             targetValue = if (isTopBarVisible) 0 else -topBarHeightPx,
-            animationSpec = tween(durationMillis = 150),
+            animationSpec = if (isTabChanging) snap() else tween(durationMillis = 150),
             label = "",
             finishedListener = {
                 if (it == -topBarHeightPx && isComingBackFromDifferentScreen) {
@@ -160,7 +169,7 @@ fun DashboardScreen(
         // Used to push down/pull up NavHost when DashboardTopBar is shown/hidden
         val navHostTopPaddingPx by animateIntAsState(
             targetValue = if (isTopBarVisible) topBarHeightPx else 0,
-            animationSpec = tween(durationMillis = 150),
+            animationSpec = if (isTabChanging) snap() else tween(durationMillis = 150),
             label = "",
         )
 
@@ -190,6 +199,7 @@ fun DashboardScreen(
             val targetRoute = screen()
             if (currentDestination != targetRoute) {
                 isTopBarVisible = true
+                isTabChanging = true
                 navController.navigate(targetRoute) {
                     popUpTo(navController.graph.findStartDestination().id) {
                         saveState = true
@@ -204,11 +214,14 @@ fun DashboardScreen(
             openCategoryMovieList = openCategoryMovieList,
             openMovieDetailsScreen = openMovieDetailsScreen,
             openVideoPlayer = openVideoPlayer,
+            openCachedPlayback = openCachedPlayback,
             openLiveTvPlayer = openLiveTvPlayer,
             updateTopBarVisibility = { isTopBarVisible = it },
             isTopBarVisible = isTopBarVisible,
             navController = navController,
-            modifier = Modifier.graphicsLayer { translationY = navHostTopPaddingPx.toFloat() },
+            modifier = Modifier.padding(
+                top = with(LocalDensity.current) { navHostTopPaddingPx.toDp() }
+            ),
         )
     }
 }
@@ -238,6 +251,7 @@ private fun Body(
     openCategoryMovieList: (categoryId: String) -> Unit,
     openMovieDetailsScreen: (movieId: String) -> Unit,
     openVideoPlayer: (Movie) -> Unit,
+    openCachedPlayback: (String) -> Unit,
     openLiveTvPlayer: (channelId: String) -> Unit,
     updateTopBarVisibility: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -251,7 +265,8 @@ private fun Body(
     ) {
         composable(Screens.Profile()) {
             ProfileScreen(
-                onPlayMovie = openVideoPlayer
+                onPlayMovie = openVideoPlayer,
+                onCachedPlaybackRequested = openCachedPlayback
             )
         }
         composable(Screens.Home()) {

@@ -27,6 +27,9 @@ class TorBoxClient @Inject constructor(
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 
+    private fun Request.Builder.authorized(apiKey: String): Request.Builder =
+        header("Authorization", "Bearer ${apiKey.trim()}")
+
     /**
      * Step 1 of Device Code Flow:
      * Request a new device code & user verification code to display on Android TV.
@@ -155,7 +158,7 @@ class TorBoxClient @Inject constructor(
         try {
             val req = Request.Builder()
                 .url("$BASE_URL/user/me")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
@@ -223,7 +226,7 @@ class TorBoxClient @Inject constructor(
         try {
             val req = Request.Builder()
                 .url("$BASE_URL/user/stats")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
@@ -270,7 +273,7 @@ class TorBoxClient @Inject constructor(
             val queryParams = hashes.joinToString("&") { "hash=$it" } + "&format=list&list_files=true"
             val req = Request.Builder()
                 .url("$BASE_URL/torrents/checkcached?$queryParams")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
@@ -383,7 +386,7 @@ class TorBoxClient @Inject constructor(
 
             val req = Request.Builder()
                 .url("$BASE_URL/torrents/createtorrent")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .post(formBody)
                 .build()
@@ -423,7 +426,7 @@ class TorBoxClient @Inject constructor(
         try {
             val req = Request.Builder()
                 .url("$BASE_URL/torrents/mylist?id=$torrentId&bypass_cache=true")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
@@ -459,13 +462,18 @@ class TorBoxClient @Inject constructor(
                     }
                 }
 
-                val rawProgress = obj.optDouble("progress", 1.0).toFloat()
-                val downloadState = obj.optString("download_state", if (obj.optBoolean("cached", true)) "cached" else "downloading")
+                val rawProgress = obj.optDouble("progress", 0.0).toFloat().let {
+                    if (it > 1f) it / 100f else it
+                }.coerceIn(0f, 1f)
+                val downloadState = obj.optString("download_state", "unknown")
+                val isReady = downloadState.equals("completed", true) ||
+                    downloadState.equals("cached", true) ||
+                    rawProgress >= 1f
 
                 TorBoxCachedItem(
                     id = obj.optInt("id", torrentId),
                     hash = hash,
-                    isCached = obj.optBoolean("cached", true) || downloadState == "completed" || downloadState == "cached",
+                    isCached = obj.optBoolean("cached", false) && isReady,
                     name = name,
                     size = size,
                     progress = rawProgress,
@@ -581,7 +589,7 @@ class TorBoxClient @Inject constructor(
             val fileParam = if (fileId != null && fileId >= 0) "&file_id=$fileId" else ""
             val req = Request.Builder()
                 .url("$BASE_URL/stream/createstream?id=$torrentId$fileParam&type=torrent")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
@@ -622,7 +630,7 @@ class TorBoxClient @Inject constructor(
         try {
             val req = Request.Builder()
                 .url("$BASE_URL/torrents/mylist")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
@@ -655,14 +663,19 @@ class TorBoxClient @Inject constructor(
                         }
                     }
 
-                    val rawProgress = obj.optDouble("progress", 1.0).toFloat()
-                    val downloadState = obj.optString("download_state", if (obj.optBoolean("cached", true)) "cached" else "downloading")
+                    val rawProgress = obj.optDouble("progress", 0.0).toFloat().let {
+                        if (it > 1f) it / 100f else it
+                    }.coerceIn(0f, 1f)
+                    val downloadState = obj.optString("download_state", "unknown")
+                    val isReady = downloadState.equals("completed", true) ||
+                        downloadState.equals("cached", true) ||
+                        rawProgress >= 1f
 
                     items.add(
                         TorBoxCachedItem(
                             id = obj.optInt("id", 0),
                             hash = hash,
-                            isCached = obj.optBoolean("cached", true),
+                            isCached = obj.optBoolean("cached", false) && isReady,
                             name = name,
                             size = size,
                             progress = rawProgress,
@@ -698,7 +711,7 @@ class TorBoxClient @Inject constructor(
 
             val req = Request.Builder()
                 .url("$BASE_URL/torrents/controltorrent")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("Content-Type", "application/json")
                 .header("User-Agent", USER_AGENT)
                 .post(requestBody)
@@ -726,7 +739,7 @@ class TorBoxClient @Inject constructor(
 
             val req = Request.Builder()
                 .url("$BASE_URL/torrents/controltorrent")
-                .header("Authorization", "Bearer $cleanKey")
+                .authorized(cleanKey)
                 .header("User-Agent", USER_AGENT)
                 .post(formBody)
                 .build()
@@ -745,4 +758,3 @@ class TorBoxClient @Inject constructor(
         }
     }
 }
-

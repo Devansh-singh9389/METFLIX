@@ -175,7 +175,6 @@ private fun JioTvChannelTimelineRow(
             modifier = Modifier
                 .width(200.dp)
                 .height(82.dp)
-                .graphicsLayer { }
                 .onFocusChanged {
                     if (it.isFocused) onChannelFocus()
                 },
@@ -303,8 +302,7 @@ private fun JioTvProgramBlock(
         onClick = onClick,
         modifier = Modifier
             .width(220.dp)
-            .height(82.dp)
-            .graphicsLayer { },
+            .height(82.dp),
         shape = CardDefaults.shape(RoundedCornerShape(6.dp)),
         border = CardDefaults.border(
             focusedBorder = Border(

@@ -81,7 +81,6 @@ fun JioTvChannelCard(
     Card(
         onClick = onClick,
         modifier = modifier
-            .graphicsLayer { }
             .onFocusChanged {
                 if (it.isFocused) onFocus()
             },

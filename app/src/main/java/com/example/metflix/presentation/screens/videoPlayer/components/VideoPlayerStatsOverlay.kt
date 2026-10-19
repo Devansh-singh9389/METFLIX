@@ -27,6 +27,8 @@ fun VideoPlayerStatsOverlay(
     audioInfo: String,
     subtitleInfo: String,
     playbackSpeed: String,
+    downloadSpeed: String,
+    dataUsed: String,
     bufferHealthMs: Long,
     currentPositionText: String,
     durationText: String,
@@ -62,6 +64,8 @@ fun VideoPlayerStatsOverlay(
             StatRow("Audio Track", audioInfo.ifBlank { "Standard Stereo" })
             StatRow("Subtitles", subtitleInfo.ifBlank { "Off" })
             StatRow("Buffer Health", "${bufferHealthMs} ms")
+            StatRow("Download Speed", downloadSpeed)
+            StatRow("Data Used", dataUsed)
             StatRow("Speed", playbackSpeed)
             StatRow("Position", "$currentPositionText / $durationText")
             StatRow("Player", "ExoPlayer (Media3 SurfaceView)")

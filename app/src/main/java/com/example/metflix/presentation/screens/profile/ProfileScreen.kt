@@ -84,7 +84,8 @@ import com.example.metflix.data.settings.SubtitlePreferences
 fun ProfileScreen(
     @FloatRange(from = 0.0, to = 1.0)
     sidebarWidthFraction: Float = 0.32f,
-    onPlayMovie: (Movie) -> Unit = {}
+    onPlayMovie: (Movie) -> Unit = {},
+    onCachedPlaybackRequested: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val languagePreferences = remember { LanguagePreferences(context) }
@@ -201,7 +202,9 @@ fun ProfileScreen(
                         onOpenPerformanceSettings = { selectedScreen = ProfileScreens.Performance },
                         onOpenDebridSettings = { selectedScreen = ProfileScreens.Debrid }
                     )
-                    ProfileScreens.Debrid -> DebridSection()
+                    ProfileScreens.Debrid -> DebridSection(
+                        onCachedPlaybackRequested = onCachedPlaybackRequested
+                    )
                     ProfileScreens.Performance -> PerformanceSection()
                     ProfileScreens.About -> AboutSection()
                     ProfileScreens.Subtitles -> SubtitlesSection(

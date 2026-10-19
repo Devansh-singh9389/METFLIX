@@ -31,6 +31,7 @@ import com.example.metflix.presentation.screens.categories.CategoryMovieListScre
 import com.example.metflix.presentation.screens.dashboard.DashboardScreen
 import com.example.metflix.presentation.screens.movies.MovieDetailsScreen
 import com.example.metflix.presentation.screens.videoPlayer.VideoPlayerScreen
+import com.example.metflix.presentation.screens.videoPlayer.CachedVideoPlayerScreen
 
 import com.example.metflix.presentation.screens.livetv.player.LiveTvPlayerScreen
 
@@ -112,6 +113,9 @@ fun App(
                     openVideoPlayer = { movie ->
                         navController.navigate(Screens.VideoPlayer.withArgs(movie.id))
                     },
+                    openCachedPlayback = { sessionId ->
+                        navController.navigate(Screens.CachedVideoPlayer.withArgs(sessionId))
+                    },
                     openLiveTvPlayer = { channelId ->
                         navController.navigate(
                             Screens.LiveTvPlayer.withArgs(android.net.Uri.encode(channelId))
@@ -149,6 +153,23 @@ fun App(
                 )
             ) {
                 LiveTvPlayerScreen(
+                    onBackPressed = {
+                        if (navController.navigateUp()) {
+                            isComingBackFromDifferentScreen = true
+                        }
+                    }
+                )
+            }
+            composable(
+                route = Screens.CachedVideoPlayer(),
+                arguments = listOf(
+                    navArgument("sessionId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                CachedVideoPlayerScreen(
+                    sessionId = backStackEntry.arguments?.getString("sessionId").orEmpty(),
                     onBackPressed = {
                         if (navController.navigateUp()) {
                             isComingBackFromDifferentScreen = true

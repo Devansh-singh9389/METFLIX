@@ -9,6 +9,9 @@ import com.example.metflix.data.network.torbox.TorBoxClient
 import com.example.metflix.data.network.torbox.TorBoxDeviceAuthUiState
 import com.example.metflix.data.network.torbox.TorBoxTokenResult
 import com.example.metflix.data.network.torbox.TorBoxUserStats
+import com.example.metflix.data.network.torbox.TorBoxCachedItem
+import com.example.metflix.data.repositories.CachedPlaybackSession
+import com.example.metflix.data.repositories.CachedPlaybackSessionStore
 import com.example.metflix.data.settings.DebridPreferences
 import com.example.metflix.data.settings.DebridProviderType
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +20,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -25,7 +30,8 @@ import javax.inject.Inject
 class DebridViewModel @Inject constructor(
     private val preferences: DebridPreferences,
     private val client: AllDebridClient,
-    private val torBoxClient: TorBoxClient
+    private val torBoxClient: TorBoxClient,
+    private val playbackSessionStore: CachedPlaybackSessionStore
 ) : ViewModel() {
 
     val selectedProvider: StateFlow<DebridProviderType> = preferences.selectedProvider
@@ -58,9 +64,14 @@ class DebridViewModel @Inject constructor(
 
     private val _isLoadingDownloads = MutableStateFlow(false)
     val isLoadingDownloads: StateFlow<Boolean> = _isLoadingDownloads.asStateFlow()
+    private val _cloudDownloadsError = MutableStateFlow<String?>(null)
+    val cloudDownloadsError: StateFlow<String?> = _cloudDownloadsError.asStateFlow()
+    private val _cachedPlaybackRequests = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val cachedPlaybackRequests: SharedFlow<String> = _cachedPlaybackRequests
 
     private var pollingJob: Job? = null
     private var validationJob: Job? = null
+    private var downloadsJob: Job? = null
 
     init {
         // Automatically validate account on load if key is present
@@ -72,6 +83,7 @@ class DebridViewModel @Inject constructor(
     fun selectProvider(provider: DebridProviderType) {
         cancelTorBoxDeviceAuth()
         validationJob?.cancel()
+        downloadsJob?.cancel()
         preferences.selectProvider(provider)
         _userStatus.value = null
         _torBoxStats.value = null
@@ -97,6 +109,7 @@ class DebridViewModel @Inject constructor(
     fun disconnect() {
         cancelTorBoxDeviceAuth()
         validationJob?.cancel()
+        downloadsJob?.cancel()
         preferences.clearApiKey()
         _userStatus.value = null
         _torBoxStats.value = null
@@ -243,16 +256,41 @@ class DebridViewModel @Inject constructor(
         val provider = preferences.selectedProvider.value
         if (currentKey.isBlank() || provider != DebridProviderType.TORBOX) return
 
-        viewModelScope.launch {
+        downloadsJob?.cancel()
+        downloadsJob = viewModelScope.launch {
             _isLoadingDownloads.value = true
+            _cloudDownloadsError.value = null
             try {
                 val list = torBoxClient.getUserTorrents(currentKey)
                 _cloudDownloads.value = list
             } catch (e: Exception) {
-                // Keep existing list on failure
+                _cloudDownloadsError.value = e.localizedMessage ?: "Unable to load TorBox cloud library"
             } finally {
                 _isLoadingDownloads.value = false
             }
+        }
+    }
+
+    fun playCloudTorrent(item: TorBoxCachedItem, fileId: Int? = null) {
+        if (!item.isCached && !item.downloadState.equals("completed", true) &&
+            !item.downloadState.equals("cached", true) && item.progress < 1f
+        ) return
+
+        viewModelScope.launch {
+            val url = getStreamUrl(item.id, fileId)
+            if (url == null) {
+                _cloudDownloadsError.value = "TorBox could not create a playable link for this file."
+                return@launch
+            }
+            val sessionId = playbackSessionStore.create(
+                CachedPlaybackSession(
+                    url = url,
+                    title = item.name.ifBlank { "TorBox download" },
+                    torrentId = item.id,
+                    fileId = fileId
+                )
+            )
+            _cachedPlaybackRequests.emit(sessionId)
         }
     }
 

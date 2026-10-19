@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -71,8 +72,10 @@ import com.example.metflix.presentation.theme.MetFlixCardShape
 
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.PlayArrow
 @Composable
 fun DebridSection(
+    onCachedPlaybackRequested: (String) -> Unit = {},
     viewModel: DebridViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -88,6 +91,12 @@ fun DebridSection(
     val keystoreError by viewModel.keystoreError.collectAsStateWithLifecycle()
     val cloudDownloads by viewModel.cloudDownloads.collectAsStateWithLifecycle()
     val isLoadingDownloads by viewModel.isLoadingDownloads.collectAsStateWithLifecycle()
+    val cloudDownloadsError by viewModel.cloudDownloadsError.collectAsStateWithLifecycle()
+    var fileSelectionItem by remember { mutableStateOf<com.example.metflix.data.network.torbox.TorBoxCachedItem?>(null) }
+
+    LaunchedEffect(viewModel) {
+        viewModel.cachedPlaybackRequests.collect { onCachedPlaybackRequested(it) }
+    }
 
     var isEditingKey by remember { mutableStateOf(false) }
     var isKeyVisible by remember { mutableStateOf(false) }
@@ -380,6 +389,15 @@ fun DebridSection(
         )
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        cloudDownloadsError?.let { error ->
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
 
         ListItem(
             selected = false,
@@ -917,7 +935,10 @@ fun DebridSection(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     cloudDownloads.forEach { item ->
-                        val isReady = item.isCached || item.downloadState.equals("completed", ignoreCase = true) || item.progress >= 1.0f
+                        val isReady = item.isCached ||
+                            item.downloadState.equals("completed", ignoreCase = true) ||
+                            item.downloadState.equals("cached", ignoreCase = true) ||
+                            item.progress >= 1.0f
 
                         Box(
                             modifier = Modifier
@@ -976,7 +997,30 @@ fun DebridSection(
 
                                     var isDeletingThis by remember { mutableStateOf(false) }
 
-                                    // Action Button: Delete
+                                    Button(
+                                        onClick = {
+                                            val videoFiles = item.files.filter { file ->
+                                                val extension = file.name.substringAfterLast('.', "").lowercase()
+                                                extension in setOf("mkv", "mp4", "m4v", "ts", "mov", "avi") &&
+                                                    !file.name.contains("sample", ignoreCase = true)
+                                            }
+                                            when {
+                                                videoFiles.size == 1 -> viewModel.playCloudTorrent(item, videoFiles.first().id)
+                                                videoFiles.size > 1 -> fileSelectionItem = item.copy(files = videoFiles)
+                                                else -> viewModel.playCloudTorrent(item)
+                                            }
+                                        },
+                                        enabled = isReady && !isDeletingThis,
+                                        colors = ButtonDefaults.colors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp),
+                                            focusedContainerColor = Color(0xFF388E3C)
+                                        )
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = "Play from TorBox", modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Play", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Button(
                                             onClick = {
@@ -999,6 +1043,30 @@ fun DebridSection(
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold
                                             )
+                                        }
+                                    }
+                                }
+
+                                fileSelectionItem?.let { item ->
+                                    Dialog(onDismissRequest = { fileSelectionItem = null }) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            tonalElevation = 8.dp
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(24.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Text("Choose a video file", style = MaterialTheme.typography.titleMedium)
+                                                item.files.forEach { file ->
+                                                    Button(onClick = {
+                                                        fileSelectionItem = null
+                                                        viewModel.playCloudTorrent(item, file.id)
+                                                    }) {
+                                                        Text(file.name, maxLines = 2)
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }

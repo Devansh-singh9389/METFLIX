@@ -80,6 +80,7 @@ import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.media3.ui.compose.modifiers.resizeWithContentScale
@@ -111,6 +112,8 @@ import com.example.metflix.presentation.screens.videoPlayer.components.rememberV
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberVideoPlayerState
 import com.example.metflix.presentation.utils.handleDPadKeyEvents
 import kotlinx.coroutines.delay
+import android.os.SystemClock
+import java.util.Locale
 
 @androidx.compose.runtime.Immutable
 data class ExoAudioTrack(
@@ -257,6 +260,10 @@ fun VideoPlayerScreenContent(
     var bufferHealthMs by remember { mutableStateOf(0L) }
     var videoBitrate by remember { mutableStateOf("") }
     var audioInfo by remember { mutableStateOf("") }
+    var totalMediaBytesLoaded by remember { mutableStateOf(0L) }
+    var downloadSpeedBps by remember { mutableStateOf(0L) }
+    var lastSpeedSampleBytes by remember { mutableStateOf(0L) }
+    var lastSpeedSampleTimeMs by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -432,8 +439,27 @@ fun VideoPlayerScreenContent(
             }
         }
         exoPlayer.addListener(listener)
+        val analyticsListener = object : AnalyticsListener {
+            override fun onLoadCompleted(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: androidx.media3.exoplayer.source.LoadEventInfo,
+                mediaLoadData: androidx.media3.exoplayer.source.MediaLoadData
+            ) {
+                val now = SystemClock.elapsedRealtime()
+                totalMediaBytesLoaded += loadEventInfo.bytesLoaded.coerceAtLeast(0L)
+                val elapsed = now - lastSpeedSampleTimeMs
+                if (elapsed >= 1000L) {
+                    val deltaBytes = totalMediaBytesLoaded - lastSpeedSampleBytes
+                    downloadSpeedBps = deltaBytes * 1000L / elapsed
+                    lastSpeedSampleBytes = totalMediaBytesLoaded
+                    lastSpeedSampleTimeMs = now
+                }
+            }
+        }
+        exoPlayer.addAnalyticsListener(analyticsListener)
         onDispose {
             exoPlayer.removeListener(listener)
+            exoPlayer.removeAnalyticsListener(analyticsListener)
         }
     }
 
@@ -466,6 +492,10 @@ fun VideoPlayerScreenContent(
             // Keep player idle while setup dialog is displayed so no network or chances are spent
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
+            totalMediaBytesLoaded = 0L
+            downloadSpeedBps = 0L
+            lastSpeedSampleBytes = 0L
+            lastSpeedSampleTimeMs = SystemClock.elapsedRealtime()
             currentLoadedUrl = null
             isBuffering = false
         } else if (isWebPlayerActive) {
@@ -797,6 +827,8 @@ fun VideoPlayerScreenContent(
                     availableSubtitleTracks.getOrNull(selectedSubtitleTrackIndex) ?: "English"
                 } else "Off",
                 playbackSpeed = "${currentSpeed}x",
+                downloadSpeed = formatDataRate(downloadSpeedBps),
+                dataUsed = formatDataSize(totalMediaBytesLoaded),
                 bufferHealthMs = bufferHealthMs,
                 currentPositionText = formatDurationTime(exoPlayer.currentPosition),
                 durationText = formatDurationTime(exoPlayer.duration),
@@ -844,6 +876,7 @@ fun VideoPlayerScreenContent(
                     ContentScale.Crop -> C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                     else -> C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 }
+
             },
             onSelectQuality = { height ->
                 currentQualityMaxHeight = height
@@ -1127,6 +1160,23 @@ private fun Movie.intoMediaItem(): MediaItem {
                         .build()
                 )
             }
+
         )
         .build()
+}
+
+private fun formatDataSize(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    val units = arrayOf("KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var index = -1
+    while (value >= 1024.0 && index < units.lastIndex) {
+        value /= 1024.0
+        index++
+    }
+    return String.format(Locale.US, "%.2f %s", value, units[index])
+}
+
+private fun formatDataRate(bytesPerSecond: Long): String {
+    return "${formatDataSize(bytesPerSecond)}/s"
 }
