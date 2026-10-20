@@ -379,8 +379,18 @@ private fun LiveTvPlayerContent(
         try {
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
+            val streamSelection = selectLiveTvStream(
+                channel = state.currentChannel,
+                widevineLevel = deviceProfile.widevineLevel
+            )
+            if (streamSelection.blockedReason != null) {
+                isBuffering = false
+                isManualError = true
+                playbackError = streamSelection.blockedReason
+                return
+            }
             val mediaItemBuilder = MediaItem.Builder()
-                .setUri(Uri.parse(state.currentChannel.streamUrl))
+                .setUri(Uri.parse(streamSelection.url))
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setTitle(state.currentChannel.name)
@@ -389,7 +399,7 @@ private fun LiveTvPlayerContent(
                 )
             val drmScheme = state.currentChannel.drmScheme
             val licenseUrl = state.currentChannel.drmLicenseUrl
-            if (drmScheme != null && licenseUrl != null) {
+            if (streamSelection.useDrm && drmScheme != null && licenseUrl != null) {
                 val drmUuid = when (drmScheme.lowercase()) {
                     "widevine" -> C.WIDEVINE_UUID
                     "playready" -> C.PLAYREADY_UUID
@@ -407,7 +417,8 @@ private fun LiveTvPlayerContent(
             exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                 .buildUpon()
                 .apply {
-                    if (drmScheme.equals("widevine", ignoreCase = true) &&
+                    if (streamSelection.useDrm &&
+                        drmScheme.equals("widevine", ignoreCase = true) &&
                         deviceProfile.widevineLevel == WidevineLevel.L3
                     ) {
                         setMaxVideoSize(1024, 576)

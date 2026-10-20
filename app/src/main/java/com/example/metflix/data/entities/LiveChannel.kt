@@ -11,6 +11,7 @@ data class LiveChannel(
     val name: String,
     val channelNumber: Int,
     val streamUrl: String,
+    val fallbackStreamUrl: String? = null,
     val logoUrl: String? = null,
     val category: String = "General",
     val country: String? = null,

@@ -420,9 +420,27 @@ class MovieDataSource @Inject constructor(
     }
 
     suspend fun searchMovies(query: String): List<Movie> {
-        // Search must be deterministic and must not turn a local search into a live
-        // TMDB request. The catalog cache is the source of truth for this screen.
-        val all = diskCache.loadCachedCatalogMovies()
-        return all.filter { it.name.contains(query, ignoreCase = true) }
+        val trimmedQuery = query.trim()
+        if (trimmedQuery.isEmpty()) return emptyList()
+
+        if (TmdbConfig.USE_TMDB) {
+            val tmdbResults = fetchTwoPages { page ->
+                tmdbApiClient.searchMovies(trimmedQuery, page = page)
+            }
+            if (tmdbResults.isNotEmpty()) return tmdbResults
+        }
+
+        if (NetworkConfig.USE_REMOTE_BACKEND) {
+            val remote = apiClient.searchMovies(trimmedQuery).getOrNull()
+            if (!remote.isNullOrEmpty()) return remote.map { it.toMovie() }
+        }
+
+        val normalizedQuery = normalizeSearchText(trimmedQuery)
+        return diskCache
+            .loadCachedCatalogMovies()
+            .filter { normalizeSearchText(it.name).contains(normalizedQuery) }
     }
+
+    private fun normalizeSearchText(value: String): String =
+        value.filter(Char::isLetterOrDigit).lowercase()
 }

@@ -81,7 +81,7 @@ class SearchScreenViewModel @Inject constructor(
             )
         }
 
-        // Debounced search over the existing local catalog
+        // Debounced search against TMDB with a local fallback
         viewModelScope.launch {
             _searchQuery
                 .debounce(350)

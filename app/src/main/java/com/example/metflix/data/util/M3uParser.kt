@@ -22,6 +22,7 @@ object M3uParser {
     private val TVG_CHNO_REGEX = Regex("""tvg-chno="([0-9]+)"""", RegexOption.IGNORE_CASE)
     private val DRM_SCHEME_REGEX = Regex("""(?:drm-scheme|drm_scheme|drm-system|drm_system)="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val DRM_LICENSE_REGEX = Regex("""(?:drm-license|drm_license|drm-license-url|drm_license_url|license-url|license_url)="([^"]*)"""", RegexOption.IGNORE_CASE)
+    private val FALLBACK_STREAM_REGEX = Regex("""(?:fallback-url|fallback_url|hls-url|hls_url)="([^"]*)"""", RegexOption.IGNORE_CASE)
     private val URL_TVG_REGEX = Regex("""(?:url-tvg|x-tvg-url)="([^"]*)"""", RegexOption.IGNORE_CASE)
 
     fun parsePlaylist(inputStream: InputStream, defaultCategory: String = "General", maxChannels: Int = 3500): M3uPlaylist {
@@ -54,6 +55,8 @@ object M3uParser {
         var currentLanguage: String? = null
         var currentDrmScheme: String? = null
         var currentDrmLicenseUrl: String? = null
+        var currentFallbackStreamUrl: String? = null
+        var currentRequestHeaders = linkedMapOf<String, String>()
         var currentName: String? = null
         var channelCounter = 1
 
@@ -78,6 +81,7 @@ object M3uParser {
                     currentDrmScheme = DRM_SCHEME_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
                         ?.lowercase(Locale.ROOT)
                     currentDrmLicenseUrl = DRM_LICENSE_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
+                    currentFallbackStreamUrl = FALLBACK_STREAM_REGEX.find(line)?.groupValues?.get(1)?.ifBlank { null }
 
                     val commaIndex = line.lastIndexOf(',')
                     currentName = if (commaIndex != -1 && commaIndex + 1 < line.length) {
@@ -96,13 +100,29 @@ object M3uParser {
                             ?.lowercase(Locale.ROOT)
                         key.endsWith("license_key") -> currentDrmLicenseUrl = value
                     }
+                } else if (line.startsWith("#EXTVLCOPT:", ignoreCase = true)) {
+                    val property = line.substringAfter(':', "").trim()
+                    val key = property.substringBefore('=', "").trim().lowercase(Locale.ROOT)
+                    val value = property.substringAfter('=', "").trim()
+                    if (value.isNotBlank()) {
+                        when {
+                            key == "http-user-agent" -> currentRequestHeaders["User-Agent"] = value
+                            key == "http-referrer" -> currentRequestHeaders["Referer"] = value
+                            key == "http-origin" -> currentRequestHeaders["Origin"] = value
+                            key == "http-header" -> parseHeaderLine(value)?.let { (name, headerValue) ->
+                                currentRequestHeaders[name] = headerValue
+                            }
+                        }
+                    }
+                } else if (line.startsWith("#EXTHTTP:", ignoreCase = true)) {
+                    parseHeaderBlock(line.substringAfter(':', "").trim()).forEach { (key, value) ->
+                        currentRequestHeaders[key] = value
+                    }
                 } else if (!line.startsWith("#")) {
                     val streamParts = line.split('|', limit = 2)
                     val streamUrl = streamParts[0].trim()
-                    val requestHeaders = if (streamParts.size == 2) {
-                        parseRequestHeaders(streamParts[1])
-                    } else {
-                        emptyMap()
+                    val requestHeaders = currentRequestHeaders.toMutableMap().apply {
+                        if (streamParts.size == 2) putAll(parseRequestHeaders(streamParts[1]))
                     }
                     val name = currentName ?: currentTvgName ?: "Live Channel"
 
@@ -132,6 +152,10 @@ object M3uParser {
                                     name = cleanName,
                                     channelNumber = channelNum,
                                     streamUrl = streamUrl,
+                                    fallbackStreamUrl = currentFallbackStreamUrl?.takeIf {
+                                        it.startsWith("http://", ignoreCase = true) ||
+                                            it.startsWith("https://", ignoreCase = true)
+                                    },
                                     logoUrl = currentLogo,
                                     category = category,
                                     country = currentCountry,
@@ -161,6 +185,8 @@ object M3uParser {
                     currentLanguage = null
                     currentDrmScheme = null
                     currentDrmLicenseUrl = null
+                    currentFallbackStreamUrl = null
+                    currentRequestHeaders = linkedMapOf()
                     currentName = null
                 }
 
@@ -192,6 +218,21 @@ object M3uParser {
                 if (key.isBlank() || value.isBlank()) null else key to value
             }
             .toMap()
+    }
+
+    private fun parseHeaderBlock(raw: String): Map<String, String> {
+        val normalized = raw.trim().removePrefix("{").removeSuffix("}")
+        return normalized
+            .split(',')
+            .mapNotNull(::parseHeaderLine)
+            .toMap()
+    }
+
+    private fun parseHeaderLine(raw: String): Pair<String, String>? {
+        val separator = raw.indexOf('=').takeIf { it >= 0 } ?: raw.indexOf(':').takeIf { it >= 0 } ?: return null
+        val key = raw.substring(0, separator).trim().trim('"', '\'')
+        val value = raw.substring(separator + 1).trim().trim('"', '\'')
+        return if (key.isBlank() || value.isBlank()) null else key to value
     }
 
     private fun normalizeCategory(group: String): String {
