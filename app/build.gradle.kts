@@ -169,4 +169,8 @@ dependencies {
 
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    // Unit tests
+    testImplementation(kotlin("test"))
+    testImplementation("junit:junit:4.13.2")
 }
