@@ -241,6 +241,10 @@ fun VideoPlayerScreenContent(
     val isDirectStream = resolvedStream?.isDirectStream == true
     val isWebPlayerActive = isWebPlayerForced ?: (!isDirectStream)
 
+    LaunchedEffect(currentServer.id) {
+        isWebPlayerForced = null
+    }
+
     var isPlaying by remember { mutableStateOf(exoPlayer.isPlaying) }
     var isBuffering by remember { mutableStateOf(true) }
     var playbackError by remember { mutableStateOf<String?>(null) }
@@ -548,11 +552,17 @@ fun VideoPlayerScreenContent(
     val rootModifier = if (!videoPlayerState.isControlsVisible && !isSettingsOpen && !isPlaylistOpen) {
         Modifier
             .focusRequester(rootFocusRequester)
-            .dPadEvents(
-                exoPlayer = exoPlayer,
-                videoPlayerState = videoPlayerState,
-                pulseState = pulseState,
-                isPlaying = isPlaying
+            .then(
+                if (!isWebPlayerActive) {
+                    Modifier.dPadEvents(
+                        exoPlayer = exoPlayer,
+                        videoPlayerState = videoPlayerState,
+                        pulseState = pulseState,
+                        isPlaying = isPlaying
+                    )
+                } else {
+                    Modifier
+                }
             )
             .mediaKeyEvents(
                 exoPlayer = exoPlayer,
@@ -847,7 +857,6 @@ fun VideoPlayerScreenContent(
             availableServers = availableServers,
             selectedServer = currentServer,
             onSelectServer = { server ->
-                isWebPlayerForced = null
                 onSelectServer(server)
                 isSettingsOpen = false
                 videoPlayerState.showControls(isPlaying)
@@ -863,6 +872,7 @@ fun VideoPlayerScreenContent(
             currentSleepTimerMinutes = currentSleepTimerMinutes,
             isStatsVisible = isStatsVisible,
             isWebPlayerMode = isWebPlayerActive,
+            nativeControlsEnabled = !isWebPlayerActive,
             onTogglePlayerEngine = { isWeb ->
                 isWebPlayerForced = isWeb
             },

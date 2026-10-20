@@ -30,6 +30,7 @@ import com.example.metflix.data.settings.DebridPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -48,10 +49,14 @@ class VideoPlayerScreenViewModel @Inject constructor(
     private val allDebridClient: AllDebridClient
 ) : ViewModel() {
 
-    private val _availableServers = MutableStateFlow<List<StreamServer>>(streamResolverRepository.availableServers)
+    private val _availableServers = MutableStateFlow(
+        streamResolverRepository.availableServers.filter(::isServerSelectable)
+    )
     val availableServers: List<StreamServer> get() = _availableServers.value
 
-    private val _selectedServer = MutableStateFlow(streamResolverRepository.availableServers.first())
+    private val _selectedServer = MutableStateFlow(
+        streamResolverRepository.availableServers.first(::isServerSelectable)
+    )
     val selectedServer: StateFlow<StreamServer> = _selectedServer.asStateFlow()
 
     private val _isResolvingStream = MutableStateFlow(false)
@@ -87,6 +92,10 @@ class VideoPlayerScreenViewModel @Inject constructor(
     private val isUserExplicitSelection = MutableStateFlow(false)
     private var raceJob: Job? = null
     private var manualResolveJob: Job? = null
+    private val resolutionRequests = ResolutionRequestTracker()
+
+    private fun isServerSelectable(server: StreamServer): Boolean =
+        server.id != "alldebrid" || debridPreferences.hasVerifiedPremiumDebrid()
 
     init {
         viewModelScope.launch {
@@ -179,6 +188,7 @@ class VideoPlayerScreenViewModel @Inject constructor(
         preferredQuality: String = debridPreferences.playbackQuality.value
     ) {
         raceJob?.cancel()
+        val requestId = resolutionRequests.begin()
         raceJob = viewModelScope.launch {
             _isResolvingStream.value = true
             isUserExplicitSelection.value = false
@@ -201,14 +211,17 @@ class VideoPlayerScreenViewModel @Inject constructor(
                 preferHindi = preferHindi,
                 preferredQuality = preferredQuality
             ).collect { result ->
-                _availableServers.value = result.rankedServers
+                if (!resolutionRequests.isCurrent(requestId)) return@collect
+                _availableServers.value = result.rankedServers.filter(::isServerSelectable)
 
                 // If user hasn't explicitly selected another server, pick the fastest/best stream
                 // Do NOT repeatedly overwrite and restart playback if a stream is already active
                 if (!isUserExplicitSelection.value && result.bestStream != null) {
                     val currentStream = _resolvedStream.value
                     if (currentStream == null) {
-                        _selectedServer.value = result.bestStream.server
+                        if (isServerSelectable(result.bestStream.server)) {
+                            _selectedServer.value = result.bestStream.server
+                        }
                         _resolvedStream.value = result.bestStream
                         _resolutionMessage.value = if (result.bestStream.server.id == "alldebrid") {
                             "Connected · Premium Stream"
@@ -229,6 +242,8 @@ class VideoPlayerScreenViewModel @Inject constructor(
 
     private fun resolveCurrentStream(details: MovieDetails, server: StreamServer) {
         manualResolveJob?.cancel()
+        val requestId = resolutionRequests.begin()
+        _resolvedStream.value = null
         manualResolveJob = viewModelScope.launch {
             _isResolvingStream.value = true
             _resolutionMessage.value = "Switching to ${server.name}..."
@@ -244,23 +259,30 @@ class VideoPlayerScreenViewModel @Inject constructor(
                     imdbId = details.imdbId
                 )
                 // Only apply if the server is still selected
-                if (_selectedServer.value.id == server.id) {
+                if (resolutionRequests.isCurrent(requestId) && _selectedServer.value.id == server.id) {
                     _resolvedStream.value = resolved
                     _resolutionMessage.value = "Playing · ${server.name}"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                if (_selectedServer.value.id == server.id) {
+                if (resolutionRequests.isCurrent(requestId) && _selectedServer.value.id == server.id) {
                     _resolutionMessage.value = "Failed to connect to ${server.name}"
                 }
             } finally {
-                if (_selectedServer.value.id == server.id) {
+                if (resolutionRequests.isCurrent(requestId) && _selectedServer.value.id == server.id) {
                     _isResolvingStream.value = false
                 }
             }
+
         }
     }
 
     fun selectServer(server: StreamServer) {
+        if (!isServerSelectable(server)) {
+            _resolutionMessage.value = "Premium provider is disabled or not verified"
+            return
+        }
         if (_selectedServer.value.id == server.id && _resolvedStream.value != null && !_isResolvingStream.value) return
         isUserExplicitSelection.value = true
         _selectedServer.value = server
@@ -347,7 +369,16 @@ class VideoPlayerScreenViewModel @Inject constructor(
 
     fun toggleDebrid(enabled: Boolean) {
         debridPreferences.setEnabled(enabled)
-        selectServer(_selectedServer.value)
+        if (!enabled && _selectedServer.value.id == "alldebrid") {
+            val fallback = _availableServers.value.firstOrNull(::isServerSelectable)
+            if (fallback != null) {
+                _selectedServer.value = fallback
+                movieDetailsFlow.value?.let { details -> resolveCurrentStream(details, fallback) }
+            }
+        } else {
+            _availableServers.value = _availableServers.value.filter(::isServerSelectable)
+            selectServer(_selectedServer.value)
+        }
     }
 
     val uiState: StateFlow<VideoPlayerScreenUiState> = combine(
@@ -392,6 +423,17 @@ class VideoPlayerScreenViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = VideoPlayerScreenUiState.Loading
     )
+}
+
+internal class ResolutionRequestTracker {
+    private var currentRequestId = 0L
+
+    fun begin(): Long {
+        currentRequestId += 1
+        return currentRequestId
+    }
+
+    fun isCurrent(requestId: Long): Boolean = requestId == currentRequestId
 }
 
 @Immutable

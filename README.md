@@ -43,14 +43,16 @@ A modern, high-performance Android TV streaming and Live TV application built fr
 * **Custom M3U Playlist Manager:** Support for custom user-supplied IPTV playlists and streams.
 
 ### 5. 🎛️ Advanced In-Player Experience & Settings Overlay
-* **ExoPlayer (AndroidX Media3 1.8.0):** Native surface rendering (`SurfaceView`) with hardware-accelerated HEVC/H.264 video decoding and decoder fallback.
-* **Remote TV Menu Key Toggle:** Open or close the playback settings dialog with the remote's `Menu` or `Settings` button at any time.
+* **Dual Playback Engines:** Uses AndroidX Media3 ExoPlayer for direct HLS/MP4/MKV streams and a TV-optimized WebView engine for embed-based providers.
+* **Reliable Source Switching:** The in-player server selector stops the previous source, resolves the selected server, and reloads the correct playback engine without allowing stale resolver results to replace a newer selection.
+* **Remote TV Menu Key Toggle:** Open or close the playback settings dialog with the remote's `Menu` or `Settings` button while direct or WebView playback is active.
 * **Full-Featured D-Pad Settings Dialog:**
   - **Resolution Switching:** Seamlessly toggle between 1080p FHD, 720p HD, 480p, and 360p progressive tracks.
   - **Multi-Language Subtitles:** Dynamic SRT/VTT parser with customizable cue rendering, prioritized default language selection, and socket protection against memory exhaustion.
   - **Audio Track Selector:** Displays active track checkmark (`✓ Hindi (5.1 Surround)`) and channel details (Mono, Stereo, 5.1 Surround, 7.1 Surround).
   - **Playback Adjustments:** Speed adjustment (0.5x – 2.0x), Aspect Ratio / Content Scale modes (Fit, Crop, Fill, 16:9, 4:3), and Sleep Timer (15m – 120m).
   - **Real-Time Stream Diagnostics:** Live stats overlay displaying buffer health (ms) and video bitrate (Mbps).
+* **Embed-Aware Settings:** Native-only track, quality, and speed controls are not applied to WebView playback; the embedded provider manages those features.
 
 ### 6. 🎌 Dedicated Anime & Animation Ecosystem (Sub & Dub)
 * **Comprehensive Anime Discovery:** Native tab indexing Trending Anime Series, Popular Anime Movies (Studio Ghibli, Makoto Shinkai, *Doraemon Movies*), Hindi Dubbed Cartoons (*Doraemon*, *Shinchan*, *Naruto*, *Dragon Ball*), and Top Rated Anime.
@@ -99,7 +101,7 @@ com.example.metflix/
 │   │   ├── livetv/         # Live TV channel list, EPG timeline, playlist dialog
 │   │   ├── movies/         # Movie discovery, filters, and movie details view
 │   │   ├── search/         # Voice/text search interface
-│   │   └── videoPlayer/    # ExoPlayer surface, settings overlay, pulse controls, stats
+│   │   └── videoPlayer/    # ExoPlayer/WebView playback, source switching, settings, stats
 │   └── theme/              # TV focus styling, palette, typography, shapes
 └── tvmaterial/             # Custom TV modal dialogs, focus modifiers, and layout helpers
 ```
@@ -126,6 +128,14 @@ Connect your TV to the same Wi-Fi network and install directly:
 adb connect <YOUR_TV_IP>:5555
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+### Run Focused Unit Tests
+```bash
+./gradlew testDebugUnitTest --tests com.example.metflix.presentation.screens.videoPlayer.ResolutionRequestTrackerTest
+./gradlew testDebugUnitTest --tests com.example.metflix.presentation.screens.livetv.player.LiveTvStreamSelectionTest
+```
+
+These tests cover stream-resolution request ordering and the Live TV stream fallback selection behavior.
 
 ---
 

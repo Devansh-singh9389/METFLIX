@@ -123,6 +123,7 @@ fun VideoPlayerSettingsOverlay(
     currentSleepTimerMinutes: Int = 0,
     isStatsVisible: Boolean = false,
     isWebPlayerMode: Boolean = false,
+    nativeControlsEnabled: Boolean = !isWebPlayerMode,
     onSelectSpeed: (Float) -> Unit,
     onSelectContentScale: (ContentScale) -> Unit,
     onSelectQuality: (Int) -> Unit = {},
@@ -767,18 +768,25 @@ fun VideoPlayerSettingsOverlay(
                             title = "Playback Speed"
                         )
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            SpeedOptions.forEach { speed ->
-                                val isSelected = currentSpeed == speed
-                                OptionPillButton(
-                                    label = "${speed}x",
-                                    isSelected = isSelected,
-                                    onClick = { onSelectSpeed(speed) },
-                                    modifier = Modifier.weight(1f)
-                                )
+                        if (!nativeControlsEnabled) {
+                            WebEmbedEngineNotice(
+                                title = "Speed Managed by Web Player",
+                                description = "Playback speed is controlled by the embedded provider."
+                            )
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                SpeedOptions.forEach { speed ->
+                                    val isSelected = currentSpeed == speed
+                                    OptionPillButton(
+                                        label = "${speed}x",
+                                        isSelected = isSelected,
+                                        onClick = { onSelectSpeed(speed) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
                         }
                     }

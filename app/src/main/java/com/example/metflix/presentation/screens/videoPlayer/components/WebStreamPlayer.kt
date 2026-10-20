@@ -41,10 +41,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "WebStreamPlayer"
 private const val DESKTOP_USER_AGENT =
@@ -71,14 +73,21 @@ fun WebStreamPlayer(
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    val isDisposed = remember { AtomicBoolean(false) }
 
     DisposableEffect(url) {
+        isDisposed.set(false)
         onDispose {
+            isDisposed.set(true)
             webViewRef?.let { wv ->
                 try {
                     wv.stopLoading()
-                    wv.loadUrl("about:blank")
+                    wv.setOnKeyListener(null)
+                    wv.webChromeClient = null
+                    wv.webViewClient = WebViewClient()
+                    (wv.parent as? ViewGroup)?.removeView(wv)
                     wv.destroy()
+                    webViewRef = null
                 } catch (e: Exception) {
                     Log.w(TAG, "Error cleaning up WebView: ${e.message}")
                 }
@@ -91,9 +100,10 @@ fun WebStreamPlayer(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { context ->
+        key(url) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { context ->
                 WebView(context).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -139,7 +149,7 @@ fun WebStreamPlayer(
                         }
 
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                            if (newProgress > 75) {
+                            if (!isDisposed.get() && newProgress > 75) {
                                 isLoading = false
                             }
                         }
@@ -190,6 +200,7 @@ fun WebStreamPlayer(
                         ): WebResourceResponse? {
                             val reqUrl = request?.url?.toString()
                             if (reqUrl != null && !hasCapturedPrimaryStream) {
+                                if (isDisposed.get()) return super.shouldInterceptRequest(view, request)
                                 val lower = reqUrl.lowercase()
                                 val isMedia = (lower.contains(".m3u8") || lower.contains(".mp4"))
                                 val isAdOrTracking = lower.contains("doubleclick") ||
@@ -201,7 +212,9 @@ fun WebStreamPlayer(
                                 if (isMedia && !isAdOrTracking && !isSubtitleOrAudio) {
                                     hasCapturedPrimaryStream = true
                                     Log.d(TAG, "Captured primary direct stream URL: $reqUrl")
-                                    onCapturedDirectStream(reqUrl, request.requestHeaders.orEmpty())
+                                    if (!isDisposed.get()) {
+                                        onCapturedDirectStream(reqUrl, request.requestHeaders.orEmpty())
+                                    }
                                 }
                             }
                             return super.shouldInterceptRequest(view, request)
@@ -209,11 +222,12 @@ fun WebStreamPlayer(
 
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, url, favicon)
-                            isLoading = true
+                            if (!isDisposed.get()) isLoading = true
                         }
 
                         override fun onPageFinished(view: WebView?, finishUrl: String?) {
                             super.onPageFinished(view, finishUrl)
+                            if (isDisposed.get() || view?.isAttachedToWindow != true) return
                             isLoading = false
 
                             // Inject styles and script to maximize video element, suppress overlay banners, and auto-unmute
@@ -235,7 +249,7 @@ fun WebStreamPlayer(
                                     });
                                 })();
                             """.trimIndent()
-                            view?.evaluateJavascript(script, null)
+                            view.evaluateJavascript(script, null)
                         }
 
                         override fun onReceivedError(
@@ -244,6 +258,7 @@ fun WebStreamPlayer(
                             error: WebResourceError?
                         ) {
                             if (request?.isForMainFrame == true) {
+                                if (isDisposed.get()) return
                                 val msg = error?.description?.toString() ?: "Failed to load embed page"
                                 Log.w(TAG, "WebStream error: $msg")
                                 onError(msg)
@@ -251,8 +266,15 @@ fun WebStreamPlayer(
                         }
                     }
 
+                    fun runJavascript(script: String) {
+                        if (!isDisposed.get() && isAttachedToWindow) {
+                            evaluateJavascript(script, null)
+                        }
+                    }
+
                     // TV Remote Key Interception for Play/Pause and Seek
                     setOnKeyListener { _, keyCode, event ->
+                        if (isDisposed.get() || !isAttachedToWindow) return@setOnKeyListener false
                         if (event.action == KeyEvent.ACTION_DOWN) {
                             when (keyCode) {
                                 KeyEvent.KEYCODE_DPAD_CENTER,
@@ -269,7 +291,7 @@ fun WebStreamPlayer(
                                             }
                                         })();
                                     """.trimIndent()
-                                    evaluateJavascript(toggleJs, null)
+                                    runJavascript(toggleJs)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_LEFT,
@@ -280,7 +302,7 @@ fun WebStreamPlayer(
                                             if (v) { v.currentTime = Math.max(0, v.currentTime - 10); }
                                         })();
                                     """.trimIndent()
-                                    evaluateJavascript(seekRewindJs, null)
+                                    runJavascript(seekRewindJs)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_RIGHT,
@@ -291,7 +313,7 @@ fun WebStreamPlayer(
                                             if (v) { v.currentTime = Math.min(v.duration || Infinity, v.currentTime + 10); }
                                         })();
                                     """.trimIndent()
-                                    evaluateJavascript(seekForwardJs, null)
+                                    runJavascript(seekForwardJs)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_UP,
@@ -310,11 +332,12 @@ fun WebStreamPlayer(
                 }
             },
             update = { wv ->
-                if (wv.url != url) {
+                if (!isDisposed.get() && wv.isAttachedToWindow && wv.url != url) {
                     wv.loadUrl(url)
                 }
-            }
-        )
+                }
+            )
+        }
 
         if (isLoading) {
             VideoPlayerBufferingSpinner(

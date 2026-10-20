@@ -300,9 +300,10 @@ class StreamResolverRepository @Inject constructor(
         // TIER 2: STANDARD / FREE SCRAPERS (DualAudio, Anime, VidLink, IPTV, Embeds)
         // Rate-limited with Semaphore(3) to protect Android TV chipsets & network pool
         // =========================================================================
-        val candidateServers = allServers.filterNot { s ->
-            // If Debrid was already verified and missed, skip querying it again in Tier 2
-            s.id == "alldebrid" && hasVerifiedDebrid
+        val candidateServers = allServers.filterNot { server ->
+            // Premium is handled only by Tier 1. Never send a disabled/unverified provider
+            // through the standard resolver race.
+            server.id == "alldebrid"
         }
 
         val resolvedResults = ConcurrentHashMap<String, Pair<StreamServer, ResolvedStream?>>()
