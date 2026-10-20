@@ -210,7 +210,7 @@ class DebridPreferences @Inject constructor(
     )
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
 
-    private val _isEnabled = MutableStateFlow(prefs.getBoolean(KEY_ALLDEBRID_ENABLED, true))
+    private val _isEnabled = MutableStateFlow(prefs.getBoolean(KEY_ALLDEBRID_ENABLED, false))
     val isEnabled: StateFlow<Boolean> = _isEnabled.asStateFlow()
 
     private val _userInfo = MutableStateFlow(

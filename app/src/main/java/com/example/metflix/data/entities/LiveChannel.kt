@@ -21,6 +21,8 @@ data class LiveChannel(
     val epgId: String? = null,
     val drmScheme: String? = null,
     val drmLicenseUrl: String? = null,
+    val drmLicenseRequestHeaders: Map<String, String> = emptyMap(),
+    val requestHeaders: Map<String, String> = emptyMap(),
     val requiredSecurityLevel: String = "NONE", // "NONE", "L3", "L1"
     val videoCodec: String? = null,
     val audioCodec: String? = null,

@@ -96,6 +96,8 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import com.example.metflix.data.drm.DeviceCapabilityManager
+import com.example.metflix.data.drm.WidevineLevel
 import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.presentation.common.Error
 import com.example.metflix.presentation.common.Loading
@@ -161,7 +163,8 @@ private fun LiveTvPlayerContent(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val exoPlayer = rememberPlayer(context)
+    val deviceProfile = remember { DeviceCapabilityManager().profile }
+    val exoPlayer = rememberPlayer(context, state.currentChannel.requestHeaders)
 
     var isDrawerOpen by remember { mutableStateOf(false) }
     var isSettingsOpen by remember { mutableStateOf(false) }
@@ -206,9 +209,20 @@ private fun LiveTvPlayerContent(
     }
 
     fun terminalErrorMessage(error: PlaybackException): String {
+        val details = generateSequence<Throwable>(error) { it.cause }
+            .joinToString(" ") { "${it.javaClass.simpleName} ${it.message.orEmpty()}" }
+            .lowercase()
         return when {
             isCleartextPlaybackError(error) ->
                 "This channel uses an HTTP stream. Android allows it, but HTTPS is recommended."
+            details.contains("invalidresponsecode") &&
+                (details.contains("401") || details.contains("403")) ->
+                "The channel rejected the request (HTTP 401/403). Check its authorized headers."
+            details.contains("key") &&
+                (details.contains("timeout") || details.contains("source error")) ->
+                "The HLS encryption key could not be loaded. Check the key URL and headers."
+            details.contains("parser") || details.contains("pesreader") ->
+                "The channel format could not be parsed. The provider stream may be malformed."
             error.errorCode in 6000..6999 -> "DRM playback failed. Check the channel license or device support."
             error.errorCode in 3000..3999 -> "This channel uses an unsupported media format."
             error.errorCode in 4000..5999 || error.errorCode in 7000..7999 ->
@@ -385,10 +399,23 @@ private fun LiveTvPlayerContent(
                     mediaItemBuilder.setDrmConfiguration(
                         MediaItem.DrmConfiguration.Builder(drmUuid)
                             .setLicenseUri(licenseUrl)
+                            .setLicenseRequestHeaders(state.currentChannel.drmLicenseRequestHeaders)
                             .build()
                     )
                 }
             }
+            exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                .buildUpon()
+                .apply {
+                    if (drmScheme.equals("widevine", ignoreCase = true) &&
+                        deviceProfile.widevineLevel == WidevineLevel.L3
+                    ) {
+                        setMaxVideoSize(1024, 576)
+                    } else {
+                        clearVideoSizeConstraints()
+                    }
+                }
+                .build()
             val mediaItem = mediaItemBuilder.build()
 
             exoPlayer.setMediaItem(mediaItem)
@@ -494,6 +521,12 @@ private fun LiveTvPlayerContent(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                val causeChain = generateSequence<Throwable>(error) { it.cause }
+                    .joinToString(" -> ") { "${it.javaClass.simpleName}: ${it.message.orEmpty()}" }
+                Log.e(
+                    "LiveTvPlayerScreen",
+                    "Playback failed code=${error.errorCode} name=${error.errorCodeName}: $causeChain"
+                )
                 isBuffering = false
                 if (isTerminalPlaybackError(error)) {
                     isReconnecting = false

@@ -95,17 +95,23 @@ object M3uParser {
                             .ifBlank { null }
                             ?.lowercase(Locale.ROOT)
                         key.endsWith("license_key") -> currentDrmLicenseUrl = value
-                            .substringBefore('|')
-                            .ifBlank { null }
                     }
                 } else if (!line.startsWith("#")) {
-                    val streamUrl = line
+                    val streamParts = line.split('|', limit = 2)
+                    val streamUrl = streamParts[0].trim()
+                    val requestHeaders = if (streamParts.size == 2) {
+                        parseRequestHeaders(streamParts[1])
+                    } else {
+                        emptyMap()
+                    }
                     val name = currentName ?: currentTvgName ?: "Live Channel"
 
                     // Ignore broken or unsupported streams
                     if (streamUrl.startsWith("http://", ignoreCase = true) || streamUrl.startsWith("https://", ignoreCase = true)) {
                         val drmScheme = currentDrmScheme?.let(::normalizeDrmScheme)
-                        val drmLicenseUrl = currentDrmLicenseUrl?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                        val drmLicenseUrl = currentDrmLicenseUrl
+                            ?.substringBefore('|')
+                            ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
                         val looksLikeDrm = streamUrl.contains(".mpd", ignoreCase = true) &&
                             (streamUrl.contains("widevine", ignoreCase = true) ||
                                 streamUrl.contains("playready", ignoreCase = true) ||
@@ -136,6 +142,8 @@ object M3uParser {
                                     epgId = currentTvgId,
                                     drmScheme = drmScheme,
                                     drmLicenseUrl = drmLicenseUrl,
+                                    drmLicenseRequestHeaders = parseLicenseHeaders(currentDrmLicenseUrl),
+                                    requestHeaders = requestHeaders,
                                     requiredSecurityLevel = if (drmScheme != null) "L3" else "NONE",
                                     isFta = drmScheme == null
                                 )
@@ -168,6 +176,22 @@ object M3uParser {
             "playready", "com.microsoft.playready" -> "playready"
             else -> null
         }
+    }
+
+    private fun parseLicenseHeaders(rawLicense: String?): Map<String, String> {
+        val separator = rawLicense?.indexOf('|') ?: return emptyMap()
+        if (separator == rawLicense.lastIndex) return emptyMap()
+        return parseRequestHeaders(rawLicense.substring(separator + 1))
+    }
+
+    private fun parseRequestHeaders(raw: String): Map<String, String> {
+        return raw.split('&', ';')
+            .mapNotNull { entry ->
+                val key = entry.substringBefore('=', "").trim()
+                val value = entry.substringAfter('=', "").trim()
+                if (key.isBlank() || value.isBlank()) null else key to value
+            }
+            .toMap()
     }
 
     private fun normalizeCategory(group: String): String {

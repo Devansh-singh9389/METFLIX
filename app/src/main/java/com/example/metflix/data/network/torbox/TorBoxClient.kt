@@ -28,7 +28,7 @@ class TorBoxClient @Inject constructor(
     }
 
     private fun Request.Builder.authorized(apiKey: String): Request.Builder =
-        header("Authorization", "Bearer ${apiKey.trim()}")
+        header("Authorization", "Bearer " + apiKey)
 
     /**
      * Step 1 of Device Code Flow:

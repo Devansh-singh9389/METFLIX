@@ -165,6 +165,9 @@ class StreamResolverRepository @Inject constructor(
         imdbId: String? = null
     ): ResolvedStream = withContext(Dispatchers.IO) {
         val targetServer = server ?: availableServers.first()
+        if (targetServer.id == "alldebrid" && !debridPreferences.hasVerifiedPremiumDebrid()) {
+            throw IllegalStateException("Debrid is disabled or not verified")
+        }
         val mediaType = if (isTvShow) "TV S${season}E${episode}" else "Movie"
         Log.d(TAG, "Resolving stream for '$movieTitle' ($mediaType, TMDB: $tmdbId, IMDb: $imdbId) on ${targetServer.name}")
 
