@@ -38,6 +38,19 @@ class TmdbDiskCache @Inject constructor(
 ) {
     companion object {
         const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours TTL
+        private val CATALOG_KEYS = listOf(
+            "trending",
+            "popular",
+            "now_playing",
+            "top_rated",
+            "trending_day",
+            "upcoming",
+            "top_revenue",
+            "most_voted",
+            "netflix",
+            "prime",
+            "disney"
+        )
     }
 
     private val memoryCache = ConcurrentHashMap<String, List<Movie>>()
@@ -75,6 +88,11 @@ class TmdbDiskCache @Inject constructor(
             }
         }.getOrDefault(emptyList())
     }
+
+    fun loadCachedCatalogMovies(): List<Movie> =
+        CATALOG_KEYS
+            .flatMap(::loadMovies)
+            .distinctBy { it.id }
 
     fun isCacheStale(key: String, ttlMs: Long = CACHE_TTL_MS): Boolean {
         val file = File(context.filesDir, "tmdb_cache_${key}.json")

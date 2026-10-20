@@ -243,6 +243,9 @@ class MovieRepositoryImpl @Inject constructor(
         return movieDataSource.searchMovies(query)
     }
 
+    override suspend fun getCachedPopularMovies(): MovieList =
+        diskCache.loadMovies("popular")
+
     override fun getMoviesWithLongThumbnail() = flow {
         val list = movieDataSource.getMovieList(ThumbnailType.Long)
         emit(list)

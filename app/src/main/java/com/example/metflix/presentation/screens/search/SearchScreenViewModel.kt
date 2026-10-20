@@ -29,7 +29,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -75,16 +74,14 @@ class SearchScreenViewModel @Inject constructor(
     )
 
     init {
-        // Load popular movies for recommendations when query is blank
+        // Recommendations must use the existing cache and never start a catalog refresh.
         viewModelScope.launch {
-            movieRepository.getPopularFilmsThisWeek()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    _uiState.value = _uiState.value.copy(popularMovies = list)
-                }
+            _uiState.value = _uiState.value.copy(
+                popularMovies = movieRepository.getCachedPopularMovies()
+            )
         }
 
-        // Live debounced search
+        // Debounced search over the existing local catalog
         viewModelScope.launch {
             _searchQuery
                 .debounce(350)
@@ -109,9 +106,6 @@ class SearchScreenViewModel @Inject constructor(
     fun submitQuery(queryString: String) {
         _searchQuery.value = queryString
         _uiState.value = _uiState.value.copy(query = queryString)
-        viewModelScope.launch {
-            executeSearch(queryString)
-        }
     }
 
     fun query(queryString: String) {

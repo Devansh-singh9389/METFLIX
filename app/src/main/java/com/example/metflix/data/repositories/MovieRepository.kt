@@ -33,6 +33,7 @@ interface MovieRepository {
     suspend fun getMovieDetails(movieId: String, isTvShow: Boolean? = null): MovieDetails
     suspend fun getTvSeasonEpisodes(seriesId: String, seasonNumber: Int): List<TvEpisode>
     suspend fun searchMovies(query: String): MovieList
+    suspend fun getCachedPopularMovies(): MovieList
     fun getMoviesWithLongThumbnail(): Flow<MovieList>
     fun getMovies(): Flow<MovieList>
     fun getPopularFilmsThisWeek(): Flow<MovieList>

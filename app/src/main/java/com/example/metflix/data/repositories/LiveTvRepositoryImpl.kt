@@ -169,7 +169,13 @@ class LiveTvRepositoryImpl @Inject constructor(
 
                     rawChannelsFlow.value = enriched
                     saveChannelsToCache(enriched)
-                    Log.d(TAG, "Successfully loaded ${enriched.size} live channels with EPG")
+                    val httpCount = playlist.channels.count { it.streamUrl.startsWith("http://", ignoreCase = true) }
+                    val httpsCount = playlist.channels.count { it.streamUrl.startsWith("https://", ignoreCase = true) }
+                    Log.d(
+                        TAG,
+                        "Successfully loaded ${enriched.size} live channels with EPG " +
+                            "(playlist HTTP=$httpCount, HTTPS=$httpsCount)"
+                    )
 
                     // Asynchronously fetch real XMLTV EPG if provided in header
                     val epgUrl = playlist.epgUrl

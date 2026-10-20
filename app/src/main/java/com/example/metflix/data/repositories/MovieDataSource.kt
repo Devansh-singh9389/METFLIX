@@ -420,15 +420,9 @@ class MovieDataSource @Inject constructor(
     }
 
     suspend fun searchMovies(query: String): List<Movie> {
-        if (TmdbConfig.USE_TMDB) {
-            val combined = fetchTwoPages { page -> tmdbApiClient.searchMovies(query, page = page) }
-            if (combined.isNotEmpty()) return combined
-        }
-        if (NetworkConfig.USE_REMOTE_BACKEND) {
-            val remote = apiClient.searchMovies(query).getOrNull()
-            if (!remote.isNullOrEmpty()) return remote.map { it.toMovie() }
-        }
-        val all = popularMovieDataReader.read()
+        // Search must be deterministic and must not turn a local search into a live
+        // TMDB request. The catalog cache is the source of truth for this screen.
+        val all = diskCache.loadCachedCatalogMovies()
         return all.filter { it.name.contains(query, ignoreCase = true) }
     }
 }

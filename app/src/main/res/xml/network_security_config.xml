@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Default: Enforce HTTPS for all external traffic -->
-    <base-config cleartextTrafficPermitted="false">
+    <!-- Live-TV providers may publish HTTP streams; HTTPS remains preferred when available. -->
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

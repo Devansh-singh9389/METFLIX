@@ -180,8 +180,23 @@ private fun LiveTvPlayerContent(
     var lastUserInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var currentTimeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
+    fun isCleartextPlaybackError(error: PlaybackException): Boolean {
+        var cause: Throwable? = error
+        while (cause != null) {
+            if (cause is androidx.media3.datasource.HttpDataSource.CleartextNotPermittedException ||
+                cause.javaClass.name.contains("CleartextNotPermitted", ignoreCase = true) ||
+                cause.message?.contains("cleartext", ignoreCase = true) == true
+            ) {
+                return true
+            }
+            cause = cause.cause
+        }
+        return false
+    }
+
     fun isTerminalPlaybackError(error: PlaybackException): Boolean {
         return when {
+            isCleartextPlaybackError(error) -> true
             error.errorCode in 3000..3999 -> true // Media/container/format errors
             error.errorCode in 4000..7999 -> true // Decoder, audio/video, and DRM errors
             error.cause?.javaClass?.name?.contains("Drm", ignoreCase = true) == true -> true
@@ -192,6 +207,8 @@ private fun LiveTvPlayerContent(
 
     fun terminalErrorMessage(error: PlaybackException): String {
         return when {
+            isCleartextPlaybackError(error) ->
+                "This channel uses an HTTP stream. Android allows it, but HTTPS is recommended."
             error.errorCode in 6000..6999 -> "DRM playback failed. Check the channel license or device support."
             error.errorCode in 3000..3999 -> "This channel uses an unsupported media format."
             error.errorCode in 4000..5999 || error.errorCode in 7000..7999 ->
