@@ -36,7 +36,7 @@ A modern, high-performance Android TV streaming and Live TV application built fr
 
 ### 4. 📺 Live TV & EPG Integration (JioTV / IPTV)
 * **Comprehensive M3U/HLS Pipeline:** Integrated live TV repository with high-performance channel loading and category filtering (Entertainment, Movies, Sports, News, Music, Kids, Regional).
-* **EPG Timeline Guide:** Interactive TV guide timeline for browsing ongoing and upcoming broadcasts.
+* **Verified EPG Timeline Guide:** Uses provider-supplied XMLTV schedules with normalized channel matching. If a provider does not supply a verified schedule, the guide displays that program information is unavailable instead of inventing a show title.
 * **Dual-Mode TV Engine:**
   - Full-screen channel zapping with custom channel drawer.
   - VOD channel matching: Cross-references TMDB movie titles against live/VOD channel streams for regional releases.

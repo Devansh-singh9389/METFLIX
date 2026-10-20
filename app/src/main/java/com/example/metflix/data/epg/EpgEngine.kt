@@ -6,7 +6,6 @@ import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 import javax.inject.Inject
@@ -17,61 +16,23 @@ class EpgEngine @Inject constructor() {
 
     /**
      * Attaches or updates the EPG schedule on a channel.
-     * Guarantees realistic, channel-specific, clock-aligned schedule.
+     * Only verified provider schedules are allowed to become user-visible EPG.
      */
     fun enrichChannelWithSchedule(channel: LiveChannel, nowMs: Long = System.currentTimeMillis()): LiveChannel {
-        if (channel.schedule.isNotEmpty() && channel.schedule.any { it.isLive(nowMs) }) {
-            val liveProg = channel.getCurrentEpgProgram(nowMs)
+        if (channel.schedule.isNotEmpty()) {
+            val liveProg = channel.schedule.firstOrNull { it.isLive(nowMs) }
             return channel.copy(
-                currentProgram = liveProg.title,
-                programDescription = liveProg.description
+                currentProgram = liveProg?.title ?: LiveChannel.PROGRAM_UNAVAILABLE,
+                programDescription = liveProg?.description
+                    ?: "The channel provider did not provide a program for the current time."
             )
         }
-
-        val generatedSchedule = generateScheduleForChannel(channel, nowMs)
-        val currentProg = generatedSchedule.firstOrNull { it.isLive(nowMs) }
-            ?: generatedSchedule.firstOrNull()
 
         return channel.copy(
-            schedule = generatedSchedule,
-            currentProgram = currentProg?.title ?: channel.currentProgram,
-            programDescription = currentProg?.description ?: channel.programDescription
+            schedule = emptyList(),
+            currentProgram = LiveChannel.PROGRAM_UNAVAILABLE,
+            programDescription = "The channel provider did not provide a verified program schedule."
         )
-    }
-
-    /**
-     * Generates a realistic 24-hour schedule for today for the given channel based on name & category.
-     */
-    fun generateScheduleForChannel(channel: LiveChannel, nowMs: Long = System.currentTimeMillis()): List<EpgProgram> {
-        val calendar = Calendar.getInstance().apply {
-            timeInMillis = nowMs
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        val startOfDayMs = calendar.timeInMillis
-        val slots = getShowTemplates(channel.category, channel.name)
-
-        val programs = ArrayList<EpgProgram>(slots.size)
-        for (i in slots.indices) {
-            val template = slots[i]
-            val progStartMs = startOfDayMs + (template.startMinuteOfDay * 60 * 1000L)
-            val progEndMs = startOfDayMs + (template.endMinuteOfDay * 60 * 1000L)
-
-            programs.add(
-                EpgProgram(
-                    id = "${channel.id}_slot_$i",
-                    title = template.title,
-                    description = template.description,
-                    category = channel.category,
-                    startEpochMs = progStartMs,
-                    endEpochMs = progEndMs
-                )
-            )
-        }
-
-        return programs
     }
 
     /**
@@ -81,9 +42,11 @@ class EpgEngine @Inject constructor() {
         val stream = if (isGzip) GZIPInputStream(inputStream) else inputStream
         val reader = BufferedReader(InputStreamReader(stream))
         val result = mutableMapOf<String, MutableList<EpgProgram>>()
+        val channelAliases = mutableMapOf<String, String>()
 
         val sdf = SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US)
         var currentChannelId: String? = null
+        var currentChannelName: String? = null
         var currentStartMs: Long = 0L
         var currentEndMs: Long = 0L
         var currentTitle: String = ""
@@ -94,7 +57,20 @@ class EpgEngine @Inject constructor() {
             reader.useLines { lines ->
                 for (line in lines) {
                     val trimmed = line.trim()
-                    if (trimmed.startsWith("<programme", ignoreCase = true)) {
+                    if (trimmed.startsWith("<channel", ignoreCase = true)) {
+                        currentChannelId = Regex("""id="([^"]*)"""").find(trimmed)?.groupValues?.get(1)
+                        currentChannelName = null
+                    } else if (trimmed.startsWith("<display-name", ignoreCase = true) && currentChannelId != null) {
+                        currentChannelName = extractTagValue(trimmed)
+                    } else if (trimmed.startsWith("</channel>", ignoreCase = true)) {
+                        val id = currentChannelId
+                        val name = currentChannelName
+                        if (!id.isNullOrBlank() && !name.isNullOrBlank()) {
+                            channelAliases[name] = id
+                        }
+                        currentChannelId = null
+                        currentChannelName = null
+                    } else if (trimmed.startsWith("<programme", ignoreCase = true)) {
                         currentChannelId = Regex("""channel="([^"]*)"""").find(trimmed)?.groupValues?.get(1)
                         val startStr = Regex("""start="([^"]*)"""").find(trimmed)?.groupValues?.get(1)
                         val stopStr = Regex("""stop="([^"]*)"""").find(trimmed)?.groupValues?.get(1)
@@ -128,11 +104,14 @@ class EpgEngine @Inject constructor() {
             }
         } catch (_: Exception) {}
 
+        channelAliases.forEach { (alias, id) ->
+            result[id]?.let { programs -> result[alias] = programs }
+        }
         return result
     }
 
     /**
-     * Replaces channel template schedules with real parsed XMLTV schedules when available.
+     * Replaces unavailable or stale channel metadata with matched XMLTV schedules.
      */
     fun applyRealEpg(
         channels: List<LiveChannel>,
@@ -141,18 +120,44 @@ class EpgEngine @Inject constructor() {
     ): List<LiveChannel> {
         if (epgMap.isEmpty()) return channels
         return channels.map { channel ->
-            val programs = channel.epgId?.let { epgMap[it] } ?: epgMap[channel.id] ?: epgMap[channel.name]
+            val programs = sequenceOf(channel.epgId, channel.id, channel.name)
+                .filterNotNull()
+                .mapNotNull { key -> findMatchingPrograms(key, epgMap) }
+                .firstOrNull()
             if (!programs.isNullOrEmpty()) {
-                val liveProg = programs.firstOrNull { it.isLive(nowMs) } ?: programs.firstOrNull()
+                val liveProg = programs.firstOrNull { it.isLive(nowMs) }
                 channel.copy(
                     schedule = programs,
-                    currentProgram = liveProg?.title ?: channel.currentProgram,
-                    programDescription = liveProg?.description ?: channel.programDescription
+                    currentProgram = liveProg?.title ?: LiveChannel.PROGRAM_UNAVAILABLE,
+                    programDescription = liveProg?.description
+                        ?: "The channel provider did not provide a program for the current time."
                 )
             } else {
-                channel
+                channel.copy(
+                    schedule = emptyList(),
+                    currentProgram = LiveChannel.PROGRAM_UNAVAILABLE,
+                    programDescription = "The channel provider did not provide a verified program schedule."
+                )
             }
         }
+    }
+
+    private fun findMatchingPrograms(
+        channelKey: String,
+        epgMap: Map<String, List<EpgProgram>>
+    ): List<EpgProgram>? {
+        val normalizedKey = normalizeChannelKey(channelKey)
+        return epgMap.entries.firstOrNull { (epgKey, programs) ->
+            programs.isNotEmpty() && normalizeChannelKey(epgKey) == normalizedKey
+        }?.value
+    }
+
+    private fun normalizeChannelKey(value: String): String {
+        return value.lowercase(Locale.ROOT)
+            .replace(Regex("""\([^)]*\)"""), "")
+            .replace(Regex("""[^a-z0-9]"""), "")
+            .removeSuffix("india")
+            .removeSuffix("in")
     }
 
     private fun extractTagValue(xmlLine: String): String {

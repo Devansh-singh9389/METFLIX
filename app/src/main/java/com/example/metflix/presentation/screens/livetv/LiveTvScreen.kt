@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -117,6 +118,14 @@ private fun LiveTvCatalog(
     isTopBarVisible: Boolean,
     modifier: Modifier = Modifier
 ) {
+    var currentTimeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            currentTimeMs = System.currentTimeMillis()
+        }
+    }
+
     val childPadding = rememberChildPadding()
     val gridState = rememberLazyGridState()
     var isPlaylistDialogOpen by remember { mutableStateOf(false) }
@@ -438,7 +447,7 @@ private fun LiveTvCatalog(
                                     channel = channel,
                                     onClick = { onChannelClick(channel) },
                                     onFocus = { debouncedOnChannelFocus(channel) },
-                                    currentTimeMs = state.currentTimeMs,
+                                    currentTimeMs = currentTimeMs,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
