@@ -258,7 +258,8 @@ private fun Body(
             }
             Screens.Anime.name -> {
             com.example.metflix.presentation.screens.anime.AnimeScreen(
-                onAnimeClick = { movie -> openMovieDetailsScreen("tv:${movie.id}") },
+                onAnimeSeriesClick = { movie -> openMovieDetailsScreen("tv:${movie.id}") },
+                onAnimeMovieClick = { movie -> openMovieDetailsScreen(movie.id) },
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )

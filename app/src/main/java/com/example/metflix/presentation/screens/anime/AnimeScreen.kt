@@ -49,7 +49,8 @@ import com.example.metflix.presentation.screens.movies.MoviesScreenMovieList
 
 @Composable
 fun AnimeScreen(
-    onAnimeClick: (movie: Movie) -> Unit,
+    onAnimeSeriesClick: (movie: Movie) -> Unit,
+    onAnimeMovieClick: (movie: Movie) -> Unit,
     onScroll: (isTopBarVisible: Boolean) -> Unit,
     isTopBarVisible: Boolean,
     viewModel: AnimeScreenViewModel = hiltViewModel()
@@ -71,7 +72,8 @@ fun AnimeScreen(
             } else {
                 AnimeCatalog(
                     state = state,
-                    onAnimeClick = onAnimeClick,
+                    onAnimeSeriesClick = onAnimeSeriesClick,
+                    onAnimeMovieClick = onAnimeMovieClick,
                     onScroll = onScroll,
                     isTopBarVisible = isTopBarVisible,
                     modifier = Modifier.fillMaxSize()
@@ -84,7 +86,8 @@ fun AnimeScreen(
 @Composable
 private fun AnimeCatalog(
     state: AnimeScreenUiState.Ready,
-    onAnimeClick: (movie: Movie) -> Unit,
+    onAnimeSeriesClick: (movie: Movie) -> Unit,
+    onAnimeMovieClick: (movie: Movie) -> Unit,
     onScroll: (isTopBarVisible: Boolean) -> Unit,
     isTopBarVisible: Boolean,
     modifier: Modifier = Modifier
@@ -122,7 +125,7 @@ private fun AnimeCatalog(
             item(contentType = "trending_anime_grid") {
                 MoviesScreenMovieList(
                     movieList = state.trendingAnimeList,
-                    onMovieClick = onAnimeClick
+                    onMovieClick = onAnimeSeriesClick
                 )
             }
         }
@@ -134,7 +137,7 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🎙️ Hindi Dubbed Cartoons & Kids Shows",
                     movieList = state.cartoonsList,
-                    onMovieSelected = onAnimeClick
+                    onMovieSelected = onAnimeSeriesClick
                 )
             }
         }
@@ -146,7 +149,7 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🍿 Popular Anime Movies (Multi-Audio)",
                     movieList = state.animeMoviesList,
-                    onMovieSelected = onAnimeClick
+                    onMovieSelected = onAnimeMovieClick
                 )
             }
         }
@@ -158,7 +161,7 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "⭐ All-Time Greatest Anime Series",
                     movieList = state.topRatedAnimeList,
-                    onMovieSelected = onAnimeClick
+                    onMovieSelected = onAnimeSeriesClick
                 )
             }
         }

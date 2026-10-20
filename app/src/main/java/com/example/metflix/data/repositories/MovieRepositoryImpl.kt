@@ -110,7 +110,11 @@ class MovieRepositoryImpl @Inject constructor(
         movieDetailsCache[cacheKey]?.let { return@withContext it }
 
         // If explicitly requested as TV show, or checking TV first
-        val shouldCheckTvFirst = isTvShow == true || tvDataSource.getTvShowList().any { it.id == movieId } || animeDataSource.getTrendingAnimeList().any { it.id == movieId }
+        val shouldCheckTvFirst = isTvShow == true ||
+            tvDataSource.getTvShowList().any { it.id == movieId } ||
+            animeDataSource.getTrendingAnimeList().any { it.id == movieId } ||
+            animeDataSource.getCartoonsList().any { it.id == movieId } ||
+            animeDataSource.getTopRatedAnimeList().any { it.id == movieId }
 
         if (shouldCheckTvFirst) {
             val tmdbTvDetails = tmdbApiClient.getTvShowDetails(movieId).getOrNull()
