@@ -112,6 +112,7 @@ class MovieRepositoryImpl @Inject constructor(
         // If explicitly requested as TV show, or checking TV first
         val shouldCheckTvFirst = isTvShow == true ||
             tvDataSource.getTvShowList().any { it.id == movieId } ||
+            animeDataSource.findMovieById(movieId) != null ||
             animeDataSource.getTrendingAnimeList().any { it.id == movieId } ||
             animeDataSource.getCartoonsList().any { it.id == movieId } ||
             animeDataSource.getTopRatedAnimeList().any { it.id == movieId }
@@ -156,6 +157,7 @@ class MovieRepositoryImpl @Inject constructor(
 
         // Check local / disk cached TV shows & anime before generic fallback
         val matchedTv = tvDataSource.getTvShowList().find { it.id == movieId }
+            ?: animeDataSource.findMovieById(movieId)
             ?: animeDataSource.getTrendingAnimeList().find { it.id == movieId }
             ?: animeDataSource.getCartoonsList().find { it.id == movieId }
 
@@ -352,6 +354,7 @@ class MovieRepositoryImpl @Inject constructor(
         movieDetailsCache.clear()
         tvEpisodesCache.clear()
         movieDataSource.clearAllReaders()
+        animeDataSource.clearCache()
         true
     }
 }

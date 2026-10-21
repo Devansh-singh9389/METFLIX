@@ -16,135 +16,180 @@
 
 package com.example.metflix.data.repositories
 
+import android.util.Log
+import com.example.metflix.data.entities.AnimeHomeData
 import com.example.metflix.data.entities.Movie
-import com.example.metflix.data.network.tmdb.TmdbApiClient
-import com.example.metflix.data.network.tmdb.TmdbConfig
+import com.example.metflix.data.network.anime.AnimeApiClient
+import com.example.metflix.data.network.anime.models.AnimeHomeResponse
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Singleton
 class AnimeDataSource @Inject constructor(
-    private val tmdbApiClient: TmdbApiClient,
-    private val diskCache: TmdbDiskCache
+    private val animeApiClient: AnimeApiClient,
+    private val animeDiskCache: AnimeDiskCache
 ) {
-    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val activeRefreshes = ConcurrentHashMap<String, Boolean>()
+    companion object {
+        private const val TAG = "AnimeDataSource"
+    }
 
-    private fun refreshIfStale(key: String, block: suspend () -> Unit) {
-        if (diskCache.isCacheStale(key)) {
-            if (activeRefreshes.putIfAbsent(key, true) == null) {
-                repositoryScope.launch {
-                    try {
-                        block()
-                    } finally {
-                        activeRefreshes.remove(key)
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val fetchMutex = Mutex()
+    private val movieIndex = ConcurrentHashMap<String, Movie>()
+
+    @Volatile
+    private var cachedHomeData: AnimeHomeData? = null
+
+    @Volatile
+    private var isRefreshing: Boolean = false
+
+    private fun mapResponseToHomeData(response: AnimeHomeResponse): AnimeHomeData {
+        val homeData = AnimeHomeData(
+            bigTitles = response.bigTitlesMain.map { it.toMovie() },
+            newestDrops = response.newestDrops.map { it.toMovie() },
+            newAnimeArrivals = response.newAnimeArrivals.map { it.toMovie() },
+            mostWatchedShows = response.mostWatchedShows.map { it.toMovie() },
+            latestAnimeMovies = response.latestAnimeMovies.map { it.toMovie() },
+            mostWatchedFilms = response.mostWatchedFilms.map { it.toMovie() },
+            cartoonSeries = response.justInCartoonSeries.map { it.toMovie() },
+            cartoonFilms = response.freshCartoonFilms.map { it.toMovie() },
+            networks = response.networks.map { it.toMovie() },
+            languages = response.streamInYourLanguage.map { it.toMovie() }
+        )
+        indexMovies(homeData)
+        return homeData
+    }
+
+    private fun indexMovies(homeData: AnimeHomeData) {
+        val all = homeData.getAllUniqueMovies()
+        for (m in all) {
+            movieIndex[m.id] = m
+            val slug = m.id.substringAfterLast("/")
+            if (slug.isNotEmpty() && slug != m.id) {
+                movieIndex[slug] = m
+            }
+            val cleanName = m.name.lowercase().trim()
+            if (cleanName.isNotEmpty()) {
+                movieIndex[cleanName] = m
+            }
+        }
+    }
+
+    suspend fun getHomeData(forceRefresh: Boolean = false): AnimeHomeData {
+        if (!forceRefresh) {
+            cachedHomeData?.let { data ->
+                if (!data.isEmpty) {
+                    if (animeDiskCache.isCacheStale()) {
+                        triggerBackgroundRefresh()
                     }
+                    return data
+                }
+            }
+
+            // Check disk cache
+            val diskData = animeDiskCache.loadHomeResponse()
+            if (diskData != null) {
+                val mapped = mapResponseToHomeData(diskData)
+                if (!mapped.isEmpty) {
+                    cachedHomeData = mapped
+                    if (animeDiskCache.isCacheStale()) {
+                        triggerBackgroundRefresh()
+                    }
+                    return mapped
+                }
+            }
+        }
+
+        // Fetch live from Render backend
+        return fetchMutex.withLock {
+            if (!forceRefresh) {
+                cachedHomeData?.let { if (!it.isEmpty) return@withLock it }
+            }
+
+            Log.d(TAG, "Fetching live Anime Home data from Render backend...")
+            val result = animeApiClient.getHomeData()
+            val response = result.getOrNull()
+            if (response != null) {
+                animeDiskCache.saveHomeResponse(response)
+                val mapped = mapResponseToHomeData(response)
+                cachedHomeData = mapped
+                mapped
+            } else {
+                // If live fetch fails, fallback to disk cache if available
+                val diskFallback = animeDiskCache.loadHomeResponse()
+                if (diskFallback != null) {
+                    val mapped = mapResponseToHomeData(diskFallback)
+                    cachedHomeData = mapped
+                    mapped
+                } else {
+                    cachedHomeData ?: AnimeHomeData()
                 }
             }
         }
     }
 
-    private suspend fun fetchTwoPages(
-        fetch: suspend (page: Int) -> Result<List<Movie>>
-    ): List<Movie> = coroutineScope {
-        val p1 = async { fetch(1).getOrNull().orEmpty() }
-        val p2 = async { fetch(2).getOrNull().orEmpty() }
-        (p1.await() + p2.await()).distinctBy { it.id }
-    }
-
-    private val trendingAnimeReader: CachedDataReader<Movie> = CachedDataReader {
-        val cached = diskCache.loadMovies("anime_trending")
-        if (cached.isNotEmpty()) {
-            refreshIfStale("anime_trending") {
-                fetchTrendingAnimeLive()?.let { trendingAnimeReader.update(it) }
+    private fun triggerBackgroundRefresh() {
+        if (isRefreshing) return
+        isRefreshing = true
+        repositoryScope.launch {
+            try {
+                Log.d(TAG, "Triggering background refresh for Anime Home data...")
+                val result = animeApiClient.getHomeData()
+                result.getOrNull()?.let { freshResponse ->
+                    animeDiskCache.saveHomeResponse(freshResponse)
+                    cachedHomeData = mapResponseToHomeData(freshResponse)
+                    Log.d(TAG, "Background refresh completed successfully")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Background refresh failed: ${e.message}")
+            } finally {
+                isRefreshing = false
             }
-            return@CachedDataReader cached
         }
-        fetchTrendingAnimeLive() ?: emptyList()
     }
 
-    private val animeMoviesReader: CachedDataReader<Movie> = CachedDataReader {
-        val cached = diskCache.loadMovies("anime_movies")
-        if (cached.isNotEmpty()) {
-            refreshIfStale("anime_movies") {
-                fetchAnimeMoviesLive()?.let { animeMoviesReader.update(it) }
-            }
-            return@CachedDataReader cached
-        }
-        fetchAnimeMoviesLive() ?: emptyList()
+    fun findMovieById(id: String): Movie? {
+        val clean = id.removePrefix("tv:").trim()
+        movieIndex[clean]?.let { return it }
+        val slug = clean.substringAfterLast("/")
+        return movieIndex[slug] ?: movieIndex[clean.lowercase()]
     }
 
-    private val cartoonsReader: CachedDataReader<Movie> = CachedDataReader {
-        val cached = diskCache.loadMovies("anime_cartoons")
-        if (cached.isNotEmpty()) {
-            refreshIfStale("anime_cartoons") {
-                fetchCartoonsLive()?.let { cartoonsReader.update(it) }
-            }
-            return@CachedDataReader cached
-        }
-        fetchCartoonsLive() ?: emptyList()
+    suspend fun getTrendingAnimeList(): List<Movie> {
+        val home = getHomeData()
+        return home.newAnimeArrivals.ifEmpty { home.newestDrops }
     }
 
-    private val topRatedAnimeReader: CachedDataReader<Movie> = CachedDataReader {
-        val cached = diskCache.loadMovies("anime_top_rated")
-        if (cached.isNotEmpty()) {
-            refreshIfStale("anime_top_rated") {
-                fetchTopRatedAnimeLive()?.let { topRatedAnimeReader.update(it) }
-            }
-            return@CachedDataReader cached
-        }
-        fetchTopRatedAnimeLive() ?: emptyList()
+    suspend fun getAnimeMoviesList(): List<Movie> {
+        val home = getHomeData()
+        return home.latestAnimeMovies.ifEmpty { home.mostWatchedFilms }
     }
 
-    private suspend fun fetchTrendingAnimeLive(): List<Movie>? {
-        if (!TmdbConfig.USE_TMDB) return null
-        val combined = fetchTwoPages { page -> tmdbApiClient.getTrendingAnime(page = page) }
-        if (combined.isNotEmpty()) {
-            diskCache.saveMovies("anime_trending", combined)
-            return combined
-        }
-        return null
+    suspend fun getCartoonsList(): List<Movie> {
+        val home = getHomeData()
+        return home.cartoonSeries.ifEmpty { home.cartoonFilms }
     }
 
-    private suspend fun fetchAnimeMoviesLive(): List<Movie>? {
-        if (!TmdbConfig.USE_TMDB) return null
-        val combined = fetchTwoPages { page -> tmdbApiClient.getPopularAnimeMovies(page = page) }
-        if (combined.isNotEmpty()) {
-            diskCache.saveMovies("anime_movies", combined)
-            return combined
-        }
-        return null
+    suspend fun getTopRatedAnimeList(): List<Movie> {
+        val home = getHomeData()
+        return home.mostWatchedShows
     }
 
-    private suspend fun fetchCartoonsLive(): List<Movie>? {
-        if (!TmdbConfig.USE_TMDB) return null
-        val combined = fetchTwoPages { page -> tmdbApiClient.getAnimatedCartoonsAndKids(page = page) }
-        if (combined.isNotEmpty()) {
-            diskCache.saveMovies("anime_cartoons", combined)
-            return combined
-        }
-        return null
-    }
+    suspend fun getNewestDropsList(): List<Movie> = getHomeData().newestDrops
+    suspend fun getBigTitlesList(): List<Movie> = getHomeData().bigTitles
+    suspend fun getNetworksList(): List<Movie> = getHomeData().networks
+    suspend fun getLanguagesList(): List<Movie> = getHomeData().languages
 
-    private suspend fun fetchTopRatedAnimeLive(): List<Movie>? {
-        if (!TmdbConfig.USE_TMDB) return null
-        val combined = fetchTwoPages { page -> tmdbApiClient.getTopRatedAnime(page = page) }
-        if (combined.isNotEmpty()) {
-            diskCache.saveMovies("anime_top_rated", combined)
-            return combined
-        }
-        return null
+    fun clearCache() {
+        cachedHomeData = null
+        movieIndex.clear()
+        animeDiskCache.clearCache()
     }
-
-    suspend fun getTrendingAnimeList(): List<Movie> = trendingAnimeReader.read()
-    suspend fun getAnimeMoviesList(): List<Movie> = animeMoviesReader.read()
-    suspend fun getCartoonsList(): List<Movie> = cartoonsReader.read()
-    suspend fun getTopRatedAnimeList(): List<Movie> = topRatedAnimeReader.read()
 }

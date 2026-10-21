@@ -19,77 +19,50 @@ package com.example.metflix.presentation.screens.anime
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.metflix.data.entities.AnimeHomeData
 import com.example.metflix.data.entities.MovieList
-import com.example.metflix.data.repositories.MovieRepository
+import com.example.metflix.data.repositories.AnimeDataSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 @HiltViewModel
 class AnimeScreenViewModel @Inject constructor(
-    private val movieRepository: MovieRepository
+    private val animeDataSource: AnimeDataSource
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AnimeScreenUiState>(AnimeScreenUiState.Loading)
     val uiState: StateFlow<AnimeScreenUiState> = _uiState.asStateFlow()
 
-    private var trendingAnimeList: MovieList = emptyList()
-    private var animeMoviesList: MovieList = emptyList()
-    private var cartoonsList: MovieList = emptyList()
-    private var topRatedAnimeList: MovieList = emptyList()
-
     init {
         loadData()
     }
 
-    private fun emitState() {
-        _uiState.value = AnimeScreenUiState.Ready(
-            trendingAnimeList = trendingAnimeList,
-            animeMoviesList = animeMoviesList,
-            cartoonsList = cartoonsList,
-            topRatedAnimeList = topRatedAnimeList
-        )
+    fun retry() {
+        _uiState.value = AnimeScreenUiState.Loading
+        loadData(forceRefresh = true)
     }
 
-    private fun loadData() {
+    fun loadData(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            movieRepository.getTrendingAnime()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    trendingAnimeList = list
-                    emitState()
+            try {
+                val data = animeDataSource.getHomeData(forceRefresh)
+                if (data.isEmpty) {
+                    _uiState.value = AnimeScreenUiState.Empty
+                } else {
+                    _uiState.value = AnimeScreenUiState.Ready(homeData = data)
                 }
-        }
-
-        viewModelScope.launch {
-            movieRepository.getAnimeMovies()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    animeMoviesList = list
-                    emitState()
+            } catch (e: Exception) {
+                val cached = animeDataSource.getHomeData(forceRefresh = false)
+                if (!cached.isEmpty) {
+                    _uiState.value = AnimeScreenUiState.Ready(homeData = cached)
+                } else {
+                    _uiState.value = AnimeScreenUiState.Error(e.message ?: "Failed to load anime data")
                 }
-        }
-
-        viewModelScope.launch {
-            movieRepository.getCartoons()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    cartoonsList = list
-                    emitState()
-                }
-        }
-
-        viewModelScope.launch {
-            movieRepository.getTopRatedAnime()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    topRatedAnimeList = list
-                    emitState()
-                }
+            }
         }
     }
 }
@@ -97,11 +70,15 @@ class AnimeScreenViewModel @Inject constructor(
 @Immutable
 sealed interface AnimeScreenUiState {
     data object Loading : AnimeScreenUiState
+    data object Empty : AnimeScreenUiState
+    @Immutable
+    data class Error(val message: String) : AnimeScreenUiState
     @Immutable
     data class Ready(
-        val trendingAnimeList: MovieList,
-        val animeMoviesList: MovieList,
-        val cartoonsList: MovieList,
-        val topRatedAnimeList: MovieList
+        val homeData: AnimeHomeData,
+        val trendingAnimeList: MovieList = homeData.newAnimeArrivals.ifEmpty { homeData.newestDrops },
+        val animeMoviesList: MovieList = homeData.latestAnimeMovies.ifEmpty { homeData.mostWatchedFilms },
+        val cartoonsList: MovieList = homeData.cartoonSeries.ifEmpty { homeData.cartoonFilms },
+        val topRatedAnimeList: MovieList = homeData.mostWatchedShows
     ) : AnimeScreenUiState
 }

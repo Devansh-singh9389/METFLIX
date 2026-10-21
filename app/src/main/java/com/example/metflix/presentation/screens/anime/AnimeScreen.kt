@@ -38,10 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.example.metflix.data.entities.Movie
-import com.example.metflix.data.entities.MovieList
 import com.example.metflix.presentation.common.Loading
 import com.example.metflix.presentation.common.MoviesRow
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
@@ -62,12 +62,20 @@ fun AnimeScreen(
             Loading(modifier = Modifier.fillMaxSize())
         }
 
+        is AnimeScreenUiState.Empty -> {
+            AnimeEmptyState(modifier = Modifier.fillMaxSize())
+        }
+
+        is AnimeScreenUiState.Error -> {
+            AnimeErrorState(
+                message = state.message,
+                onRetry = { viewModel.retry() },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
         is AnimeScreenUiState.Ready -> {
-            if (state.trendingAnimeList.isEmpty() &&
-                state.animeMoviesList.isEmpty() &&
-                state.cartoonsList.isEmpty() &&
-                state.topRatedAnimeList.isEmpty()
-            ) {
+            if (state.homeData.isEmpty) {
                 AnimeEmptyState(modifier = Modifier.fillMaxSize())
             } else {
                 AnimeCatalog(
@@ -105,16 +113,18 @@ private fun AnimeCatalog(
         onScroll(shouldShowTopBar)
     }
 
+    val homeData = state.homeData
+
     LazyColumn(
         modifier = modifier,
         state = lazyListState,
         contentPadding = PaddingValues(top = childPadding.top, bottom = 104.dp)
     ) {
-        // 1. Trending Anime Hero Section
-        if (state.trendingAnimeList.isNotEmpty()) {
+        // 1. Newest Drops Hero Section (Featured grid with episodes and badges)
+        if (homeData.newestDrops.isNotEmpty()) {
             item(contentType = "anime_header") {
                 Text(
-                    text = "🎌 Trending Anime Series (Sub & Dub)",
+                    text = "⚡ Newest Drops & Latest Episodes",
                     style = MaterialTheme.typography.headlineLarge.copy(
                         fontWeight = FontWeight.Medium,
                         fontSize = 30.sp
@@ -122,45 +132,117 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(start = childPadding.start, top = 8.dp, bottom = 16.dp)
                 )
             }
-            item(contentType = "trending_anime_grid") {
+            item(contentType = "newest_drops_grid") {
                 MoviesScreenMovieList(
-                    movieList = state.trendingAnimeList,
+                    movieList = homeData.newestDrops,
                     onMovieClick = onAnimeSeriesClick
                 )
             }
         }
 
-        // 2. Animated Cartoons & Kids Favorites (Doraemon, Shinchan, Tom & Jerry, etc.)
-        if (state.cartoonsList.isNotEmpty()) {
-            item(contentType = "cartoons_row") {
+        // 2. Popular Franchises & Big Titles (Doraemon, Shinchan, Naruto, Ben 10, Pokemon...)
+        if (homeData.bigTitles.isNotEmpty()) {
+            item(contentType = "big_titles_row") {
                 MoviesRow(
                     modifier = Modifier.padding(top = childPadding.top),
-                    title = "🎙️ Hindi Dubbed Cartoons & Kids Shows",
-                    movieList = state.cartoonsList,
+                    title = "🔥 Popular Anime & Cartoon Franchises",
+                    movieList = homeData.bigTitles,
                     onMovieSelected = onAnimeSeriesClick
                 )
             }
         }
 
-        // 3. Popular Anime Movies (Studio Ghibli, Makoto Shinkai, Doraemon Movies)
-        if (state.animeMoviesList.isNotEmpty()) {
-            item(contentType = "anime_movies_row") {
+        // 3. New Anime Arrivals
+        if (homeData.newAnimeArrivals.isNotEmpty()) {
+            item(contentType = "new_anime_arrivals_row") {
                 MoviesRow(
                     modifier = Modifier.padding(top = childPadding.top),
-                    title = "🍿 Popular Anime Movies (Multi-Audio)",
-                    movieList = state.animeMoviesList,
+                    title = "🎌 New Anime Arrivals",
+                    movieList = homeData.newAnimeArrivals,
+                    onMovieSelected = onAnimeSeriesClick
+                )
+            }
+        }
+
+        // 4. Most Watched Anime Series
+        if (homeData.mostWatchedShows.isNotEmpty()) {
+            item(contentType = "most_watched_shows_row") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = childPadding.top),
+                    title = "⭐ Most Watched Anime Series",
+                    movieList = homeData.mostWatchedShows,
+                    onMovieSelected = onAnimeSeriesClick
+                )
+            }
+        }
+
+        // 5. Latest Anime Movies
+        if (homeData.latestAnimeMovies.isNotEmpty()) {
+            item(contentType = "latest_anime_movies_row") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = childPadding.top),
+                    title = "🍿 Latest Anime Movies",
+                    movieList = homeData.latestAnimeMovies,
                     onMovieSelected = onAnimeMovieClick
                 )
             }
         }
 
-        // 4. Top Rated Anime All Time
-        if (state.topRatedAnimeList.isNotEmpty()) {
-            item(contentType = "top_rated_anime_row") {
+        // 6. Most Watched Films
+        if (homeData.mostWatchedFilms.isNotEmpty()) {
+            item(contentType = "most_watched_films_row") {
                 MoviesRow(
                     modifier = Modifier.padding(top = childPadding.top),
-                    title = "⭐ All-Time Greatest Anime Series",
-                    movieList = state.topRatedAnimeList,
+                    title = "🏆 All-Time Popular Anime Movies",
+                    movieList = homeData.mostWatchedFilms,
+                    onMovieSelected = onAnimeMovieClick
+                )
+            }
+        }
+
+        // 7. Hindi Dubbed Cartoons & Kids Series
+        if (homeData.cartoonSeries.isNotEmpty()) {
+            item(contentType = "cartoon_series_row") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = childPadding.top),
+                    title = "🎙️ Hindi Dubbed Cartoons & Kids Shows",
+                    movieList = homeData.cartoonSeries,
+                    onMovieSelected = onAnimeSeriesClick
+                )
+            }
+        }
+
+        // 8. Cartoon & Animated Movies
+        if (homeData.cartoonFilms.isNotEmpty()) {
+            item(contentType = "cartoon_films_row") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = childPadding.top),
+                    title = "🎬 Cartoon & Animated Movies",
+                    movieList = homeData.cartoonFilms,
+                    onMovieSelected = onAnimeMovieClick
+                )
+            }
+        }
+
+        // 9. Stream In Your Language
+        if (homeData.languages.isNotEmpty()) {
+            item(contentType = "languages_row") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = childPadding.top),
+                    title = "🌐 Stream In Your Language",
+                    movieList = homeData.languages,
+                    onMovieSelected = onAnimeSeriesClick
+                )
+            }
+        }
+
+        // 10. Networks & Channels
+        if (homeData.networks.isNotEmpty()) {
+            item(contentType = "networks_row") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = childPadding.top),
+                    title = "📺 Networks & Channels",
+                    movieList = homeData.networks,
                     onMovieSelected = onAnimeSeriesClick
                 )
             }
@@ -191,6 +273,41 @@ private fun AnimeEmptyState(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun AnimeErrorState(
+    message: String,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.padding(horizontal = 48.dp, vertical = 64.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(text = "⚠️", style = MaterialTheme.typography.displayMedium)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Failed to Load Anime",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onRetry) {
+                Text(text = "Retry")
+            }
         }
     }
 }
