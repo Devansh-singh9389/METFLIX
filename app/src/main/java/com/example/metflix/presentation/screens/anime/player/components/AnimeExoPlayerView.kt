@@ -22,12 +22,17 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import com.example.metflix.data.player.MediaCacheManager
@@ -47,8 +52,12 @@ fun AnimeExoPlayerView(
     val context = LocalContext.current
     var useSoftwareDecode by remember(streamUrl) { mutableStateOf(false) }
 
+    val bandwidthMeter = remember(context) {
+        DefaultBandwidthMeter.Builder(context).build()
+    }
+
     // Build a player with correct data source + cache + optional software renderer
-    val exoPlayer = remember(streamUrl, headers, useSoftwareDecode) {
+    val exoPlayer = remember(streamUrl, headers, useSoftwareDecode, bandwidthMeter) {
         val cleanHeaders = headers.toMutableMap().apply {
             if (!containsKey("Accept")) put("Accept", "*/*")
             if (!containsKey("Accept-Language")) put("Accept-Language", "en-US,en;q=0.9")
@@ -66,37 +75,58 @@ fun AnimeExoPlayerView(
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
             .setDefaultRequestProperties(cleanHeaders)
-            .setConnectTimeoutMs(20_000)
-            .setReadTimeoutMs(20_000)
+            .setConnectTimeoutMs(10_000)
+            .setReadTimeoutMs(15_000)
             .setAllowCrossProtocolRedirects(true)
             .setKeepPostFor302Redirects(true)
 
         // ⭐ Wrap with MediaCacheManager SimpleCache (512 MB disk cache)
         val cachedFactory = MediaCacheManager.createCacheDataSourceFactory(context, http)
 
-        val builder = ExoPlayer.Builder(context)
+        // LoadControl tuned for 12 sec RAM buffer + 48 sec device storage buffer (60 sec max total buffer)
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 12_000,
+                /* maxBufferMs = */ 60_000,
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+            )
+            .setBackBuffer(0, false)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        val renderersFactory = DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+            .apply {
+                if (useSoftwareDecode) {
+                    Log.w(TAG, "Building ExoPlayer with SOFTWARE codec preference")
+                    setMediaCodecSelector(
+                        MediaCodecSelector.PREFER_SOFTWARE
+                    )
+                    setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+                } else {
+                    setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+                }
+            }
+
+        ExoPlayer.Builder(context, renderersFactory)
+            .setBandwidthMeter(bandwidthMeter)
             .setMediaSourceFactory(DefaultMediaSourceFactory(cachedFactory))
-
-        if (useSoftwareDecode) {
-            Log.w(TAG, "Building ExoPlayer with SOFTWARE codec preference")
-            val renderers = DefaultRenderersFactory(context)
-                .setMediaCodecSelector(
-                    androidx.media3.exoplayer.mediacodec.MediaCodecSelector.PREFER_SOFTWARE
-                )
-                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-            builder.setRenderersFactory(renderers)
-        }
-
-        builder.build().apply {
-            trackSelectionParameters = trackSelectionParameters.buildUpon()
-                .setPreferredVideoMimeType(MimeTypes.VIDEO_H264)
-                .build()
-        }
+            .setLoadControl(loadControl)
+            .setSeekParameters(SeekParameters.CLOSEST_SYNC)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build()
+            .apply {
+                trackSelectionParameters = trackSelectionParameters.buildUpon()
+                    .setPreferredVideoMimeType(MimeTypes.VIDEO_H264)
+                    .build()
+            }
     }
 
     // Load media when URL changes
     LaunchedEffect(streamUrl, exoPlayer) {
         if (streamUrl.isNotBlank()) {
+            exoPlayer.stop() // Cleanly flush hardware codec before loading new stream
             val mediaItem = MediaItem.Builder()
                 .setUri(Uri.parse(streamUrl))
                 .apply {
@@ -140,18 +170,39 @@ fun AnimeExoPlayerView(
             .build()
     }
 
-    // Quality selection
+    // Quality selection — when a specific quality is selected, disable ABR & lock track; when Auto, re-enable ABR
     val selectedQuality by viewModel.selectedQuality.collectAsState()
     LaunchedEffect(selectedQuality) {
+        val targetHeight = selectedQuality.height
         val builder = exoPlayer.trackSelectionParameters.buildUpon()
             .setPreferredVideoMimeType(MimeTypes.VIDEO_H264)
-        if (selectedQuality.height != null) {
-            val targetHeight = selectedQuality.height!!
+
+        if (targetHeight != null) {
+            // Specific quality selected -> DISABLE ABR and lock track via TrackSelectionOverride
+            var overrideSet = false
+            val currentTracks = exoPlayer.currentTracks
+            for (group in currentTracks.groups) {
+                if (group.type == C.TRACK_TYPE_VIDEO) {
+                    for (i in 0 until group.length) {
+                        val format = group.getTrackFormat(i)
+                        if (format.height == targetHeight) {
+                            builder.setOverrideForType(
+                                TrackSelectionOverride(group.mediaTrackGroup, i)
+                            )
+                            overrideSet = true
+                            break
+                        }
+                    }
+                }
+                if (overrideSet) break
+            }
             builder.setMinVideoSize(1, targetHeight)
                 .setMaxVideoSize(Int.MAX_VALUE, targetHeight)
                 .setMaxVideoBitrate(Int.MAX_VALUE)
         } else {
-            builder.clearVideoSizeConstraints()
+            // "Auto" selected -> RE-ENABLE ABR Bandwidth Feeding
+            builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                .clearVideoSizeConstraints()
                 .setMaxVideoBitrate(Int.MAX_VALUE)
         }
         exoPlayer.trackSelectionParameters = builder.build()
@@ -210,14 +261,18 @@ fun AnimeExoPlayerView(
         onDispose { exoPlayer.removeListener(listener) }
     }
 
-    // Progress loop
-    LaunchedEffect(exoPlayer) {
+    // Progress & network speed measurement loop
+    LaunchedEffect(exoPlayer, bandwidthMeter) {
         while (true) {
             viewModel.updatePlaybackProgress(
                 exoPlayer.currentPosition.coerceAtLeast(0L),
                 exoPlayer.duration.coerceAtLeast(0L),
                 exoPlayer.bufferedPosition.coerceAtLeast(0L)
             )
+            val speedBps = bandwidthMeter.bitrateEstimate
+            if (speedBps > 0) {
+                viewModel.updateDownloadMetrics(speedBps / 8, 0L)
+            }
             delay(500)
         }
     }

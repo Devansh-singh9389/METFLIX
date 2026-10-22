@@ -426,13 +426,21 @@ class AnimePlayerViewModel @Inject constructor(
                 return@launch
             }
 
-            // 5. No WebView fallback — surface a clear, actionable error instead.
-            Log.e(TAG, "Sniffer timed out for ${server.embedUrl}")
+            // 5. Automatic fallback to next server (e.g., Server 0 -> Server 1) if direct stream extraction fails
+            val servers = _availableServers.value
+            val currentIndex = servers.indexOfFirst { it.serverNumber == server.serverNumber }
+            if (currentIndex in 0 until servers.lastIndex) {
+                val nextServer = servers[currentIndex + 1]
+                Log.w(TAG, "Server ${server.serverNumber} (${server.subtitle}) failed to resolve direct stream. Automatically falling back to Server ${nextServer.serverNumber} (${nextServer.subtitle})...")
+                _selectedServerNumber.value = nextServer.serverNumber
+                resolveStreamForServer(nextServer)
+                return@launch
+            }
+
+            Log.e(TAG, "All servers failed to resolve stream for ${server.embedUrl}")
             _uiState.value = AnimePlayerUiState.Error(
-                "Could not extract direct video stream.\n\n" +
-                "WebView playback is not supported on this device " +
-                "(MediaTek DFB memory collision + invalid gralloc usage bits 0x2000).\n\n" +
-                "Try another server or audio track."
+                "Could not extract direct video stream from available servers.\n\n" +
+                "Try selecting another audio track or refresh."
             )
         }
     }

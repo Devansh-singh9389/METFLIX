@@ -17,6 +17,7 @@
 package com.example.metflix
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
@@ -33,6 +34,7 @@ import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.components.SingletonComponent
 
 import com.example.metflix.data.network.SecureHttpClient
+import com.example.metflix.data.player.MediaCacheManager
 import com.example.metflix.data.settings.PerformancePreferences
 import javax.inject.Inject
 
@@ -42,26 +44,42 @@ class MetFlixApplication : Hilt_MetFlixApplication(), ImageLoaderFactory {
     @Inject
     lateinit var performancePreferences: PerformancePreferences
 
+    private var imageLoaderRef: ImageLoader? = null
+
     override fun onCreate() {
         super.onCreate()
         SecureHttpClient.getClient(this)
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            imageLoaderRef?.memoryCache?.clear()
+            MediaCacheManager.trimCacheToSize(this, 20L * 1024 * 1024)
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        imageLoaderRef?.memoryCache?.clear()
+        MediaCacheManager.trimCacheToSize(this, 10L * 1024 * 1024)
+    }
+
     override fun newImageLoader(): ImageLoader {
-        return ImageLoader.Builder(this)
+        val loader = ImageLoader.Builder(this)
             .okHttpClient {
                 SecureHttpClient.getClient(this)
             }
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(0.15)
                     .strongReferencesEnabled(true)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(80L * 1024 * 1024)
+                    .maxSizeBytes(40L * 1024 * 1024)
                     .build()
             }
             .respectCacheHeaders(false)
@@ -72,6 +90,8 @@ class MetFlixApplication : Hilt_MetFlixApplication(), ImageLoaderFactory {
             .diskCachePolicy(CachePolicy.ENABLED)
             .memoryCachePolicy(CachePolicy.ENABLED)
             .build()
+        imageLoaderRef = loader
+        return loader
     }
 }
 

@@ -59,11 +59,11 @@ fun rememberPlayer(
         // avoiding JVM heap exhaustion on 512MB RAM Android TV devices
         val dataSourceFactory = MediaCacheManager.createCacheDataSourceFactory(context, httpDataSourceFactory)
 
-        // Memory-efficient LoadControl tuned specifically for low-RAM devices (512MB RAM TV)
+        // LoadControl tuned for 12 sec RAM buffer + 48 sec device storage buffer (60 sec max total buffer)
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 5_000,
-                /* maxBufferMs = */ 15_000,
+                /* minBufferMs = */ 12_000,
+                /* maxBufferMs = */ 60_000,
                 /* bufferForPlaybackMs = */ 1_500,
                 /* bufferForPlaybackAfterRebufferMs = */ 2_500
             )
@@ -71,7 +71,7 @@ fun rememberPlayer(
                 /* backBufferDurationMs = */ 0,
                 /* retainBackBufferFromKeyframe = */ false
             )
-            .setPrioritizeTimeOverSizeThresholds(false)
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
         val renderersFactory = DefaultRenderersFactory(context)

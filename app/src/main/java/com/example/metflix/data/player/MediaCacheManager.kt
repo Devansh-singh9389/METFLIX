@@ -36,7 +36,7 @@ import java.io.File
 @OptIn(UnstableApi::class)
 object MediaCacheManager {
 
-    private const val MAX_CACHE_BYTES = 100L * 1024 * 1024 // 512 MB disk cache limit
+    private const val MAX_CACHE_BYTES = 60L * 1024 * 1024 // 60 MB media disk cache limit
     private const val CACHE_DIR_NAME = "anime_media_cache"
 
     @Volatile
@@ -74,6 +74,26 @@ object MediaCacheManager {
             .setCache(cache)
             .setUpstreamDataSourceFactory(defaultDataSourceFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    }
+
+    /**
+     * Trims the media disk cache down to the target size in bytes.
+     */
+    fun trimCacheToSize(context: Context, targetBytes: Long) {
+        val cache = getCache(context)
+        var currentSize = cache.cacheSpace
+        if (currentSize > targetBytes) {
+            val keys = cache.keys.toList()
+            for (key in keys) {
+                if (currentSize <= targetBytes) break
+                val spans = cache.getCachedSpans(key)
+                for (span in spans) {
+                    currentSize -= span.length
+                    cache.removeSpan(span)
+                    if (currentSize <= targetBytes) break
+                }
+            }
+        }
     }
 
     /**

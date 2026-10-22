@@ -60,7 +60,7 @@ class AnimeStreamExtractor @Inject constructor(
         private val FILE_PATTERN = Pattern.compile("""file\s*:\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']""")
         private val SOURCES_PATTERN = Pattern.compile("""sources\s*:\s*\[\s*\{[^}]*?["']?file["']?\s*:\s*["']([^"']+)["']""")
         private val SOURCE_TAG_PATTERN = Pattern.compile("""<source[^>]+src=["']([^"']+\.(?:m3u8|mp4)[^"']*)["']""")
-        private val CONFIG_PATTERN = Pattern.compile("""var\s+CONFIG\s*=\s*(\{.+?\});""", Pattern.DOTALL)
+        private val CONFIG_PATTERN = Pattern.compile("""(?:var|let|const|window\.)\s*CONFIG\s*=\s*(\{.+?\});""", Pattern.DOTALL or Pattern.CASE_INSENSITIVE)
         private val PACKED_JS_PATTERN = Pattern.compile("""eval\(function\(p,a,c,k,e,[rd]\).+?\.split\('\|'\)\)\)""", Pattern.DOTALL)
     }
 
@@ -178,13 +178,21 @@ class AnimeStreamExtractor @Inject constructor(
         } catch (e: Exception) { "ERR: ${e.message}" }
     }
 
-    private fun fetchPageHtml(url: String): String {
+    private fun fetchPageHtml(url: String, referer: String = DEFAULT_REFERER): String {
         return try {
             val req = Request.Builder()
                 .url(url)
                 .header("User-Agent", BROWSER_USER_AGENT)
-                .header("Referer", DEFAULT_REFERER)
+                .header("Referer", referer)
                 .header("Origin", DEFAULT_ORIGIN)
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Sec-Fetch-Site", "cross-site")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Dest", "iframe")
+                .header("Sec-CH-UA-Platform", "\"Windows\"")
+                .header("Sec-CH-UA", "\"Chromium\";v=\"124\", \"Not:A-Brand\";v=\"8\", \"Google Chrome\";v=\"124\"")
+                .header("Sec-CH-UA-Mobile", "?0")
                 .build()
             fastHttpClient.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) resp.body?.string().orEmpty() else ""
@@ -197,19 +205,28 @@ class AnimeStreamExtractor @Inject constructor(
     private fun findDirectMediaUrl(text: String): String? {
         if (text.isBlank()) return null
 
-        val m3u8Matcher = M3U8_PATTERN.matcher(text)
+        // Unescape escaped JSON slashes (\/)
+        val unescaped = text.replace("""\/""", "/")
+
+        // 1. Protocol-relative URLs: //domain.com/hls/master.m3u8 -> https://domain.com/hls/master.m3u8
+        val protoRelativeMatcher = Pattern.compile("""["'](//[^\s"'<>]+\.(?:m3u8|mp4)[^\s"'<>]*)["']""").matcher(unescaped)
+        if (protoRelativeMatcher.find()) {
+            return "https:" + protoRelativeMatcher.group(1)
+        }
+
+        val m3u8Matcher = M3U8_PATTERN.matcher(unescaped)
         if (m3u8Matcher.find()) return m3u8Matcher.group(1)
 
-        val mp4Matcher = MP4_PATTERN.matcher(text)
+        val mp4Matcher = MP4_PATTERN.matcher(unescaped)
         if (mp4Matcher.find()) return mp4Matcher.group(1)
 
-        val fileMatcher = FILE_PATTERN.matcher(text)
+        val fileMatcher = FILE_PATTERN.matcher(unescaped)
         if (fileMatcher.find()) return fileMatcher.group(1)
 
-        val sourcesMatcher = SOURCES_PATTERN.matcher(text)
+        val sourcesMatcher = SOURCES_PATTERN.matcher(unescaped)
         if (sourcesMatcher.find()) return sourcesMatcher.group(1)
 
-        val sourceTagMatcher = SOURCE_TAG_PATTERN.matcher(text)
+        val sourceTagMatcher = SOURCE_TAG_PATTERN.matcher(unescaped)
         if (sourceTagMatcher.find()) return sourceTagMatcher.group(1)
 
         return null
