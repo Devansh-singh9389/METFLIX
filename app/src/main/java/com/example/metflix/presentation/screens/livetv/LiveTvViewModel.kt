@@ -7,11 +7,13 @@ import com.example.metflix.data.entities.LiveChannel
 import com.example.metflix.data.repositories.LiveTvRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -89,7 +91,9 @@ class LiveTvViewModel @Inject constructor(
                 currentPlaylistUrl = playlistUrl
             )
         }
-    }.stateIn(
+    }
+    .flowOn(Dispatchers.Default)
+    .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = LiveTvUiState.Loading
@@ -112,13 +116,13 @@ class LiveTvViewModel @Inject constructor(
     }
 
     fun toggleFavorite(channelId: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             repository.toggleFavorite(channelId)
         }
     }
 
     fun selectPlaylistUrl(url: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             isRefreshing.value = true
             val result = repository.setPlaylistUrl(url)
             isRefreshing.value = false
@@ -131,7 +135,7 @@ class LiveTvViewModel @Inject constructor(
     }
 
     fun refreshChannels() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             isRefreshing.value = true
             val result = repository.refreshChannels()
             isRefreshing.value = false

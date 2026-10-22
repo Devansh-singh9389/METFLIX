@@ -24,6 +24,8 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -63,8 +65,8 @@ class TmdbDiskCache @Inject constructor(
         encodeDefaults = true
     }
 
-    fun saveMovies(key: String, movies: List<Movie>) {
-        if (movies.isEmpty()) return
+    suspend fun saveMovies(key: String, movies: List<Movie>) = withContext(Dispatchers.IO) {
+        if (movies.isEmpty()) return@withContext
         memoryCache[key] = movies
         runCatching {
             val file = File(context.filesDir, "tmdb_cache_${key}.json")
@@ -75,10 +77,10 @@ class TmdbDiskCache @Inject constructor(
         }
     }
 
-    fun loadMovies(key: String): List<Movie> {
-        memoryCache[key]?.let { return it }
+    suspend fun loadMovies(key: String): List<Movie> = withContext(Dispatchers.IO) {
+        memoryCache[key]?.let { return@withContext it }
 
-        return runCatching {
+        runCatching {
             val file = File(context.filesDir, "tmdb_cache_${key}.json")
             if (file.exists() && file.length() > 0) {
                 val parsed = json.decodeFromString<List<Movie>>(file.readText())
@@ -90,19 +92,20 @@ class TmdbDiskCache @Inject constructor(
         }.getOrDefault(emptyList())
     }
 
-    fun loadCachedCatalogMovies(): List<Movie> =
+    suspend fun loadCachedCatalogMovies(): List<Movie> = withContext(Dispatchers.IO) {
         CATALOG_KEYS
-            .flatMap(::loadMovies)
+            .flatMap { loadMovies(it) }
             .distinctBy { it.id }
-
-    fun isCacheStale(key: String, ttlMs: Long = CACHE_TTL_MS): Boolean {
-        val file = File(context.filesDir, "tmdb_cache_${key}.json")
-        if (!file.exists() || file.length() == 0L) return true
-        val age = System.currentTimeMillis() - file.lastModified()
-        return age > ttlMs
     }
 
-    fun invalidate(key: String) {
+    suspend fun isCacheStale(key: String, ttlMs: Long = CACHE_TTL_MS): Boolean = withContext(Dispatchers.IO) {
+        val file = File(context.filesDir, "tmdb_cache_${key}.json")
+        if (!file.exists() || file.length() == 0L) return@withContext true
+        val age = System.currentTimeMillis() - file.lastModified()
+        age > ttlMs
+    }
+
+    suspend fun invalidate(key: String) = withContext(Dispatchers.IO) {
         memoryCache.remove(key)
         runCatching {
             val file = File(context.filesDir, "tmdb_cache_${key}.json")
@@ -110,7 +113,7 @@ class TmdbDiskCache @Inject constructor(
         }
     }
 
-    fun clearAll() {
+    suspend fun clearAll() = withContext(Dispatchers.IO) {
         memoryCache.clear()
         runCatching {
             context.filesDir.listFiles { _, name -> name.startsWith("tmdb_cache_") && name.endsWith(".json") }

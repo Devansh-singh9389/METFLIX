@@ -17,6 +17,7 @@ import com.example.metflix.data.network.anime.models.AnimeStreamingServer
 import com.example.metflix.data.repositories.AnimeDataSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -154,7 +155,7 @@ class AnimePlayerViewModel @Inject constructor(
 
     fun loadPlaybackData() {
         resetClickCount()
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = AnimePlayerUiState.Loading
             try {
                 if (mediaType == "movie") loadMoviePlayback() else loadEpisodePlayback()
@@ -315,7 +316,7 @@ class AnimePlayerViewModel @Inject constructor(
      * the error screen "Play in WebView" button if they want to try.
      */
     private fun resolveStreamForServer(server: AnimePlaybackServer) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _diagnostics.value = _diagnostics.value.copy(resolution = "Resolving stream...")
             Log.i(TAG, "resolveStreamForServer: ${server.embedUrl}")
 

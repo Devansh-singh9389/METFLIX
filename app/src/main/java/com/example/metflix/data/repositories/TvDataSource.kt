@@ -31,6 +31,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Singleton
 class TvDataSource @Inject constructor(
@@ -49,14 +50,14 @@ class TvDataSource @Inject constructor(
     private val activeRefreshes = ConcurrentHashMap<String, Boolean>()
 
     private fun refreshIfStale(key: String, block: suspend () -> Unit) {
-        if (diskCache.isCacheStale(key)) {
-            if (activeRefreshes.putIfAbsent(key, true) == null) {
-                applicationScope.launch {
-                    try {
+        if (activeRefreshes.putIfAbsent(key, true) == null) {
+            applicationScope.launch {
+                try {
+                    if (diskCache.isCacheStale(key)) {
                         block()
-                    } finally {
-                        activeRefreshes.remove(key)
                     }
+                } finally {
+                    activeRefreshes.remove(key)
                 }
             }
         }
@@ -122,10 +123,12 @@ class TvDataSource @Inject constructor(
         return null
     }
 
-    suspend fun getTvShowList(): List<Movie> = mostPopularTvShowsReader.read()
+    suspend fun getTvShowList(): List<Movie> = withContext(Dispatchers.IO) {
+        mostPopularTvShowsReader.read()
+    }
 
-    suspend fun getBingeWatchDramaList(): List<Movie> {
+    suspend fun getBingeWatchDramaList(): List<Movie> = withContext(Dispatchers.IO) {
         val topRated = topRatedTvShowsReader.read()
-        return if (topRated.isNotEmpty()) topRated else mostPopularTvShowsReader.read()
+        if (topRated.isNotEmpty()) topRated else mostPopularTvShowsReader.read()
     }
 }

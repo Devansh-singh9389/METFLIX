@@ -7,6 +7,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -30,7 +32,7 @@ class AnimeDiskCache @Inject constructor(
     private val cacheFile: File
         get() = File(context.filesDir, CACHE_FILE_NAME)
 
-    fun saveHomeResponse(response: AnimeHomeResponse) {
+    suspend fun saveHomeResponse(response: AnimeHomeResponse) = withContext(Dispatchers.IO) {
         runCatching {
             val serialized = json.encodeToString(response)
             cacheFile.writeText(serialized)
@@ -40,8 +42,8 @@ class AnimeDiskCache @Inject constructor(
         }
     }
 
-    fun loadHomeResponse(): AnimeHomeResponse? {
-        return runCatching {
+    suspend fun loadHomeResponse(): AnimeHomeResponse? = withContext(Dispatchers.IO) {
+        runCatching {
             if (cacheFile.exists() && cacheFile.length() > 0) {
                 json.decodeFromString<AnimeHomeResponse>(cacheFile.readText())
             } else {
@@ -50,13 +52,13 @@ class AnimeDiskCache @Inject constructor(
         }.getOrNull()
     }
 
-    fun isCacheStale(ttlMs: Long = CACHE_TTL_MS): Boolean {
-        if (!cacheFile.exists() || cacheFile.length() == 0L) return true
+    suspend fun isCacheStale(ttlMs: Long = CACHE_TTL_MS): Boolean = withContext(Dispatchers.IO) {
+        if (!cacheFile.exists() || cacheFile.length() == 0L) return@withContext true
         val age = System.currentTimeMillis() - cacheFile.lastModified()
-        return age > ttlMs
+        age > ttlMs
     }
 
-    fun clearCache() {
+    suspend fun clearCache() = withContext(Dispatchers.IO) {
         runCatching {
             if (cacheFile.exists()) {
                 cacheFile.delete()

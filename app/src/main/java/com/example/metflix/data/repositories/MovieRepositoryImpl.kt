@@ -80,8 +80,8 @@ class MovieRepositoryImpl @Inject constructor(
         emit(list)
     }.flowOn(Dispatchers.IO)
 
-    override suspend fun getMovieCategoryDetails(categoryId: String): MovieCategoryDetails {
-        categoryDetailsCache[categoryId]?.let { return it }
+    override suspend fun getMovieCategoryDetails(categoryId: String): MovieCategoryDetails = withContext(Dispatchers.IO) {
+        categoryDetailsCache[categoryId]?.let { return@withContext it }
 
         val categoryList = movieCategoryDataSource.getMovieCategoryList()
         val category = categoryList.find { categoryId == it.id } ?: categoryList.firstOrNull()
@@ -102,7 +102,7 @@ class MovieRepositoryImpl @Inject constructor(
             movies = movieList
         )
         categoryDetailsCache[categoryId] = result
-        return result
+        result
     }
 
     override suspend fun getMovieDetails(movieId: String, isTvShow: Boolean?): MovieDetails = withContext(Dispatchers.IO) {
@@ -245,12 +245,13 @@ class MovieRepositoryImpl @Inject constructor(
         details
     }
 
-    override suspend fun searchMovies(query: String): MovieList {
-        return movieDataSource.searchMovies(query)
+    override suspend fun searchMovies(query: String): MovieList = withContext(Dispatchers.IO) {
+        movieDataSource.searchMovies(query)
     }
 
-    override suspend fun getCachedPopularMovies(): MovieList =
+    override suspend fun getCachedPopularMovies(): MovieList = withContext(Dispatchers.IO) {
         diskCache.loadMovies("popular")
+    }
 
     override fun getMoviesWithLongThumbnail() = flow {
         val list = movieDataSource.getMovieList(ThumbnailType.Long)
@@ -342,15 +343,15 @@ class MovieRepositoryImpl @Inject constructor(
         emit(list)
     }.flowOn(Dispatchers.IO)
 
-    override suspend fun getTvSeasonEpisodes(seriesId: String, seasonNumber: Int): List<TvEpisode> {
+    override suspend fun getTvSeasonEpisodes(seriesId: String, seasonNumber: Int): List<TvEpisode> = withContext(Dispatchers.IO) {
         val cacheKey = "${seriesId}_s${seasonNumber}"
-        tvEpisodesCache[cacheKey]?.let { return it }
+        tvEpisodesCache[cacheKey]?.let { return@withContext it }
 
         val episodes = tmdbApiClient.getTvSeasonDetails(seriesId, seasonNumber).getOrNull().orEmpty()
         if (episodes.isNotEmpty()) {
             tvEpisodesCache[cacheKey] = episodes
         }
-        return episodes
+        episodes
     }
 
     override suspend fun refreshAllCatalogs(): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {

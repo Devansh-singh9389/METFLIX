@@ -22,6 +22,8 @@ import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
 import com.example.metflix.data.network.tmdb.TmdbApiClient
 import com.example.metflix.data.network.tmdb.TmdbConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -64,5 +66,7 @@ class MovieCategoryDataSource @Inject constructor(
         defaultCategories
     }
 
-    suspend fun getMovieCategoryList(): List<MovieCategory> = movieCategoryDataReader.read()
+    suspend fun getMovieCategoryList(): List<MovieCategory> = withContext(Dispatchers.IO) {
+        movieCategoryDataReader.read()
+    }
 }

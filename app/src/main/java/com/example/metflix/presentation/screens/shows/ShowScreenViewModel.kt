@@ -23,6 +23,7 @@ import com.example.metflix.data.entities.MovieList
 import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,22 +53,24 @@ class ShowScreenViewModel @Inject constructor(
     }
 
     private fun loadData() {
-        viewModelScope.launch {
-            movieRepository.getTVShows()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    tvShowList = list
-                    emitState()
-                }
-        }
+        viewModelScope.launch(Dispatchers.IO) {
+            launch {
+                movieRepository.getTVShows()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        tvShowList = list
+                        emitState()
+                    }
+            }
 
-        viewModelScope.launch {
-            movieRepository.getBingeWatchDramas()
-                .catch { emit(emptyList()) }
-                .collect { list ->
-                    bingeWatchDramaList = list
-                    emitState()
-                }
+            launch {
+                movieRepository.getBingeWatchDramas()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        bingeWatchDramaList = list
+                        emitState()
+                    }
+            }
         }
     }
 }

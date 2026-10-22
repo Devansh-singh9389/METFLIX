@@ -24,6 +24,7 @@ import com.example.metflix.data.repositories.MovieRepository
 import com.example.metflix.data.settings.SearchHistoryPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -75,14 +76,14 @@ class SearchScreenViewModel @Inject constructor(
 
     init {
         // Recommendations must use the existing cache and never start a catalog refresh.
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(
                 popularMovies = movieRepository.getCachedPopularMovies()
             )
         }
 
         // Debounced search against TMDB with a local fallback
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _searchQuery
                 .debounce(350)
                 .distinctUntilChanged()

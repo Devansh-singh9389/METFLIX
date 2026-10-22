@@ -24,6 +24,7 @@ import com.example.metflix.data.entities.MovieList
 import com.example.metflix.data.repositories.AnimeDataSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,7 +48,7 @@ class AnimeScreenViewModel @Inject constructor(
     }
 
     fun loadData(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val data = animeDataSource.getHomeData(forceRefresh)
                 if (data.isEmpty) {

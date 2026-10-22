@@ -34,6 +34,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 @Singleton
 class AnimeDataSource @Inject constructor(
@@ -90,14 +91,14 @@ class AnimeDataSource @Inject constructor(
         }
     }
 
-    suspend fun getHomeData(forceRefresh: Boolean = false): AnimeHomeData {
+    suspend fun getHomeData(forceRefresh: Boolean = false): AnimeHomeData = withContext(Dispatchers.IO) {
         if (!forceRefresh) {
             cachedHomeData?.let { data ->
                 if (!data.isEmpty) {
                     if (animeDiskCache.isCacheStale()) {
                         triggerBackgroundRefresh()
                     }
-                    return data
+                    return@withContext data
                 }
             }
 
@@ -110,13 +111,13 @@ class AnimeDataSource @Inject constructor(
                     if (animeDiskCache.isCacheStale()) {
                         triggerBackgroundRefresh()
                     }
-                    return mapped
+                    return@withContext mapped
                 }
             }
         }
 
         // Fetch live from Render backend
-        return fetchMutex.withLock {
+        fetchMutex.withLock {
             if (!forceRefresh) {
                 cachedHomeData?.let { if (!it.isEmpty) return@withLock it }
             }
@@ -162,14 +163,14 @@ class AnimeDataSource @Inject constructor(
         }
     }
 
-    suspend fun getSeriesData(slug: String, forceRefresh: Boolean = false): Result<AnimeSeriesResponse> {
+    suspend fun getSeriesData(slug: String, forceRefresh: Boolean = false): Result<AnimeSeriesResponse> = withContext(Dispatchers.IO) {
         val cleanSlug = slug.trim().removePrefix("/series/").trim('/')
         if (!forceRefresh) {
-            seriesCache[cleanSlug]?.let { return Result.success(it) }
+            seriesCache[cleanSlug]?.let { return@withContext Result.success(it) }
         }
         val result = animeApiClient.getSeriesData(cleanSlug)
         result.getOrNull()?.let { seriesCache[cleanSlug] = it }
-        return result
+        result
     }
 
     suspend fun getCategoryData(
@@ -177,30 +178,30 @@ class AnimeDataSource @Inject constructor(
         slug: String,
         page: Int = 1,
         forceRefresh: Boolean = false
-    ): Result<AnimeCategoryResponse> {
+    ): Result<AnimeCategoryResponse> = withContext(Dispatchers.IO) {
         val cleanSlug = slug.trim().removePrefix("/category/").removePrefix("$categoryType/").trim('/')
         val cacheKey = "${categoryType}_${cleanSlug}_p$page"
         if (!forceRefresh) {
-            categoryCache[cacheKey]?.let { return Result.success(it) }
+            categoryCache[cacheKey]?.let { return@withContext Result.success(it) }
         }
         val result = animeApiClient.getCategoryData(categoryType, cleanSlug, page)
         result.getOrNull()?.let { categoryCache[cacheKey] = it }
-        return result
+        result
     }
 
-    suspend fun getMovieData(slug: String, forceRefresh: Boolean = false): Result<AnimeMovieResponse> {
+    suspend fun getMovieData(slug: String, forceRefresh: Boolean = false): Result<AnimeMovieResponse> = withContext(Dispatchers.IO) {
         val cleanSlug = slug.trim().removePrefix("/movie/").trim('/')
         if (!forceRefresh) {
-            movieCache[cleanSlug]?.let { return Result.success(it) }
+            movieCache[cleanSlug]?.let { return@withContext Result.success(it) }
         }
         val result = animeApiClient.getMovieData(cleanSlug)
         result.getOrNull()?.let { movieCache[cleanSlug] = it }
-        return result
+        result
     }
 
-    suspend fun getEpisodeData(slug: String): Result<AnimeEpisodeResponse> {
+    suspend fun getEpisodeData(slug: String): Result<AnimeEpisodeResponse> = withContext(Dispatchers.IO) {
         val cleanSlug = slug.trim().removePrefix("/episode/").trim('/')
-        return animeApiClient.getEpisodeData(cleanSlug)
+        animeApiClient.getEpisodeData(cleanSlug)
     }
 
     fun findMovieById(id: String): Movie? {
@@ -210,24 +211,24 @@ class AnimeDataSource @Inject constructor(
         return movieIndex[slug] ?: movieIndex[clean.lowercase()]
     }
 
-    suspend fun getTrendingAnimeList(): List<Movie> {
+    suspend fun getTrendingAnimeList(): List<Movie> = withContext(Dispatchers.IO) {
         val home = getHomeData()
-        return home.newAnimeArrivals.ifEmpty { home.newestDrops }
+        home.newAnimeArrivals.ifEmpty { home.newestDrops }
     }
 
-    suspend fun getAnimeMoviesList(): List<Movie> {
+    suspend fun getAnimeMoviesList(): List<Movie> = withContext(Dispatchers.IO) {
         val home = getHomeData()
-        return home.latestAnimeMovies.ifEmpty { home.mostWatchedFilms }
+        home.latestAnimeMovies.ifEmpty { home.mostWatchedFilms }
     }
 
-    suspend fun getCartoonsList(): List<Movie> {
+    suspend fun getCartoonsList(): List<Movie> = withContext(Dispatchers.IO) {
         val home = getHomeData()
-        return home.cartoonSeries.ifEmpty { home.cartoonFilms }
+        home.cartoonSeries.ifEmpty { home.cartoonFilms }
     }
 
-    suspend fun getTopRatedAnimeList(): List<Movie> {
+    suspend fun getTopRatedAnimeList(): List<Movie> = withContext(Dispatchers.IO) {
         val home = getHomeData()
-        return home.mostWatchedShows
+        home.mostWatchedShows
     }
 
     suspend fun getNewestDropsList(): List<Movie> = getHomeData().newestDrops
@@ -235,7 +236,7 @@ class AnimeDataSource @Inject constructor(
     suspend fun getNetworksList(): List<Movie> = getHomeData().networks
     suspend fun getLanguagesList(): List<Movie> = getHomeData().languages
 
-    fun clearCache() {
+    suspend fun clearCache() = withContext(Dispatchers.IO) {
         cachedHomeData = null
         movieIndex.clear()
         seriesCache.clear()

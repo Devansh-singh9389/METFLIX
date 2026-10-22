@@ -32,6 +32,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Singleton
 class MovieDataSource @Inject constructor(
@@ -50,14 +51,14 @@ class MovieDataSource @Inject constructor(
     private val activeRefreshes = ConcurrentHashMap<String, Boolean>()
 
     private fun refreshIfStale(key: String, block: suspend () -> Unit) {
-        if (diskCache.isCacheStale(key)) {
-            if (activeRefreshes.putIfAbsent(key, true) == null) {
-                applicationScope.launch {
-                    try {
+        if (activeRefreshes.putIfAbsent(key, true) == null) {
+            applicationScope.launch {
+                try {
+                    if (diskCache.isCacheStale(key)) {
                         block()
-                    } finally {
-                        activeRefreshes.remove(key)
                     }
+                } finally {
+                    activeRefreshes.remove(key)
                 }
             }
         }
@@ -392,7 +393,7 @@ class MovieDataSource @Inject constructor(
         return null
     }
 
-    suspend fun clearAllReaders() {
+    suspend fun clearAllReaders() = withContext(Dispatchers.IO) {
         trendingMovieDataReader.clear()
         popularMovieDataReader.clear()
         nowPlayingMovieDataReader.clear()
@@ -408,62 +409,108 @@ class MovieDataSource @Inject constructor(
     }
 
     suspend fun getMovieList(thumbnailType: ThumbnailType = ThumbnailType.Standard): List<Movie> =
-        when (thumbnailType) {
-            ThumbnailType.Standard -> popularMovieDataReader.read()
-            ThumbnailType.Long -> movieWithLongThumbnailDataReader.read()
-        }
-
-    suspend fun getFeaturedMovieList(): List<Movie> {
-        val list = nowPlayingMovieDataReader.read()
-        return if (list.isNotEmpty()) list.take(8) else emptyList()
-    }
-
-    suspend fun getTrendingMovieList(): List<Movie> = trendingMovieDataReader.read()
-
-    suspend fun getTop10MovieList(): List<Movie> {
-        val list = topRatedMovieDataReader.read()
-        return if (list.size >= 10) list.take(10) else list
-    }
-
-    suspend fun getNowPlayingMovieList(): List<Movie> = nowPlayingMovieDataReader.read()
-
-    suspend fun getPopularFilmThisWeek(): List<Movie> = popularMovieDataReader.read()
-
-    suspend fun getTrendingDayMovieList(): List<Movie> = trendingDayMovieDataReader.read()
-    suspend fun getUpcomingMovieList(): List<Movie> = upcomingMovieDataReader.read()
-    suspend fun getTopRevenueMovieList(): List<Movie> = topRevenueMovieDataReader.read()
-    suspend fun getMostVotedMovieList(): List<Movie> = mostVotedMovieDataReader.read()
-    suspend fun getNetflixMovieList(): List<Movie> = netflixMovieDataReader.read()
-    suspend fun getPrimeMovieList(): List<Movie> = primeMovieDataReader.read()
-    suspend fun getDisneyMovieList(): List<Movie> = disneyMovieDataReader.read()
-    suspend fun getBollywoodMovieList(): List<Movie> = bollywoodMovieDataReader.read()
-
-    suspend fun getFavoriteMovieList(): List<Movie> {
-        val list = popularMovieDataReader.read()
-        return if (list.size >= 28) list.subList(0, 28) else list
-    }
-
-    suspend fun searchMovies(query: String): List<Movie> {
-        val trimmedQuery = query.trim()
-        if (trimmedQuery.isEmpty()) return emptyList()
-
-        if (TmdbConfig.USE_TMDB) {
-            val tmdbResults = fetchTwoPages { page ->
-                tmdbApiClient.searchMovies(trimmedQuery, page = page)
+        withContext(Dispatchers.IO) {
+            when (thumbnailType) {
+                ThumbnailType.Standard -> popularMovieDataReader.read()
+                ThumbnailType.Long -> movieWithLongThumbnailDataReader.read()
             }
-            if (tmdbResults.isNotEmpty()) return tmdbResults
         }
 
-        if (NetworkConfig.USE_REMOTE_BACKEND) {
-            val remote = apiClient.searchMovies(trimmedQuery).getOrNull()
-            if (!remote.isNullOrEmpty()) return remote.map { it.toMovie() }
+    suspend fun getFeaturedMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            val list = nowPlayingMovieDataReader.read()
+            if (list.isNotEmpty()) list.take(8) else emptyList()
         }
 
-        val normalizedQuery = normalizeSearchText(trimmedQuery)
-        return diskCache
-            .loadCachedCatalogMovies()
-            .filter { normalizeSearchText(it.name).contains(normalizedQuery) }
-    }
+    suspend fun getTrendingMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            trendingMovieDataReader.read()
+        }
+
+    suspend fun getTop10MovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            val list = topRatedMovieDataReader.read()
+            if (list.size >= 10) list.take(10) else list
+        }
+
+    suspend fun getNowPlayingMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            nowPlayingMovieDataReader.read()
+        }
+
+    suspend fun getPopularFilmThisWeek(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            popularMovieDataReader.read()
+        }
+
+    suspend fun getTrendingDayMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            trendingDayMovieDataReader.read()
+        }
+
+    suspend fun getUpcomingMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            upcomingMovieDataReader.read()
+        }
+
+    suspend fun getTopRevenueMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            topRevenueMovieDataReader.read()
+        }
+
+    suspend fun getMostVotedMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            mostVotedMovieDataReader.read()
+        }
+
+    suspend fun getNetflixMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            netflixMovieDataReader.read()
+        }
+
+    suspend fun getPrimeMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            primeMovieDataReader.read()
+        }
+
+    suspend fun getDisneyMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            disneyMovieDataReader.read()
+        }
+
+    suspend fun getBollywoodMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            bollywoodMovieDataReader.read()
+        }
+
+    suspend fun getFavoriteMovieList(): List<Movie> =
+        withContext(Dispatchers.IO) {
+            val list = popularMovieDataReader.read()
+            if (list.size >= 28) list.subList(0, 28) else list
+        }
+
+    suspend fun searchMovies(query: String): List<Movie> =
+        withContext(Dispatchers.IO) {
+            val trimmedQuery = query.trim()
+            if (trimmedQuery.isEmpty()) return@withContext emptyList()
+
+            if (TmdbConfig.USE_TMDB) {
+                val tmdbResults = fetchTwoPages { page ->
+                    tmdbApiClient.searchMovies(trimmedQuery, page = page)
+                }
+                if (tmdbResults.isNotEmpty()) return@withContext tmdbResults
+            }
+
+            if (NetworkConfig.USE_REMOTE_BACKEND) {
+                val remote = apiClient.searchMovies(trimmedQuery).getOrNull()
+                if (!remote.isNullOrEmpty()) return@withContext remote.map { it.toMovie() }
+            }
+
+            val normalizedQuery = normalizeSearchText(trimmedQuery)
+            diskCache
+                .loadCachedCatalogMovies()
+                .filter { normalizeSearchText(it.name).contains(normalizedQuery) }
+        }
 
     private fun normalizeSearchText(value: String): String =
         value.filter(Char::isLetterOrDigit).lowercase()

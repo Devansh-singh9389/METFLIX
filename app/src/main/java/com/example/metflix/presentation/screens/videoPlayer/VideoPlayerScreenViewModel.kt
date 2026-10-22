@@ -29,6 +29,7 @@ import com.example.metflix.data.repositories.MovieRepository
 import com.example.metflix.data.settings.DebridPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -98,7 +99,7 @@ class VideoPlayerScreenViewModel @Inject constructor(
         server.id != "alldebrid" || debridPreferences.hasVerifiedPremiumDebrid()
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             movieIdFlow.collect { rawId ->
                 if (!rawId.isNullOrBlank()) {
                     val isTvPrefix = rawId.startsWith("tv:")
@@ -189,7 +190,7 @@ class VideoPlayerScreenViewModel @Inject constructor(
     ) {
         raceJob?.cancel()
         val requestId = resolutionRequests.begin()
-        raceJob = viewModelScope.launch {
+        raceJob = viewModelScope.launch(Dispatchers.IO) {
             _isResolvingStream.value = true
             isUserExplicitSelection.value = false
             _resolutionMessage.value = if (!forceNonDebrid && debridPreferences.hasVerifiedPremiumDebrid()) {
@@ -244,7 +245,7 @@ class VideoPlayerScreenViewModel @Inject constructor(
         manualResolveJob?.cancel()
         val requestId = resolutionRequests.begin()
         _resolvedStream.value = null
-        manualResolveJob = viewModelScope.launch {
+        manualResolveJob = viewModelScope.launch(Dispatchers.IO) {
             _isResolvingStream.value = true
             _resolutionMessage.value = "Switching to ${server.name}..."
             try {

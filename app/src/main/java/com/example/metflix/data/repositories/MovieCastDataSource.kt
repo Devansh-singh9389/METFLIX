@@ -20,6 +20,8 @@ import com.example.metflix.data.entities.MovieCast
 import com.example.metflix.data.entities.toMovieCast
 import com.example.metflix.data.network.MetFlixApiClient
 import com.example.metflix.data.network.NetworkConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,5 +38,7 @@ class MovieCastDataSource @Inject constructor(
         emptyList()
     }
 
-    suspend fun getMovieCastList(): List<MovieCast> = movieCastDataReader.read()
+    suspend fun getMovieCastList(): List<MovieCast> = withContext(Dispatchers.IO) {
+        movieCastDataReader.read()
+    }
 }

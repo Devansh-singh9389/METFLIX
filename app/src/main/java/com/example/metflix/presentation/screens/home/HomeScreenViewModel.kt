@@ -22,6 +22,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.entities.MovieList
 import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,7 +54,7 @@ class HomeScreeViewModel @Inject constructor(
 
     private fun loadData() {
         loadJob?.cancel()
-        loadJob = viewModelScope.launch {
+        loadJob = viewModelScope.launch(Dispatchers.IO) {
             var featured: MovieList = emptyList()
             var trending: MovieList = emptyList()
             var top10: MovieList = emptyList()
@@ -74,7 +75,7 @@ class HomeScreeViewModel @Inject constructor(
 
             fun scheduleStateEmission() {
                 debounceJob?.cancel()
-                debounceJob = launch {
+                debounceJob = launch(Dispatchers.Default) {
                     delay(120) // Batch state updates to prevent rapid UI recomposition churn
                     val hasContent = featured.isNotEmpty() || trending.isNotEmpty() || top10.isNotEmpty() || nowPlaying.isNotEmpty()
                     if (hasContent) {

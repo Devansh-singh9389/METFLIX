@@ -23,7 +23,9 @@ import com.example.metflix.data.entities.MovieCategoryDetails
 import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -44,7 +46,9 @@ class CategoryMovieListScreenViewModel @Inject constructor(
                 val categoryDetails = movieRepository.getMovieCategoryDetails(id)
                 CategoryMovieListScreenUiState.Done(categoryDetails)
             }
-        }.stateIn(
+        }
+        .flowOn(Dispatchers.IO)
+        .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Lazily,
             initialValue = CategoryMovieListScreenUiState.Loading

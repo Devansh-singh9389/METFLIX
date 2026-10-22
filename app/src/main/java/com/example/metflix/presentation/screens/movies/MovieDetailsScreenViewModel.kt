@@ -22,6 +22,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.repositories.MovieRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,7 +55,7 @@ class MovieDetailsScreenViewModel @Inject constructor(
         val isExplicitTv = rawId.startsWith("tv:")
         val cleanId = if (isExplicitTv) rawId.removePrefix("tv:") else rawId
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val details = repository.getMovieDetails(movieId = cleanId, isTvShow = if (isExplicitTv) true else null)
                 val initialSeason = details.seasons.firstOrNull()?.seasonNumber ?: 1
@@ -78,7 +79,7 @@ class MovieDetailsScreenViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val episodes = repository.getTvSeasonEpisodes(seriesId = currentDetails.id, seasonNumber = seasonNumber)
                 val updatedSeasons = currentDetails.seasons.map { s ->
