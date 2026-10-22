@@ -46,7 +46,7 @@ class MainActivity : Hilt_MainActivity() {
                         LocalContentColor provides MaterialTheme.colorScheme.onSurface
                     ) {
                         App(
-                            onBackPressed = onBackPressedDispatcher::onBackPressed,
+                            onBackPressed = { this@MainActivity.finish() },
                         )
                     }
                 }

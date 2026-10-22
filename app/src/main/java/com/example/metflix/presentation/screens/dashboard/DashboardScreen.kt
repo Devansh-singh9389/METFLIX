@@ -91,7 +91,7 @@ fun DashboardScreen(
     var isTopBarVisible by remember { mutableStateOf(true) }
     var isTopBarFocused by remember { mutableStateOf(false) }
 
-    var currentDestination: String? by remember { mutableStateOf(Screens.Home()) }
+    var currentDestination: String? by rememberSaveable { mutableStateOf(Screens.Home()) }
     val currentTopBarSelectedTabIndex by remember(currentDestination) {
         derivedStateOf {
             currentDestination?.let { dest ->
@@ -109,17 +109,21 @@ fun DashboardScreen(
     BackPressHandledArea(
         // 1. On user's first back press, bring focus to the current selected tab, if TopBar is not
         //    visible, first make it visible, then focus the selected tab
-        // 2. On second back press, bring focus back to the first displayed tab
+        // 2. On second back press, bring focus back to the first displayed tab (Home)
         // 3. On third back press, exit the app
         onBackPressed = {
             val focusIndex = (currentTopBarSelectedTabIndex + 1).coerceIn(TopBarFocusRequesters.indices)
             if (!isTopBarVisible) {
                 isTopBarVisible = true
                 TopBarFocusRequesters.getOrNull(focusIndex)?.requestFocus()
-            } else if (currentTopBarSelectedTabIndex == 0) onBackPressed()
-            else if (!isTopBarFocused) {
+            } else if (!isTopBarFocused) {
                 TopBarFocusRequesters.getOrNull(focusIndex)?.requestFocus()
-            } else TopBarFocusRequesters.getOrNull(1)?.requestFocus()
+            } else if (currentTopBarSelectedTabIndex == 0) {
+                onBackPressed()
+            } else {
+                currentDestination = Screens.Home()
+                TopBarFocusRequesters.getOrNull(1)?.requestFocus()
+            }
         }
     ) {
         // We do not want to focus the TopBar everytime we come back from another screen e.g.
@@ -140,6 +144,12 @@ fun DashboardScreen(
                 }
             }
         )
+
+        LaunchedEffect(isComingBackFromDifferentScreen) {
+            if (isComingBackFromDifferentScreen && isTopBarVisible) {
+                resetIsComingBackFromDifferentScreen()
+            }
+        }
 
         // Keep the tab body in a stable layout while the top bar is shown or hidden.
         LaunchedEffect(Unit) {
