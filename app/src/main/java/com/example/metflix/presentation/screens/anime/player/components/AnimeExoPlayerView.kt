@@ -261,19 +261,22 @@ fun AnimeExoPlayerView(
         onDispose { exoPlayer.removeListener(listener) }
     }
 
-    // Progress & network speed measurement loop
-    LaunchedEffect(exoPlayer, bandwidthMeter) {
+    // Progress & network speed measurement loop (refreshes every 1 second only when HUD is visible)
+    val isHudVisible by viewModel.isHudVisible.collectAsState()
+    LaunchedEffect(exoPlayer, bandwidthMeter, isHudVisible) {
         while (true) {
             viewModel.updatePlaybackProgress(
                 exoPlayer.currentPosition.coerceAtLeast(0L),
                 exoPlayer.duration.coerceAtLeast(0L),
                 exoPlayer.bufferedPosition.coerceAtLeast(0L)
             )
-            val speedBps = bandwidthMeter.bitrateEstimate
-            if (speedBps > 0) {
-                viewModel.updateDownloadMetrics(speedBps / 8, 0L)
+            if (isHudVisible) {
+                val speedBps = bandwidthMeter.bitrateEstimate
+                if (speedBps > 0) {
+                    viewModel.updateDownloadMetrics(speedBps / 8, 0L)
+                }
             }
-            delay(500)
+            delay(200)
         }
     }
 
