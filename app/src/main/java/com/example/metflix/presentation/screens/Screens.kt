@@ -44,7 +44,10 @@ enum class Screens(
     Dashboard,
     VideoPlayer(listOf(VideoPlayerScreen.MovieIdBundleKey)),
     CachedVideoPlayer(listOf("sessionId")),
-    LiveTvPlayer(listOf(LiveTvPlayerScreen.ChannelIdBundleKey));
+    LiveTvPlayer(listOf(LiveTvPlayerScreen.ChannelIdBundleKey)),
+    AnimeCatalog(listOf("mediaType", "slug")),
+    AnimeCategory(listOf("categoryType", "slug")),
+    AnimePlayer(listOf("mediaType", "slug"));
 
     operator fun invoke(): String {
         val argList = StringBuilder()

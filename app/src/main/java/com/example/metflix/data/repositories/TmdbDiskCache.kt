@@ -49,7 +49,8 @@ class TmdbDiskCache @Inject constructor(
             "most_voted",
             "netflix",
             "prime",
-            "disney"
+            "disney",
+            "bollywood"
         )
     }
 

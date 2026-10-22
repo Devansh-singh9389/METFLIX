@@ -65,6 +65,7 @@ fun HomeScreen(
                     top10Movies = s.top10MovieList,
                     nowPlayingMovies = s.nowPlayingMovieList,
                     popularThisWeekMovies = s.popularThisWeekList,
+                    bollywoodMovies = s.bollywoodMovieList,
                     netflixMovies = s.netflixMovieList,
                     primeMovies = s.primeMovieList,
                     disneyMovies = s.disneyMovieList,
@@ -92,6 +93,7 @@ private fun Catalog(
     top10Movies: MovieList,
     nowPlayingMovies: MovieList,
     popularThisWeekMovies: MovieList,
+    bollywoodMovies: MovieList,
     netflixMovies: MovieList,
     primeMovies: MovieList,
     disneyMovies: MovieList,
@@ -180,6 +182,16 @@ private fun Catalog(
                     modifier = Modifier.padding(top = 16.dp),
                     movieList = popularThisWeekMovies,
                     title = StringConstants.Composable.PopularFilmsThisWeekTitle,
+                    onMovieSelected = onMovieClick
+                )
+            }
+        }
+        if (bollywoodMovies.isNotEmpty()) {
+            item(contentType = "MoviesRow") {
+                MoviesRow(
+                    modifier = Modifier.padding(top = 16.dp),
+                    movieList = bollywoodMovies,
+                    title = StringConstants.Composable.BollywoodMoviesTitle,
                     onMovieSelected = onMovieClick
                 )
             }

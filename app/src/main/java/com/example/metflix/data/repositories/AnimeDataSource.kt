@@ -20,7 +20,11 @@ import android.util.Log
 import com.example.metflix.data.entities.AnimeHomeData
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.network.anime.AnimeApiClient
+import com.example.metflix.data.network.anime.models.AnimeCategoryResponse
+import com.example.metflix.data.network.anime.models.AnimeEpisodeResponse
 import com.example.metflix.data.network.anime.models.AnimeHomeResponse
+import com.example.metflix.data.network.anime.models.AnimeMovieResponse
+import com.example.metflix.data.network.anime.models.AnimeSeriesResponse
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -43,6 +47,10 @@ class AnimeDataSource @Inject constructor(
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val fetchMutex = Mutex()
     private val movieIndex = ConcurrentHashMap<String, Movie>()
+
+    private val seriesCache = ConcurrentHashMap<String, AnimeSeriesResponse>()
+    private val categoryCache = ConcurrentHashMap<String, AnimeCategoryResponse>()
+    private val movieCache = ConcurrentHashMap<String, AnimeMovieResponse>()
 
     @Volatile
     private var cachedHomeData: AnimeHomeData? = null
@@ -122,7 +130,6 @@ class AnimeDataSource @Inject constructor(
                 cachedHomeData = mapped
                 mapped
             } else {
-                // If live fetch fails, fallback to disk cache if available
                 val diskFallback = animeDiskCache.loadHomeResponse()
                 if (diskFallback != null) {
                     val mapped = mapResponseToHomeData(diskFallback)
@@ -153,6 +160,47 @@ class AnimeDataSource @Inject constructor(
                 isRefreshing = false
             }
         }
+    }
+
+    suspend fun getSeriesData(slug: String, forceRefresh: Boolean = false): Result<AnimeSeriesResponse> {
+        val cleanSlug = slug.trim().removePrefix("/series/").trim('/')
+        if (!forceRefresh) {
+            seriesCache[cleanSlug]?.let { return Result.success(it) }
+        }
+        val result = animeApiClient.getSeriesData(cleanSlug)
+        result.getOrNull()?.let { seriesCache[cleanSlug] = it }
+        return result
+    }
+
+    suspend fun getCategoryData(
+        categoryType: String,
+        slug: String,
+        page: Int = 1,
+        forceRefresh: Boolean = false
+    ): Result<AnimeCategoryResponse> {
+        val cleanSlug = slug.trim().removePrefix("/category/").removePrefix("$categoryType/").trim('/')
+        val cacheKey = "${categoryType}_${cleanSlug}_p$page"
+        if (!forceRefresh) {
+            categoryCache[cacheKey]?.let { return Result.success(it) }
+        }
+        val result = animeApiClient.getCategoryData(categoryType, cleanSlug, page)
+        result.getOrNull()?.let { categoryCache[cacheKey] = it }
+        return result
+    }
+
+    suspend fun getMovieData(slug: String, forceRefresh: Boolean = false): Result<AnimeMovieResponse> {
+        val cleanSlug = slug.trim().removePrefix("/movie/").trim('/')
+        if (!forceRefresh) {
+            movieCache[cleanSlug]?.let { return Result.success(it) }
+        }
+        val result = animeApiClient.getMovieData(cleanSlug)
+        result.getOrNull()?.let { movieCache[cleanSlug] = it }
+        return result
+    }
+
+    suspend fun getEpisodeData(slug: String): Result<AnimeEpisodeResponse> {
+        val cleanSlug = slug.trim().removePrefix("/episode/").trim('/')
+        return animeApiClient.getEpisodeData(cleanSlug)
     }
 
     fun findMovieById(id: String): Movie? {
@@ -190,6 +238,9 @@ class AnimeDataSource @Inject constructor(
     fun clearCache() {
         cachedHomeData = null
         movieIndex.clear()
+        seriesCache.clear()
+        categoryCache.clear()
+        movieCache.clear()
         animeDiskCache.clearCache()
     }
 }

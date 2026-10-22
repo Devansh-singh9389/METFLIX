@@ -55,6 +55,7 @@ object StringConstants {
         const val HomeScreenTrendingTitle = "Trending"
         const val HomeScreenNowPlayingMoviesTitle = "Now Playing Movies"
         const val PopularFilmsThisWeekTitle = "Popular films this week"
+        const val BollywoodMoviesTitle = "Bollywood Hits & Blockbusters"
         const val BingeWatchDramasTitle = "Bingewatch dramas"
         const val NetflixMoviesTitle = "Popular on Netflix"
         const val PrimeMoviesTitle = "Prime Video Hits"

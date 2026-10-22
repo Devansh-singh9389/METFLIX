@@ -110,6 +110,12 @@ fun App(
                             Screens.MovieDetails.withArgs(movieId)
                         )
                     },
+                    openAnimeCatalog = { mediaType, slug ->
+                        navController.navigate(Screens.AnimeCatalog.withArgs(mediaType, slug))
+                    },
+                    openAnimeCategory = { categoryType, slug ->
+                        navController.navigate(Screens.AnimeCategory.withArgs(categoryType, slug))
+                    },
                     openVideoPlayer = { movie ->
                         navController.navigate(Screens.VideoPlayer.withArgs(movie.id))
                     },
@@ -125,6 +131,67 @@ fun App(
                     isComingBackFromDifferentScreen = isComingBackFromDifferentScreen,
                     resetIsComingBackFromDifferentScreen = {
                         isComingBackFromDifferentScreen = false
+                    }
+                )
+            }
+            composable(
+                route = Screens.AnimeCatalog(),
+                arguments = listOf(
+                    navArgument("mediaType") { type = NavType.StringType },
+                    navArgument("slug") { type = NavType.StringType }
+                )
+            ) {
+                com.example.metflix.presentation.screens.anime.catalog.AnimeCatalogScreen(
+                    onBackPressed = {
+                        if (navController.navigateUp()) {
+                            isComingBackFromDifferentScreen = true
+                        }
+                    },
+                    onEpisodeClick = { episode, seriesTitle ->
+                        val epSlug = episode.route.substringAfterLast("/")
+                        val cleanSlug = if (epSlug.isNotEmpty()) epSlug else episode.episodeCode.orEmpty()
+                        navController.navigate(Screens.AnimePlayer.withArgs("episode", cleanSlug))
+                    },
+                    onMoviePlayClick = { slug, title ->
+                        val cleanSlug = slug.substringAfterLast("/")
+                        navController.navigate(Screens.AnimePlayer.withArgs("movie", cleanSlug))
+                    },
+                    onRecommendedMovieClick = { movie ->
+                        val slug = movie.id.substringAfterLast("/")
+                        navController.navigate(Screens.AnimeCatalog.withArgs("movie", slug))
+                    }
+                )
+            }
+            composable(
+                route = Screens.AnimePlayer(),
+                arguments = listOf(
+                    navArgument("mediaType") { type = NavType.StringType },
+                    navArgument("slug") { type = NavType.StringType }
+                )
+            ) {
+                com.example.metflix.presentation.screens.anime.player.AnimePlayerScreen(
+                    onBackPressed = {
+                        if (navController.navigateUp()) {
+                            isComingBackFromDifferentScreen = true
+                        }
+                    }
+                )
+            }
+            composable(
+                route = Screens.AnimeCategory(),
+                arguments = listOf(
+                    navArgument("categoryType") { type = NavType.StringType },
+                    navArgument("slug") { type = NavType.StringType }
+                )
+            ) {
+                com.example.metflix.presentation.screens.anime.category.AnimeCategoryScreen(
+                    onBackPressed = {
+                        if (navController.navigateUp()) {
+                            isComingBackFromDifferentScreen = true
+                        }
+                    },
+                    onMovieClick = { mediaType, slug ->
+                        navController.navigate(Screens.AnimeCatalog.withArgs(mediaType, slug))
                     }
                 )
             }

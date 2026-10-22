@@ -133,7 +133,8 @@ private fun Catalog(
                         state.mostVotedList.isEmpty() &&
                         state.netflixList.isEmpty() &&
                         state.primeList.isEmpty() &&
-                        state.disneyList.isEmpty()
+                        state.disneyList.isEmpty() &&
+                        state.bollywoodList.isEmpty()
 
                     if (allEmpty) {
                         item(contentType = "empty_state") {
@@ -264,6 +265,17 @@ private fun Catalog(
                                     modifier = Modifier.padding(top = childPadding.top),
                                     title = "✨ Disney+ Hotstar Hits",
                                     movieList = state.disneyList,
+                                    onMovieSelected = onMovieClick
+                                )
+                            }
+                        }
+
+                        if (state.bollywoodList.isNotEmpty()) {
+                            item(contentType = "movies_row") {
+                                MoviesRow(
+                                    modifier = Modifier.padding(top = childPadding.top),
+                                    title = "🇮🇳 Bollywood Hits & Blockbusters",
+                                    movieList = state.bollywoodList,
                                     onMovieSelected = onMovieClick
                                 )
                             }
@@ -450,6 +462,23 @@ private fun Catalog(
                         }
                     }
                 }
+
+                "Bollywood" -> {
+                    if (state.bollywoodList.isNotEmpty()) {
+                        item(contentType = "movies_row") {
+                            MoviesRow(
+                                modifier = Modifier.padding(top = childPadding.top),
+                                title = "🇮🇳 Bollywood Hits & Blockbusters",
+                                movieList = state.bollywoodList,
+                                onMovieSelected = onMovieClick
+                            )
+                        }
+                    } else {
+                        item(contentType = "empty_state") {
+                            MoviesEmptyCategoryState(categoryName = "Bollywood")
+                        }
+                    }
+                }
             }
         }
     }
@@ -501,6 +530,7 @@ private fun MovieCategoryFilterChips(
         listOf(
             "All",
             "In Theatres",
+            "Bollywood",
             "Trending Today",
             "Trending Week",
             "Top Rated",

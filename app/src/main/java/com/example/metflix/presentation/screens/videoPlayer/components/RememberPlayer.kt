@@ -27,6 +27,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import com.example.metflix.data.player.MediaCacheManager
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -54,20 +55,23 @@ fun rememberPlayer(
             httpDataSourceFactory.setDefaultRequestProperties(cleanHeaders)
         }
 
-        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        // Use MediaCacheManager to stream HLS chunks & MP4s to disk cache,
+        // avoiding JVM heap exhaustion on 512MB RAM Android TV devices
+        val dataSourceFactory = MediaCacheManager.createCacheDataSourceFactory(context, httpDataSourceFactory)
 
+        // Memory-efficient LoadControl tuned specifically for low-RAM devices (512MB RAM TV)
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 50_000,
-                /* bufferForPlaybackMs = */ 2_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 4_000
+                /* minBufferMs = */ 5_000,
+                /* maxBufferMs = */ 15_000,
+                /* bufferForPlaybackMs = */ 1_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_500
             )
             .setBackBuffer(
-                /* backBufferDurationMs = */ 10_000,
-                /* retainBackBufferFromKeyframe = */ true
+                /* backBufferDurationMs = */ 0,
+                /* retainBackBufferFromKeyframe = */ false
             )
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setPrioritizeTimeOverSizeThresholds(false)
             .build()
 
         val renderersFactory = DefaultRenderersFactory(context)

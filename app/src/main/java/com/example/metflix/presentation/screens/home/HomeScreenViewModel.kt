@@ -59,6 +59,7 @@ class HomeScreeViewModel @Inject constructor(
             var top10: MovieList = emptyList()
             var nowPlaying: MovieList = emptyList()
             var popularThisWeek: MovieList = emptyList()
+            var bollywood: MovieList = emptyList()
             var netflix: MovieList = emptyList()
             var prime: MovieList = emptyList()
             var disney: MovieList = emptyList()
@@ -83,6 +84,7 @@ class HomeScreeViewModel @Inject constructor(
                             top10MovieList = top10,
                             nowPlayingMovieList = nowPlaying,
                             popularThisWeekList = popularThisWeek,
+                            bollywoodMovieList = bollywood,
                             netflixMovieList = netflix,
                             primeMovieList = prime,
                             disneyMovieList = disney,
@@ -157,6 +159,15 @@ class HomeScreeViewModel @Inject constructor(
             }
 
             launch {
+                movieRepository.getBollywoodMovies()
+                    .catch { emit(emptyList()) }
+                    .collect { list ->
+                        bollywood = list
+                        scheduleStateEmission()
+                    }
+            }
+
+            launch {
                 movieRepository.getNetflixMovies()
                     .catch { emit(emptyList()) }
                     .collect { list ->
@@ -224,6 +235,7 @@ sealed interface HomeScreenUiState {
         val top10MovieList: MovieList,
         val nowPlayingMovieList: MovieList,
         val popularThisWeekList: MovieList = emptyList(),
+        val bollywoodMovieList: MovieList = emptyList(),
         val netflixMovieList: MovieList = emptyList(),
         val primeMovieList: MovieList = emptyList(),
         val disneyMovieList: MovieList = emptyList(),

@@ -51,6 +51,7 @@ class MoviesScreenViewModel @Inject constructor(
     private var netflix: MovieList = emptyList()
     private var prime: MovieList = emptyList()
     private var disney: MovieList = emptyList()
+    private var bollywood: MovieList = emptyList()
 
     init {
         loadData()
@@ -79,6 +80,7 @@ class MoviesScreenViewModel @Inject constructor(
             netflixList = netflix,
             primeList = prime,
             disneyList = disney,
+            bollywoodList = bollywood,
             selectedFilter = _selectedFilter.value
         )
     }
@@ -182,6 +184,15 @@ class MoviesScreenViewModel @Inject constructor(
                     emitState()
                 }
         }
+
+        viewModelScope.launch {
+            movieRepository.getBollywoodMovies()
+                .catch { emit(emptyList()) }
+                .collect { list ->
+                    bollywood = list
+                    emitState()
+                }
+        }
     }
 }
 
@@ -202,6 +213,7 @@ sealed interface MoviesScreenUiState {
         val netflixList: MovieList,
         val primeList: MovieList,
         val disneyList: MovieList,
+        val bollywoodList: MovieList = emptyList(),
         val selectedFilter: String = "All"
     ) : MoviesScreenUiState
 }

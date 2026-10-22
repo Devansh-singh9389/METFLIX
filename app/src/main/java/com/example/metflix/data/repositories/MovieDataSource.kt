@@ -370,6 +370,28 @@ class MovieDataSource @Inject constructor(
         return null
     }
 
+    private val bollywoodMovieDataReader: MovieDataReader = MovieDataReader {
+        val cached = diskCache.loadMovies("bollywood")
+        if (cached.isNotEmpty()) {
+            refreshIfStale("bollywood") {
+                fetchBollywoodLive()?.let { bollywoodMovieDataReader.update(it) }
+            }
+            return@MovieDataReader cached
+        }
+        fetchBollywoodLive() ?: popularMovieDataReader.read()
+    }
+
+    suspend fun fetchBollywoodLive(): List<Movie>? {
+        if (TmdbConfig.USE_TMDB) {
+            val combined = fetchTwoPages { page -> tmdbApiClient.getBollywoodMovies(page = page) }
+            if (combined.isNotEmpty()) {
+                diskCache.saveMovies("bollywood", combined)
+                return combined
+            }
+        }
+        return null
+    }
+
     suspend fun clearAllReaders() {
         trendingMovieDataReader.clear()
         popularMovieDataReader.clear()
@@ -382,6 +404,7 @@ class MovieDataSource @Inject constructor(
         netflixMovieDataReader.clear()
         primeMovieDataReader.clear()
         disneyMovieDataReader.clear()
+        bollywoodMovieDataReader.clear()
     }
 
     suspend fun getMovieList(thumbnailType: ThumbnailType = ThumbnailType.Standard): List<Movie> =
@@ -413,6 +436,7 @@ class MovieDataSource @Inject constructor(
     suspend fun getNetflixMovieList(): List<Movie> = netflixMovieDataReader.read()
     suspend fun getPrimeMovieList(): List<Movie> = primeMovieDataReader.read()
     suspend fun getDisneyMovieList(): List<Movie> = disneyMovieDataReader.read()
+    suspend fun getBollywoodMovieList(): List<Movie> = bollywoodMovieDataReader.read()
 
     suspend fun getFavoriteMovieList(): List<Movie> {
         val list = popularMovieDataReader.read()

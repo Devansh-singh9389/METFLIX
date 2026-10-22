@@ -81,6 +81,8 @@ fun DashboardScreen(
     openVideoPlayer: (Movie) -> Unit,
     openCachedPlayback: (String) -> Unit,
     openLiveTvPlayer: (channelId: String) -> Unit,
+    openAnimeCatalog: (mediaType: String, slug: String) -> Unit = { _, _ -> },
+    openAnimeCategory: (categoryType: String, slug: String) -> Unit = { _, _ -> },
     isComingBackFromDifferentScreen: Boolean,
     resetIsComingBackFromDifferentScreen: () -> Unit,
     onBackPressed: () -> Unit
@@ -176,6 +178,8 @@ fun DashboardScreen(
             openVideoPlayer = openVideoPlayer,
             openCachedPlayback = openCachedPlayback,
             openLiveTvPlayer = openLiveTvPlayer,
+            openAnimeCatalog = openAnimeCatalog,
+            openAnimeCategory = openAnimeCategory,
             updateTopBarVisibility = { isTopBarVisible = it },
             isTopBarVisible = isTopBarVisible,
             currentRoute = currentDestination ?: Screens.Home(),
@@ -213,6 +217,8 @@ private fun Body(
     openVideoPlayer: (Movie) -> Unit,
     openCachedPlayback: (String) -> Unit,
     openLiveTvPlayer: (channelId: String) -> Unit,
+    openAnimeCatalog: (mediaType: String, slug: String) -> Unit,
+    openAnimeCategory: (categoryType: String, slug: String) -> Unit,
     updateTopBarVisibility: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     currentRoute: String,
@@ -258,8 +264,9 @@ private fun Body(
             }
             Screens.Anime.name -> {
             com.example.metflix.presentation.screens.anime.AnimeScreen(
-                onAnimeSeriesClick = { movie -> openMovieDetailsScreen("tv:${movie.id}") },
-                onAnimeMovieClick = { movie -> openMovieDetailsScreen(movie.id) },
+                onAnimeCategoryClick = openAnimeCategory,
+                onAnimeSeriesClick = { slug -> openAnimeCatalog("series", slug) },
+                onAnimeMovieClick = { slug -> openAnimeCatalog("movie", slug) },
                 onScroll = updateTopBarVisibility,
                 isTopBarVisible = isTopBarVisible
             )

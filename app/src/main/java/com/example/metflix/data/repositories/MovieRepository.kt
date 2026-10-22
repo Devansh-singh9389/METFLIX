@@ -44,6 +44,7 @@ interface MovieRepository {
     fun getNetflixMovies(): Flow<MovieList>
     fun getPrimeMovies(): Flow<MovieList>
     fun getDisneyMovies(): Flow<MovieList>
+    fun getBollywoodMovies(): Flow<MovieList>
     fun getTVShows(): Flow<MovieList>
     fun getBingeWatchDramas(): Flow<MovieList>
     fun getTrendingAnime(): Flow<MovieList>

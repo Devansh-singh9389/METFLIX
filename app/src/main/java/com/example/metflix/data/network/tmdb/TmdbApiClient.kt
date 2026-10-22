@@ -248,6 +248,15 @@ class TmdbApiClient @Inject constructor(
         }
     }
 
+    suspend fun getBollywoodMovies(page: Int = 1): Result<List<Movie>> {
+        if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
+        val url = appendPage("${TmdbConfig.BASE_URL}/discover/movie?with_original_language=hi&sort_by=popularity.desc", page)
+        return fetchJson(url) { raw ->
+            val p = json.decodeFromString<TmdbPageResponse<TmdbMovieItem>>(raw)
+            p.results.map { it.toMovie(ThumbnailType.Standard) }
+        }
+    }
+
     suspend fun searchMovies(query: String, page: Int = 1): Result<List<Movie>> {
         if (!isConfigured) return Result.failure(IllegalStateException("TMDB API key not set"))
         val encodedQuery = URLEncoder.encode(query, "UTF-8")

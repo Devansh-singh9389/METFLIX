@@ -302,6 +302,11 @@ class MovieRepositoryImpl @Inject constructor(
         emit(list)
     }.flowOn(Dispatchers.IO)
 
+    override fun getBollywoodMovies(): Flow<MovieList> = flow {
+        val list = movieDataSource.getBollywoodMovieList()
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
     override fun getTVShows(): Flow<MovieList> = flow {
         val list = tvDataSource.getTvShowList()
         emit(list)

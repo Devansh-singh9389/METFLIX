@@ -49,8 +49,9 @@ import com.example.metflix.presentation.screens.movies.MoviesScreenMovieList
 
 @Composable
 fun AnimeScreen(
-    onAnimeSeriesClick: (movie: Movie) -> Unit,
-    onAnimeMovieClick: (movie: Movie) -> Unit,
+    onAnimeCategoryClick: (categoryType: String, slug: String) -> Unit = { _, _ -> },
+    onAnimeSeriesClick: (slug: String) -> Unit = {},
+    onAnimeMovieClick: (slug: String) -> Unit = {},
     onScroll: (isTopBarVisible: Boolean) -> Unit,
     isTopBarVisible: Boolean,
     viewModel: AnimeScreenViewModel = hiltViewModel()
@@ -80,6 +81,7 @@ fun AnimeScreen(
             } else {
                 AnimeCatalog(
                     state = state,
+                    onAnimeCategoryClick = onAnimeCategoryClick,
                     onAnimeSeriesClick = onAnimeSeriesClick,
                     onAnimeMovieClick = onAnimeMovieClick,
                     onScroll = onScroll,
@@ -94,8 +96,9 @@ fun AnimeScreen(
 @Composable
 private fun AnimeCatalog(
     state: AnimeScreenUiState.Ready,
-    onAnimeSeriesClick: (movie: Movie) -> Unit,
-    onAnimeMovieClick: (movie: Movie) -> Unit,
+    onAnimeCategoryClick: (categoryType: String, slug: String) -> Unit,
+    onAnimeSeriesClick: (slug: String) -> Unit,
+    onAnimeMovieClick: (slug: String) -> Unit,
     onScroll: (isTopBarVisible: Boolean) -> Unit,
     isTopBarVisible: Boolean,
     modifier: Modifier = Modifier
@@ -135,7 +138,14 @@ private fun AnimeCatalog(
             item(contentType = "newest_drops_grid") {
                 MoviesScreenMovieList(
                     movieList = homeData.newestDrops,
-                    onMovieClick = onAnimeSeriesClick
+                    onMovieClick = { movie ->
+                        val slug = movie.id.substringAfterLast("/")
+                        if (movie.id.startsWith("movie/") || movie.description.contains("Movie")) {
+                            onAnimeMovieClick(slug)
+                        } else {
+                            onAnimeSeriesClick(slug)
+                        }
+                    }
                 )
             }
         }
@@ -147,7 +157,12 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🔥 Popular Anime & Cartoon Franchises",
                     movieList = homeData.bigTitles,
-                    onMovieSelected = onAnimeSeriesClick
+                    onMovieSelected = { movie ->
+                        val parts = movie.id.removePrefix("/").removePrefix("category/").split("/").filter { it.isNotBlank() }
+                        val type = if (parts.isNotEmpty()) parts[0] else "franchise"
+                        val slug = if (parts.size > 1) parts[1] else parts.firstOrNull() ?: "doraemon"
+                        onAnimeCategoryClick(type, slug)
+                    }
                 )
             }
         }
@@ -159,7 +174,10 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🎌 New Anime Arrivals",
                     movieList = homeData.newAnimeArrivals,
-                    onMovieSelected = onAnimeSeriesClick
+                    onMovieSelected = { movie ->
+                        val slug = movie.id.substringAfterLast("/")
+                        onAnimeSeriesClick(slug)
+                    }
                 )
             }
         }
@@ -171,7 +189,10 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "⭐ Most Watched Anime Series",
                     movieList = homeData.mostWatchedShows,
-                    onMovieSelected = onAnimeSeriesClick
+                    onMovieSelected = { movie ->
+                        val slug = movie.id.substringAfterLast("/")
+                        onAnimeSeriesClick(slug)
+                    }
                 )
             }
         }
@@ -183,7 +204,10 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🍿 Latest Anime Movies",
                     movieList = homeData.latestAnimeMovies,
-                    onMovieSelected = onAnimeMovieClick
+                    onMovieSelected = { movie ->
+                        val slug = movie.id.substringAfterLast("/")
+                        onAnimeMovieClick(slug)
+                    }
                 )
             }
         }
@@ -195,7 +219,10 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🏆 All-Time Popular Anime Movies",
                     movieList = homeData.mostWatchedFilms,
-                    onMovieSelected = onAnimeMovieClick
+                    onMovieSelected = { movie ->
+                        val slug = movie.id.substringAfterLast("/")
+                        onAnimeMovieClick(slug)
+                    }
                 )
             }
         }
@@ -207,7 +234,10 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🎙️ Hindi Dubbed Cartoons & Kids Shows",
                     movieList = homeData.cartoonSeries,
-                    onMovieSelected = onAnimeSeriesClick
+                    onMovieSelected = { movie ->
+                        val slug = movie.id.substringAfterLast("/")
+                        onAnimeSeriesClick(slug)
+                    }
                 )
             }
         }
@@ -219,7 +249,10 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🎬 Cartoon & Animated Movies",
                     movieList = homeData.cartoonFilms,
-                    onMovieSelected = onAnimeMovieClick
+                    onMovieSelected = { movie ->
+                        val slug = movie.id.substringAfterLast("/")
+                        onAnimeMovieClick(slug)
+                    }
                 )
             }
         }
@@ -231,7 +264,12 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "🌐 Stream In Your Language",
                     movieList = homeData.languages,
-                    onMovieSelected = onAnimeSeriesClick
+                    onMovieSelected = { movie ->
+                        val parts = movie.id.removePrefix("/").removePrefix("category/").split("/").filter { it.isNotBlank() }
+                        val type = if (parts.isNotEmpty()) parts[0] else "language"
+                        val slug = if (parts.size > 1) parts[1] else parts.firstOrNull() ?: "hindi"
+                        onAnimeCategoryClick(type, slug)
+                    }
                 )
             }
         }
@@ -243,7 +281,12 @@ private fun AnimeCatalog(
                     modifier = Modifier.padding(top = childPadding.top),
                     title = "📺 Networks & Channels",
                     movieList = homeData.networks,
-                    onMovieSelected = onAnimeSeriesClick
+                    onMovieSelected = { movie ->
+                        val parts = movie.id.removePrefix("/").removePrefix("category/").split("/").filter { it.isNotBlank() }
+                        val type = if (parts.isNotEmpty()) parts[0] else "network"
+                        val slug = if (parts.size > 1) parts[1] else parts.firstOrNull() ?: "disney-channel"
+                        onAnimeCategoryClick(type, slug)
+                    }
                 )
             }
         }
