@@ -29,6 +29,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.time.Duration
 
 @Singleton
 class AnimeStreamExtractor @Inject constructor(
@@ -67,7 +68,7 @@ class AnimeStreamExtractor @Inject constructor(
     private val fastHttpClient: OkHttpClient by lazy {
         okHttpClient.newBuilder()
             .connectTimeout(java.time.Duration.ofSeconds(15))
-            .readTimeout(java.time.Duration.ofSeconds(20))
+            .readTimeout(Duration.ofSeconds(15))
             .followRedirects(true)
             .build()
     }

@@ -34,8 +34,8 @@ import kotlin.coroutines.resume
 
 private const val TAG = "AnimeStreamSniffer"
 
-// Was 8s — too short for Zephyrix. Player needs ~10–15s to boot and fire the m3u8.
-private const val SNIFFER_TIMEOUT_MS = 25_000L
+// 15-second response budget for stream extraction
+private const val SNIFFER_TIMEOUT_MS = 15_000L
 
 private const val CHROME_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 " +

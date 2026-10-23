@@ -120,22 +120,22 @@ class PerformancePreferences @Inject constructor(
 
     fun setTmdbEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_USER_TMDB_ENABLED, enabled).apply()
-        _tmdbEnabled.value = enabled
         if (enabled && _lowSpecMode.value) {
-            _lowSpecMode.value = false
-            prefs.edit().putBoolean(KEY_LOW_SPEC_MODE, false).apply()
+            setLowSpecMode(false)
+        } else {
+            _tmdbEnabled.value = enabled
+            syncConfig()
         }
-        syncConfig()
     }
 
     fun setHighQualityImages(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_USER_HIGH_QUALITY_IMAGES, enabled).apply()
-        _highQualityImages.value = enabled
         if (enabled && _lowSpecMode.value) {
-            _lowSpecMode.value = false
-            prefs.edit().putBoolean(KEY_LOW_SPEC_MODE, false).apply()
+            setLowSpecMode(false)
+        } else {
+            _highQualityImages.value = enabled
+            syncConfig()
         }
-        syncConfig()
     }
 
     fun setReduceAnimations(enabled: Boolean) {

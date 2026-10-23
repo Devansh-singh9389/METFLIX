@@ -82,15 +82,16 @@ val defaultTmdbApiKey: String = envProperties.getProperty("TMDB_API_KEY")
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Use release signing when a keystore is configured; otherwise build unsigned (NEVER debug signed).
+            // Use release signing when a keystore is configured; otherwise default to debug signing.
             val releaseSigning = signingConfigs.getByName("release")
             if (releaseSigning.storeFile != null) {
                 signingConfig = releaseSigning
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
             }
             // Production releases NEVER bundle creator debrid keys
             buildConfigField("String", "DEFAULT_ALLDEBRID_KEY", "\"\"")
             buildConfigField("String", "DEFAULT_TORBOX_KEY", "\"\"")
-            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -107,6 +108,9 @@ val defaultTmdbApiKey: String = envProperties.getProperty("TMDB_API_KEY")
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }
@@ -163,6 +167,9 @@ dependencies {
 
     // Profile Installer
     implementation(libs.androidx.profileinstaller)
+
+    // External Storage & Document Access
+    implementation(libs.androidx.documentfile)
 
     // QR Code generation (ZXing Core - offline & lightweight)
     implementation("com.google.zxing:core:3.5.3")

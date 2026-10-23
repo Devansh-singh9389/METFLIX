@@ -16,6 +16,7 @@
 
 package com.example.metflix.presentation.screens.profile
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -30,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.metflix.data.util.StringConstants
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
@@ -49,6 +51,7 @@ fun AccountsSection(
     onOpenPerformanceSettings: () -> Unit = {},
     onOpenDebridSettings: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val childPadding = rememberChildPadding()
     var showDeleteDialog by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -67,23 +70,28 @@ fun AccountsSection(
         AccountsSectionData(
             title = StringConstants.Composable.Placeholders
                 .AccountsSelectionSwitchAccountsTitle,
-            value = StringConstants.Composable.Placeholders.AccountsSelectionSwitchAccountsEmail
+            value = StringConstants.Composable.Placeholders.AccountsSelectionSwitchAccountsEmail,
+            onClick = { Toast.makeText(context, "Switch Account feature coming soon", Toast.LENGTH_SHORT).show() }
         ),
         AccountsSectionData(
             title = StringConstants.Composable.Placeholders.AccountsSelectionLogOut,
-            value = StringConstants.Composable.Placeholders.AccountsSelectionSwitchAccountsEmail
+            value = StringConstants.Composable.Placeholders.AccountsSelectionSwitchAccountsEmail,
+            onClick = { Toast.makeText(context, "Logged out of current profile", Toast.LENGTH_SHORT).show() }
         ),
         AccountsSectionData(
             title = StringConstants.Composable.Placeholders
                 .AccountsSelectionChangePasswordTitle,
-            value = StringConstants.Composable.Placeholders.AccountsSelectionChangePasswordValue
+            value = StringConstants.Composable.Placeholders.AccountsSelectionChangePasswordValue,
+            onClick = { Toast.makeText(context, "Change Password feature coming soon", Toast.LENGTH_SHORT).show() }
         ),
         AccountsSectionData(
             title = StringConstants.Composable.Placeholders.AccountsSelectionAddNewAccountTitle,
+            onClick = { Toast.makeText(context, "Add New Account feature coming soon", Toast.LENGTH_SHORT).show() }
         ),
         AccountsSectionData(
             title = StringConstants.Composable.Placeholders
-                .AccountsSelectionViewSubscriptionsTitle
+                .AccountsSelectionViewSubscriptionsTitle,
+            onClick = { Toast.makeText(context, "Subscriptions details feature coming soon", Toast.LENGTH_SHORT).show() }
         ),
         AccountsSectionData(
             title = StringConstants.Composable.Placeholders.AccountsSelectionDeleteAccountTitle,

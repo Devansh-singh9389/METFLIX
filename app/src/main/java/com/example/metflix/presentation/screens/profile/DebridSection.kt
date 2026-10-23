@@ -1046,30 +1046,30 @@ fun DebridSection(
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-                                fileSelectionItem?.let { item ->
-                                    Dialog(onDismissRequest = { fileSelectionItem = null }) {
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            tonalElevation = 8.dp
-                                        ) {
-                                            Column(
-                                                modifier = Modifier.padding(24.dp),
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Text("Choose a video file", style = MaterialTheme.typography.titleMedium)
-                                                item.files.forEach { file ->
-                                                    Button(onClick = {
-                                                        fileSelectionItem = null
-                                                        viewModel.playCloudTorrent(item, file.id)
-                                                    }) {
-                                                        Text(file.name, maxLines = 2)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+        fileSelectionItem?.let { selectedItem ->
+            Dialog(onDismissRequest = { fileSelectionItem = null }) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    tonalElevation = 8.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("Choose a video file", style = MaterialTheme.typography.titleMedium)
+                        selectedItem.files.forEach { file ->
+                            Button(onClick = {
+                                fileSelectionItem = null
+                                viewModel.playCloudTorrent(selectedItem, file.id)
+                            }) {
+                                Text(file.name, maxLines = 2)
                             }
                         }
                     }

@@ -16,6 +16,7 @@
 
 package com.example.metflix.presentation.screens.profile
 
+import android.widget.Toast
 import androidx.annotation.FloatRange
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -85,7 +86,8 @@ fun ProfileScreen(
     @FloatRange(from = 0.0, to = 1.0)
     sidebarWidthFraction: Float = 0.32f,
     onPlayMovie: (Movie) -> Unit = {},
-    onCachedPlaybackRequested: (String) -> Unit = {}
+    onCachedPlaybackRequested: (String) -> Unit = {},
+    onSearchQuerySelected: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val languagePreferences = remember { LanguagePreferences(context) }
@@ -102,11 +104,11 @@ fun ProfileScreen(
     val childPadding = rememberChildPadding()
     var selectedScreen by rememberSaveable { mutableStateOf(ProfileScreens.Accounts) }
 
-    val focusRequester = remember { FocusRequester() }
+    val focusRequesters = remember { ProfileScreens.entries.associateWith { FocusRequester() } }
     val focusManager = LocalFocusManager.current
     var isLeftColumnFocused by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(Unit) { focusRequesters[ProfileScreens.Accounts]?.requestFocus() }
 
     Row(
         modifier = Modifier
@@ -125,8 +127,9 @@ fun ProfileScreen(
                 .focusGroup(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            ProfileScreens.entries.forEachIndexed { index, profileScreen ->
+            ProfileScreens.entries.forEach { profileScreen ->
                 key(profileScreen) {
+                    val requester = focusRequesters.getValue(profileScreen)
                     ListItem(
                         trailingContent = {
                             Icon(
@@ -157,10 +160,7 @@ fun ProfileScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .then(
-                                if (index == 0) Modifier.focusRequester(focusRequester)
-                                else Modifier
-                            )
+                            .focusRequester(requester)
                             .onFocusChanged {
                                 if (it.isFocused) {
                                     selectedScreen = profileScreen
@@ -185,7 +185,7 @@ fun ProfileScreen(
                 .onPreviewKeyEvent {
                     if (it.key == Key.Back && it.type == KeyEventType.KeyUp) {
                         if (!isLeftColumnFocused) {
-                            focusRequester.requestFocus()
+                            focusRequesters[selectedScreen]?.requestFocus()
                             return@onPreviewKeyEvent true
                         }
                     }
@@ -220,7 +220,11 @@ fun ProfileScreen(
                     ProfileScreens.SearchHistory -> SearchHistorySection(
                         history = searchHistory,
                         onClearAll = { searchHistoryPreferences.clearHistory() },
-                        onRemoveQuery = { searchHistoryPreferences.removeQuery(it) }
+                        onRemoveQuery = { searchHistoryPreferences.removeQuery(it) },
+                        onSelectQuery = { query ->
+                            onSearchQuerySelected(query)
+                            Toast.makeText(context, "Searching: $query", Toast.LENGTH_SHORT).show()
+                        }
                     )
                     ProfileScreens.HelpAndSupport -> HelpAndSupportSection()
                 }

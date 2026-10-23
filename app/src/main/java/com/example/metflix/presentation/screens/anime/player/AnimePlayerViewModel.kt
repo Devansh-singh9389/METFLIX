@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed interface AnimePlayerUiState {
     object Loading : AnimePlayerUiState
@@ -355,9 +356,11 @@ class AnimePlayerViewModel @Inject constructor(
                     return@launch
                 }
 
-                // It's a pointer file (.txt). Resolve it with the FULL page URL as Referer.
-                Log.i(TAG, "Direct URL is a pointer file. Resolving with full page Referer: ${server.embedUrl}")
-                val finalUrl = animeStreamExtractor.resolvePointerUrl(directUrl, headersForPointer)
+                // It's a pointer file (.txt). Resolve it with a 15-second response budget.
+                Log.i(TAG, "Direct URL is a pointer file. Waiting up to 15s for response: ${server.embedUrl}")
+                val finalUrl = withTimeoutOrNull(45_000L) {
+                    animeStreamExtractor.resolvePointerUrl(directUrl, headersForPointer)
+                }
                 if (finalUrl != null) {
                     Log.i(TAG, "Pointer resolved to: $finalUrl")
                     _extractedStream.value = AnimeExtractedStream(finalUrl, headersForPointer, true)
@@ -371,7 +374,7 @@ class AnimePlayerViewModel @Inject constructor(
                     _diagnostics.value = _diagnostics.value.copy(resolution = "Direct Stream Ready")
                     return@launch
                 } else {
-                    Log.e(TAG, "Pointer resolution failed. Referer was: ${server.embedUrl}")
+                    Log.e(TAG, "Pointer resolution failed or timed out after 15s. Referer was: ${server.embedUrl}")
                 }
             }
 
@@ -390,8 +393,10 @@ class AnimePlayerViewModel @Inject constructor(
                 if (!targetUrl.isNullOrBlank()) {
                     Log.i(TAG, "Decoded stream for $currentLang: $targetUrl")
 
-                    val staticExtracted = animeStreamExtractor.extractStream(targetUrl, langCode)
-                    if (staticExtracted.isDirectStream) {
+                    val staticExtracted = withTimeoutOrNull(15_000L) {
+                        animeStreamExtractor.extractStream(targetUrl, langCode)
+                    }
+                    if (staticExtracted != null && staticExtracted.isDirectStream) {
                         _extractedStream.value = staticExtracted
                         _engineType.value = AnimePlayerEngineType.EXOPLAYER
                         return@launch
@@ -405,19 +410,20 @@ class AnimePlayerViewModel @Inject constructor(
                         return@launch
                     }
                 }
-                // If decoded stream failed (e.g. net::ERR_NAME_NOT_RESOLVED), continue to server.embedUrl
             }
 
-            // 3. Static HTTP extraction fallback for raw embed URLs
-            val staticExtracted = animeStreamExtractor.extractStream(server.embedUrl, _selectedAudioTrack.value.code)
-            if (staticExtracted.isDirectStream) {
+            // 3. Static HTTP extraction fallback for raw embed URLs (15-second response budget)
+            val staticExtracted = withTimeoutOrNull(15_000L) {
+                animeStreamExtractor.extractStream(server.embedUrl, _selectedAudioTrack.value.code)
+            }
+            if (staticExtracted != null && staticExtracted.isDirectStream) {
                 Log.d(TAG, "Direct stream found via static extractor: ${staticExtracted.streamUrl}")
                 _extractedStream.value = staticExtracted
                 _engineType.value = AnimePlayerEngineType.EXOPLAYER
                 return@launch
             }
 
-            // 4. Background headless sniffer (25s budget)
+            // 4. Background headless sniffer (15-second budget)
             Log.d(TAG, "Starting background stream sniffer for: ${server.embedUrl}")
             val sniffedStream = animeStreamSniffer.sniffStream(server.embedUrl, _selectedAudioTrack.value.code)
             if (sniffedStream != null && sniffedStream.isDirectStream) {

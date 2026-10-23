@@ -53,7 +53,7 @@ fun LanguageSection(
             val isSelected = lang.code == currentLanguageCode
             ListItem(
                 modifier = Modifier.padding(top = 16.dp),
-                selected = false,
+                selected = isSelected,
                 onClick = { onLanguageSelected(lang.code) },
                 trailingContent = if (isSelected) {
                     {
