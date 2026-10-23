@@ -18,6 +18,8 @@ package com.example.metflix.presentation.screens.movies
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,10 +36,18 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.example.metflix.data.settings.DownloadPreferences
+import com.example.metflix.data.util.MediaDownloader
+import com.example.metflix.presentation.common.DownloadStreamOption
+import com.example.metflix.presentation.common.MediaDownloadDialog
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -56,6 +66,7 @@ import coil.request.ImageRequest
 import com.example.metflix.data.entities.TvEpisode
 import com.example.metflix.data.entities.TvSeason
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -125,6 +136,10 @@ fun TvSeasonsAndEpisodesSection(
         }
 
         // Episodes Horizontal Carousel
+        var selectedDownloadEpisode by remember { mutableStateOf<TvEpisode?>(null) }
+        val context = LocalContext.current
+        val mediaDownloader = remember { MediaDownloader(context, DownloadPreferences(context)) }
+
         if (episodes.isEmpty()) {
             Text(
                 text = "Loading episodes for ${activeSeason.name.ifBlank { "Season $selectedSeasonNumber" }}...",
@@ -144,18 +159,45 @@ fun TvSeasonsAndEpisodesSection(
                 items(episodes, key = { "${it.seasonNumber}_${it.episodeNumber}_${it.id}" }) { episode ->
                     TvEpisodeCard(
                         episode = episode,
-                        onClick = { onEpisodeClick(episode.seasonNumber, episode.episodeNumber) }
+                        onClick = { onEpisodeClick(episode.seasonNumber, episode.episodeNumber) },
+                        onLongClick = { selectedDownloadEpisode = episode }
                     )
                 }
             }
         }
+
+        selectedDownloadEpisode?.let { ep ->
+            val title = "S${ep.seasonNumber} E${ep.episodeNumber}: ${ep.name}"
+            MediaDownloadDialog(
+                title = title,
+                posterUrl = ep.stillUri,
+                resolveStreams = {
+                    delay(1000)
+                    listOf(
+                        DownloadStreamOption(quality = "1080p Full HD", sizeText = "450 MB", directUrl = "https://metflix.org/stream/S${ep.seasonNumber}E${ep.episodeNumber}/1080p.mp4", availableLanguages = listOf("Hindi", "English")),
+                        DownloadStreamOption(quality = "720p HD", sizeText = "220 MB", directUrl = "https://metflix.org/stream/S${ep.seasonNumber}E${ep.episodeNumber}/720p.mp4", availableLanguages = listOf("Hindi", "English"))
+                    )
+                },
+                onDismiss = { selectedDownloadEpisode = null },
+                onStartDownload = { option, langs ->
+                    mediaDownloader.enqueueDownload(
+                        catalogTitle = title,
+                        directUrl = option.directUrl,
+                        selectedQuality = option.quality,
+                        selectedLanguages = langs
+                    )
+                }
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TvEpisodeCard(
     episode: TvEpisode,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -168,7 +210,12 @@ private fun TvEpisodeCard(
         border = CardDefaults.border(
             focusedBorder = Border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary))
         ),
-        modifier = modifier.width(260.dp)
+        modifier = modifier
+            .width(260.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Column {
             Box(

@@ -18,8 +18,10 @@ package com.example.metflix.presentation.screens.anime.catalog
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +41,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
+import com.example.metflix.data.settings.DownloadPreferences
+import com.example.metflix.data.util.MediaDownloader
+import com.example.metflix.presentation.common.DownloadStreamOption
+import com.example.metflix.presentation.common.MediaDownloadDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -80,6 +87,7 @@ import com.example.metflix.presentation.common.Loading
 import com.example.metflix.presentation.common.MoviesRow
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import com.example.metflix.presentation.theme.MetFlixCardShape
+import kotlinx.coroutines.delay
 
 @Composable
 fun AnimeCatalogScreen(
@@ -306,6 +314,10 @@ private fun SeriesEpisodesSection(
         }
 
         // Horizontal Episode Cards Carousel
+        var selectedDownloadEp by remember { mutableStateOf<AnimeEpisodeItem?>(null) }
+        val context = LocalContext.current
+        val mediaDownloader = remember { MediaDownloader(context, DownloadPreferences(context)) }
+
         if (episodes.isEmpty()) {
             Text(
                 text = "No episodes listed for this season.",
@@ -325,18 +337,45 @@ private fun SeriesEpisodesSection(
                 items(episodes, key = { it.route.ifEmpty { it.episodeCode.orEmpty() } }) { ep ->
                     EpisodeCard(
                         episode = ep,
-                        onClick = { onEpisodeClick(ep) }
+                        onClick = { onEpisodeClick(ep) },
+                        onLongClick = { selectedDownloadEp = ep }
                     )
                 }
             }
         }
+
+        selectedDownloadEp?.let { ep ->
+            val epTitle = ep.title ?: ep.episodeCode ?: "Anime Episode"
+            MediaDownloadDialog(
+                title = epTitle,
+                posterUrl = ep.thumbnail,
+                resolveStreams = {
+                    delay(1000)
+                    listOf(
+                        DownloadStreamOption(quality = "1080p Full HD", sizeText = "380 MB", directUrl = "https://metflix.org/stream/$epTitle/1080p.mp4", availableLanguages = listOf("Hindi", "Japanese", "English")),
+                        DownloadStreamOption(quality = "720p HD", sizeText = "190 MB", directUrl = "https://metflix.org/stream/$epTitle/720p.mp4", availableLanguages = listOf("Hindi", "Japanese", "English"))
+                    )
+                },
+                onDismiss = { selectedDownloadEp = null },
+                onStartDownload = { option, langs ->
+                    mediaDownloader.enqueueDownload(
+                        catalogTitle = epTitle,
+                        directUrl = option.directUrl,
+                        selectedQuality = option.quality,
+                        selectedLanguages = langs
+                    )
+                }
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EpisodeCard(
     episode: AnimeEpisodeItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {}
 ) {
     Card(
         onClick = onClick,
@@ -348,7 +387,12 @@ private fun EpisodeCard(
         border = CardDefaults.border(
             focusedBorder = Border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary))
         ),
-        modifier = Modifier.width(220.dp)
+        modifier = Modifier
+            .width(220.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Column {
             // Thumbnail (16:9)
@@ -490,22 +534,69 @@ private fun AnimeMovieCatalogContent(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    Button(
-                        onClick = onPlayClick,
-                        colors = ButtonDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    val context = LocalContext.current
+                    var showDownloadDialog by remember { mutableStateOf(false) }
+                    val mediaDownloader = remember { MediaDownloader(context, DownloadPreferences(context)) }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = onPlayClick,
+                            colors = ButtonDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
                         ) {
-                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                            Text(text = "Watch Movie", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                Text(text = "Watch Movie", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                            }
                         }
+
+                        Button(
+                            onClick = { showDownloadDialog = true },
+                            colors = ButtonDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Download, contentDescription = null)
+                                Text(text = "Download Movie", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                            }
+                        }
+                    }
+
+                    if (showDownloadDialog) {
+                        MediaDownloadDialog(
+                            title = state.title,
+                            posterUrl = state.poster,
+                            resolveStreams = {
+                                delay(1000)
+                                listOf(
+                                    DownloadStreamOption(quality = "1080p Full HD", sizeText = "1.2 GB", directUrl = "https://metflix.org/stream/${state.title}/1080p.mp4", availableLanguages = state.languages.ifEmpty { listOf("Hindi", "Japanese", "English") }),
+                                    DownloadStreamOption(quality = "720p HD", sizeText = "650 MB", directUrl = "https://metflix.org/stream/${state.title}/720p.mp4", availableLanguages = state.languages.ifEmpty { listOf("Hindi", "Japanese", "English") })
+                                )
+                            },
+                            onDismiss = { showDownloadDialog = false },
+                            onStartDownload = { option, langs ->
+                                mediaDownloader.enqueueDownload(
+                                    catalogTitle = state.title,
+                                    directUrl = option.directUrl,
+                                    selectedQuality = option.quality,
+                                    selectedLanguages = langs
+                                )
+                            }
+                        )
                     }
                 }
 

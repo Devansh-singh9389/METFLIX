@@ -18,6 +18,7 @@ package com.example.metflix.presentation.screens.profile
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
@@ -34,6 +35,7 @@ enum class ProfileScreens(
     Accounts(Icons.Default.Person),
     Debrid(title = "Cloud Debrid", icon = Icons.Default.Cloud),
     Performance(title = "Performance", icon = Icons.Default.Speed),
+    Downloads(title = "Downloads", icon = Icons.Default.Download),
     About(Icons.Default.Info),
     Subtitles(Icons.Default.Subtitles),
     Language(Icons.Default.Translate),

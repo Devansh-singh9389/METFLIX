@@ -29,11 +29,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -46,6 +50,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.example.metflix.data.settings.DownloadPreferences
+import com.example.metflix.data.util.MediaDownloader
+import com.example.metflix.presentation.common.DownloadStreamOption
+import com.example.metflix.presentation.common.MediaDownloadDialog
 import com.example.metflix.presentation.utils.PlayerResolver
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,6 +69,7 @@ import com.example.metflix.data.entities.MovieDetails
 import com.example.metflix.data.util.StringConstants
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import com.example.metflix.presentation.theme.MetFlixButtonShape
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -118,6 +127,7 @@ fun MovieDetails(
                     },
                     movieTitle = movieDetails.name,
                     isTvShow = movieDetails.isTvShow,
+                    posterUri = movieDetails.posterUri,
                     goToMoviePlayer = goToMoviePlayer
                 )
             }
@@ -129,10 +139,14 @@ fun MovieDetails(
 private fun PlaybackActionButtonsRow(
     movieTitle: String,
     isTvShow: Boolean = false,
+    posterUri: String? = null,
     modifier: Modifier = Modifier,
     goToMoviePlayer: () -> Unit
 ) {
     val context = LocalContext.current
+    var showDownloadDialog by remember { mutableStateOf(false) }
+    val mediaDownloader = remember { MediaDownloader(context, DownloadPreferences(context)) }
+
     Row(
         modifier = modifier.padding(top = 24.dp),
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
@@ -159,6 +173,26 @@ private fun PlaybackActionButtonsRow(
         }
 
         Button(
+            onClick = { showDownloadDialog = true },
+            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+            shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
+            colors = ButtonDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                focusedContainerColor = MaterialTheme.colorScheme.primary
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(
+                text = "Download",
+                style = MaterialTheme.typography.titleSmall
+            )
+        }
+
+        Button(
             onClick = { PlayerResolver.launchYouTubeTrailer(context, movieTitle) },
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
             shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
@@ -177,6 +211,29 @@ private fun PlaybackActionButtonsRow(
                 style = MaterialTheme.typography.titleSmall
             )
         }
+    }
+
+    if (showDownloadDialog) {
+        MediaDownloadDialog(
+            title = movieTitle,
+            posterUrl = posterUri,
+            resolveStreams = {
+                delay(1000)
+                listOf(
+                    DownloadStreamOption(quality = "1080p Full HD", sizeText = "1.4 GB", directUrl = "https://metflix.org/stream/$movieTitle/1080p.mp4", availableLanguages = listOf("Hindi", "English")),
+                    DownloadStreamOption(quality = "720p HD", sizeText = "750 MB", directUrl = "https://metflix.org/stream/$movieTitle/720p.mp4", availableLanguages = listOf("Hindi", "English"))
+                )
+            },
+            onDismiss = { showDownloadDialog = false },
+            onStartDownload = { option, langs ->
+                mediaDownloader.enqueueDownload(
+                    catalogTitle = movieTitle,
+                    directUrl = option.directUrl,
+                    selectedQuality = option.quality,
+                    selectedLanguages = langs
+                )
+            }
+        )
     }
 }
 

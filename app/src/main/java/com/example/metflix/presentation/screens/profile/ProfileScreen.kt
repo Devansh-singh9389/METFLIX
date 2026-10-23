@@ -75,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import com.example.metflix.data.entities.Movie
+import com.example.metflix.data.settings.DownloadPreferences
 import com.example.metflix.data.settings.LanguagePreferences
 import com.example.metflix.data.settings.PerformancePreferences
 import com.example.metflix.data.settings.SearchHistoryPreferences
@@ -94,6 +95,7 @@ fun ProfileScreen(
     val subtitlePreferences = remember { SubtitlePreferences(context) }
     val performancePreferences = remember { PerformancePreferences(context) }
     val searchHistoryPreferences = remember { SearchHistoryPreferences(context) }
+    val downloadPreferences = remember { DownloadPreferences(context) }
 
     val reduceAnimations by performancePreferences.reduceAnimations.collectAsStateWithLifecycle()
     val currentLanguageCode by languagePreferences.currentLanguage.collectAsStateWithLifecycle()
@@ -206,6 +208,7 @@ fun ProfileScreen(
                         onCachedPlaybackRequested = onCachedPlaybackRequested
                     )
                     ProfileScreens.Performance -> PerformanceSection()
+                    ProfileScreens.Downloads -> DownloadsSection(downloadPreferences = downloadPreferences)
                     ProfileScreens.About -> AboutSection()
                     ProfileScreens.Subtitles -> SubtitlesSection(
                         isSubtitlesChecked = isSubtitlesChecked,
