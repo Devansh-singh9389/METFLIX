@@ -20,10 +20,17 @@ import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
+import android.os.StatFs
 import android.util.Log
 import android.widget.Toast
+import com.example.metflix.data.downloads.DownloadedCatalogRepository
+import com.example.metflix.data.downloads.DownloadedItem
+import com.example.metflix.data.downloads.InAppDownloadEngine
+import com.example.metflix.data.downloads.InAppDownloadStore
 import com.example.metflix.data.settings.DownloadPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
+import okhttp3.OkHttpClient
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,7 +61,12 @@ class MediaDownloader @Inject constructor(
         catalogTitle: String,
         directUrl: String,
         selectedQuality: String = "1080p",
-        selectedLanguages: List<String> = emptyList()
+        selectedLanguages: List<String> = emptyList(),
+        mediaId: String = catalogTitle,
+        mediaType: String = "MOVIE",
+        seasonNumber: Int? = null,
+        episodeNumber: Int? = null,
+        catalogJson: String = ""
     ): Long {
         if (directUrl.isBlank()) {
             Toast.makeText(context, "Cannot download: Invalid stream URL", Toast.LENGTH_SHORT).show()
@@ -62,11 +74,17 @@ class MediaDownloader @Inject constructor(
         }
 
         return try {
-            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-            if (downloadManager == null) {
-                Toast.makeText(context, "Download Manager unavailable", Toast.LENGTH_SHORT).show()
-                return -1L
-            }
+            val dirType = downloadPreferences.downloadLocation.value
+            val targetDir = if (dirType.startsWith("/")) File(dirType) else context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+            try {
+                val statFs = StatFs(targetDir.path)
+                val availableBytes = statFs.availableBytes
+                val reservedBytes = 500 * 1024 * 1024L
+                if (availableBytes < reservedBytes) {
+                    Toast.makeText(context, "Insufficient Storage Space on device (<500 MB free)", Toast.LENGTH_LONG).show()
+                    return -1L
+                }
+            } catch (_: Exception) {}
 
             val extension = when {
                 directUrl.contains(".mkv", ignoreCase = true) -> "mkv"
@@ -75,29 +93,56 @@ class MediaDownloader @Inject constructor(
             }
 
             val fileName = sanitizeFileName(catalogTitle, extension)
-            val req = DownloadManager.Request(Uri.parse(directUrl)).apply {
-                setTitle(catalogTitle)
-                val langText = if (selectedLanguages.isNotEmpty()) " (${selectedLanguages.joinToString(", ")})" else ""
-                setDescription("Downloading $selectedQuality $langText")
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setAllowedOverMetered(true)
-                setAllowedOverRoaming(true)
-                
-                val dirType = downloadPreferences.downloadLocation.value
-                val destinationDir = if (dirType.equalsIgnoreCase(Environment.DIRECTORY_MOVIES)) {
-                    Environment.DIRECTORY_MOVIES
-                } else {
-                    Environment.DIRECTORY_DOWNLOADS
-                }
-
-                setDestinationInExternalPublicDir(destinationDir, "MetFlix/$fileName")
+            val destinationDir = if (dirType.equalsIgnoreCase(Environment.DIRECTORY_MOVIES)) {
+                Environment.DIRECTORY_MOVIES
+            } else {
+                Environment.DIRECTORY_DOWNLOADS
             }
 
-            val downloadId = downloadManager.enqueue(req)
-            Toast.makeText(context, "Download started: $catalogTitle", Toast.LENGTH_LONG).show()
+            val fullPath = "${Environment.getExternalStoragePublicDirectory(destinationDir)}/MetFlix/$fileName"
+
+            val uniqueId = if (seasonNumber != null && episodeNumber != null) {
+                "${mediaId}_S${seasonNumber}_E${episodeNumber}"
+            } else {
+                "${mediaId}_${selectedQuality.replace(" ", "")}"
+            }
+
+            val engine = InAppDownloadEngine.instance
+                ?: InAppDownloadEngine(
+                    context,
+                    OkHttpClient(),
+                    InAppDownloadStore.instance ?: InAppDownloadStore(context)
+                )
+
+            val downloadId = engine.enqueueDownload(
+                mediaId = uniqueId,
+                title = catalogTitle,
+                directUrl = directUrl,
+                targetFilePath = fullPath,
+                quality = selectedQuality,
+                languages = selectedLanguages
+            )
+
+            val downloadedItem = DownloadedItem(
+                id = uniqueId,
+                title = catalogTitle,
+                mediaType = mediaType,
+                mediaId = mediaId,
+                seasonNumber = seasonNumber,
+                episodeNumber = episodeNumber,
+                localFilePath = fullPath,
+                downloadId = downloadId,
+                quality = selectedQuality,
+                languages = selectedLanguages,
+                catalogJson = catalogJson.ifBlank { "{\"title\":\"$catalogTitle\",\"mediaId\":\"$mediaId\",\"mediaType\":\"$mediaType\"}" }
+            )
+
+            DownloadedCatalogRepository.instance?.addOrUpdateDownloadedItem(downloadedItem)
+
+            Toast.makeText(context, "In-App Download Started: $catalogTitle", Toast.LENGTH_LONG).show()
             downloadId
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to enqueue download for $catalogTitle: ${e.message}", e)
+            Log.e(TAG, "Failed to start in-app download for $catalogTitle: ${e.message}", e)
             Toast.makeText(context, "Failed to start download: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
             -1L
         }

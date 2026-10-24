@@ -38,6 +38,7 @@ enum class Screens(
     LiveTv(isTabItem = true, tabTitle = "Live TV"),
     Categories(isTabItem = true),
     Favourites(isTabItem = true),
+    Downloads(isTabItem = true, tabTitle = "Downloads"),
     Search(isTabItem = true, tabIcon = Icons.Default.Search),
     CategoryMovieList(listOf(CategoryMovieListScreen.CategoryIdBundleKey)),
     MovieDetails(listOf(MovieDetailsScreen.MovieIdBundleKey)),

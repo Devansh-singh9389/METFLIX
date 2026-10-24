@@ -40,14 +40,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.PlayArrow
 import com.example.metflix.data.settings.DownloadPreferences
 import com.example.metflix.data.util.MediaDownloader
 import com.example.metflix.presentation.common.DownloadStreamOption
 import com.example.metflix.presentation.common.MediaDownloadDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,10 +82,14 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.metflix.data.downloads.DownloadStatus
+import com.example.metflix.data.downloads.DownloadTracker
+import com.example.metflix.data.downloads.DownloadedCatalogRepository
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.network.anime.AnimeBackendConfig
 import com.example.metflix.data.network.anime.models.AnimeEpisodeItem
 import com.example.metflix.data.network.anime.models.AnimeSeasonItem
+import com.example.metflix.data.util.DownloadStreamResolver
 import com.example.metflix.presentation.common.Loading
 import com.example.metflix.presentation.common.MoviesRow
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
@@ -350,10 +357,9 @@ private fun SeriesEpisodesSection(
                 title = epTitle,
                 posterUrl = ep.thumbnail,
                 resolveStreams = {
-                    delay(1000)
-                    listOf(
-                        DownloadStreamOption(quality = "1080p Full HD", sizeText = "380 MB", directUrl = "https://metflix.org/stream/$epTitle/1080p.mp4", availableLanguages = listOf("Hindi", "Japanese", "English")),
-                        DownloadStreamOption(quality = "720p HD", sizeText = "190 MB", directUrl = "https://metflix.org/stream/$epTitle/720p.mp4", availableLanguages = listOf("Hindi", "Japanese", "English"))
+                    DownloadStreamResolver.resolveActualStreams(
+                        title = epTitle,
+                        availableLanguages = listOf("Hindi", "Japanese", "English")
                     )
                 },
                 onDismiss = { selectedDownloadEp = null },
@@ -426,6 +432,28 @@ private fun EpisodeCard(
                         )
                 )
 
+                val isEpDownloaded = remember(episode.route, episode.episodeCode) {
+                    val key = episode.route.ifEmpty { episode.episodeCode.orEmpty() }
+                    DownloadedCatalogRepository.instance?.isDownloaded(mediaId = key) ?: false
+                }
+
+                if (isEpDownloaded) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .background(Color(0xFF2E7D32), RoundedCornerShape(20.dp))
+                            .padding(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DownloadDone,
+                            contentDescription = "Downloaded",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
                 if (!episode.episodeCode.isNullOrBlank()) {
                     Box(
                         modifier = Modifier
@@ -452,7 +480,71 @@ private fun EpisodeCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
             )
+
+            // Live Episode Download Progress Bar
+            val epKey = episode.title ?: episode.episodeCode ?: episode.route
+            val context = LocalContext.current
+            val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
+            val activeDownloads by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
+            val epActiveState = activeDownloads[epKey]
+
+            DisposableEffect(epKey) {
+                downloadTracker.registerObserver(epKey)
+                onDispose { downloadTracker.unregisterObserver(epKey) }
+            }
+
+            if (epActiveState != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "${epActiveState.progressPercent}%",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = epActiveState.formattedSpeed,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.LightGray
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    LiveProgressBar(
+                        progress = epActiveState.progressPercent / 100f,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun LiveProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = Color.DarkGray
+) {
+    Box(
+        modifier = modifier
+            .background(trackColor, RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(4.dp))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction = progress.coerceIn(0.01f, 1f))
+                .background(color, RoundedCornerShape(4.dp))
+        )
     }
 }
 
@@ -581,10 +673,9 @@ private fun AnimeMovieCatalogContent(
                             title = state.title,
                             posterUrl = state.poster,
                             resolveStreams = {
-                                delay(1000)
-                                listOf(
-                                    DownloadStreamOption(quality = "1080p Full HD", sizeText = "1.2 GB", directUrl = "https://metflix.org/stream/${state.title}/1080p.mp4", availableLanguages = state.languages.ifEmpty { listOf("Hindi", "Japanese", "English") }),
-                                    DownloadStreamOption(quality = "720p HD", sizeText = "650 MB", directUrl = "https://metflix.org/stream/${state.title}/720p.mp4", availableLanguages = state.languages.ifEmpty { listOf("Hindi", "Japanese", "English") })
+                                DownloadStreamResolver.resolveActualStreams(
+                                    title = state.title,
+                                    availableLanguages = state.languages.ifEmpty { listOf("Hindi", "Japanese", "English") }
                                 )
                             },
                             onDismiss = { showDownloadDialog = false },
@@ -593,10 +684,82 @@ private fun AnimeMovieCatalogContent(
                                     catalogTitle = state.title,
                                     directUrl = option.directUrl,
                                     selectedQuality = option.quality,
-                                    selectedLanguages = langs
+                                    selectedLanguages = langs,
+                                    mediaId = state.slug.ifBlank { state.title },
+                                    mediaType = "ANIME_MOVIE"
                                 )
                             }
                         )
+                    }
+
+                    // Live Download Progress Card for Anime Movie
+                    val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
+                    val activeDownloads by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
+                    val activeState = activeDownloads[state.title] ?: activeDownloads[state.slug]
+
+                    DisposableEffect(state.title) {
+                        downloadTracker.registerObserver(state.title)
+                        onDispose { downloadTracker.unregisterObserver(state.title) }
+                    }
+
+                    if (activeState != null) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2C2C35), RoundedCornerShape(12.dp))
+                                .padding(14.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Downloading: ${activeState.formattedProgress}",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "${activeState.formattedSpeed} • ${activeState.formattedEta}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.LightGray
+                                    )
+                                }
+
+                                LiveProgressBar(
+                                    progress = activeState.progressPercent / 100f,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                )
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (activeState.status == DownloadStatus.PAUSED) {
+                                        Button(
+                                            onClick = { downloadTracker.resumeDownload(activeState.downloadId) },
+                                            colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.primary)
+                                        ) {
+                                            Text("Resume", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = { downloadTracker.pauseDownload(activeState.downloadId) },
+                                            colors = ButtonDefaults.colors(containerColor = Color(0xFF388E3C))
+                                        ) {
+                                            Text("Pause", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                    Button(
+                                        onClick = { downloadTracker.cancelDownload(activeState.downloadId) },
+                                        colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.error)
+                                    ) {
+                                        Text("Cancel", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

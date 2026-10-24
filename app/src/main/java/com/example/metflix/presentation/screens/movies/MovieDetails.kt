@@ -17,6 +17,8 @@
 package com.example.metflix.presentation.screens.movies
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,11 +30,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +52,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import com.example.metflix.data.settings.DownloadPreferences
@@ -65,7 +70,10 @@ import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.metflix.R
+import com.example.metflix.data.downloads.DownloadStatus
+import com.example.metflix.data.downloads.DownloadTracker
 import com.example.metflix.data.entities.MovieDetails
+import com.example.metflix.data.util.DownloadStreamResolver
 import com.example.metflix.data.util.StringConstants
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import com.example.metflix.presentation.theme.MetFlixButtonShape
@@ -213,15 +221,90 @@ private fun PlaybackActionButtonsRow(
         }
     }
 
+    val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
+    val activeDownloads by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
+    val activeState = activeDownloads[movieTitle]
+
+    DisposableEffect(movieTitle) {
+        downloadTracker.registerObserver(movieTitle)
+        onDispose { downloadTracker.unregisterObserver(movieTitle) }
+    }
+
+    if (activeState != null) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF2C2C35), RoundedCornerShape(12.dp))
+                .padding(14.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Downloading: ${activeState.formattedProgress}",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "${activeState.formattedSpeed} • ${activeState.formattedEta}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.LightGray
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .background(Color.DarkGray, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .fillMaxWidth(fraction = (activeState.progressPercent / 100f).coerceIn(0.01f, 1f))
+                            .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (activeState.status == DownloadStatus.PAUSED) {
+                        Button(
+                            onClick = { downloadTracker.resumeDownload(activeState.downloadId) },
+                            colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Resume", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = { downloadTracker.pauseDownload(activeState.downloadId) },
+                            colors = ButtonDefaults.colors(containerColor = Color(0xFF388E3C))
+                        ) {
+                            Text("Pause", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Button(
+                        onClick = { downloadTracker.cancelDownload(activeState.downloadId) },
+                        colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Cancel", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+
     if (showDownloadDialog) {
         MediaDownloadDialog(
             title = movieTitle,
             posterUrl = posterUri,
             resolveStreams = {
-                delay(1000)
-                listOf(
-                    DownloadStreamOption(quality = "1080p Full HD", sizeText = "1.4 GB", directUrl = "https://metflix.org/stream/$movieTitle/1080p.mp4", availableLanguages = listOf("Hindi", "English")),
-                    DownloadStreamOption(quality = "720p HD", sizeText = "750 MB", directUrl = "https://metflix.org/stream/$movieTitle/720p.mp4", availableLanguages = listOf("Hindi", "English"))
+                DownloadStreamResolver.resolveActualStreams(
+                    title = movieTitle,
+                    availableLanguages = listOf("Hindi", "English")
                 )
             },
             onDismiss = { showDownloadDialog = false },
@@ -230,7 +313,9 @@ private fun PlaybackActionButtonsRow(
                     catalogTitle = movieTitle,
                     directUrl = option.directUrl,
                     selectedQuality = option.quality,
-                    selectedLanguages = langs
+                    selectedLanguages = langs,
+                    mediaId = movieTitle,
+                    mediaType = if (isTvShow) "SERIES" else "MOVIE"
                 )
             }
         )

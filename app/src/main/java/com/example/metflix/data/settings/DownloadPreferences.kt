@@ -23,6 +23,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,6 +35,7 @@ class DownloadPreferences @Inject constructor(
     companion object {
         private const val PREFS_NAME = "metflix_download_prefs"
         private const val KEY_DOWNLOAD_LOCATION = "download_location"
+        private const val KEY_CUSTOM_LOCATIONS_JSON = "custom_locations_json"
         private const val KEY_PREFERRED_QUALITY = "preferred_quality"
         private const val KEY_PREFERRED_LANGUAGES = "preferred_languages"
         private const val KEY_ALWAYS_ASK = "always_ask_download_dialog"
@@ -48,6 +51,40 @@ class DownloadPreferences @Inject constructor(
         prefs.getString(KEY_DOWNLOAD_LOCATION, Environment.DIRECTORY_DOWNLOADS) ?: Environment.DIRECTORY_DOWNLOADS
     )
     val downloadLocation: StateFlow<String> = _downloadLocation.asStateFlow()
+
+    private val _customLocations = MutableStateFlow<List<Pair<String, String>>>(loadCustomLocations())
+    val customLocations: StateFlow<List<Pair<String, String>>> = _customLocations.asStateFlow()
+
+    private fun loadCustomLocations(): List<Pair<String, String>> {
+        val jsonStr = prefs.getString(KEY_CUSTOM_LOCATIONS_JSON, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(jsonStr)
+            val list = mutableListOf<Pair<String, String>>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(Pair(obj.getString("name"), obj.getString("uri")))
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun addCustomLocation(name: String, uriString: String) {
+        val current = _customLocations.value.toMutableList()
+        current.removeAll { it.second == uriString }
+        current.add(Pair(name, uriString))
+        val arr = JSONArray()
+        current.forEach { p ->
+            arr.put(JSONObject().apply {
+                put("name", p.first)
+                put("uri", p.second)
+            })
+        }
+        prefs.edit().putString(KEY_CUSTOM_LOCATIONS_JSON, arr.toString()).apply()
+        _customLocations.value = current
+        setDownloadLocation(uriString)
+    }
 
     private val _preferredQuality = MutableStateFlow(
         prefs.getString(KEY_PREFERRED_QUALITY, "1080p Full HD") ?: "1080p Full HD"

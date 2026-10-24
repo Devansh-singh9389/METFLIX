@@ -18,6 +18,10 @@ package com.example.metflix.presentation.screens.movies
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.foundation.layout.size
+import androidx.tv.material3.Icon
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusGroup
@@ -36,6 +40,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
 import com.example.metflix.data.settings.DownloadPreferences
 import com.example.metflix.data.util.MediaDownloader
@@ -63,8 +69,11 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.metflix.data.downloads.DownloadTracker
+import com.example.metflix.data.downloads.DownloadedCatalogRepository
 import com.example.metflix.data.entities.TvEpisode
 import com.example.metflix.data.entities.TvSeason
+import com.example.metflix.data.util.DownloadStreamResolver
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import kotlinx.coroutines.delay
 
@@ -172,10 +181,9 @@ fun TvSeasonsAndEpisodesSection(
                 title = title,
                 posterUrl = ep.stillUri,
                 resolveStreams = {
-                    delay(1000)
-                    listOf(
-                        DownloadStreamOption(quality = "1080p Full HD", sizeText = "450 MB", directUrl = "https://metflix.org/stream/S${ep.seasonNumber}E${ep.episodeNumber}/1080p.mp4", availableLanguages = listOf("Hindi", "English")),
-                        DownloadStreamOption(quality = "720p HD", sizeText = "220 MB", directUrl = "https://metflix.org/stream/S${ep.seasonNumber}E${ep.episodeNumber}/720p.mp4", availableLanguages = listOf("Hindi", "English"))
+                    DownloadStreamResolver.resolveActualStreams(
+                        title = title,
+                        availableLanguages = listOf("Hindi", "English")
                     )
                 },
                 onDismiss = { selectedDownloadEpisode = null },
@@ -236,6 +244,31 @@ private fun TvEpisodeCard(
                     )
                 }
 
+                val isDownloaded = remember(episode.id, episode.seasonNumber, episode.episodeNumber) {
+                    DownloadedCatalogRepository.instance?.isDownloaded(
+                        mediaId = episode.id,
+                        seasonNumber = episode.seasonNumber,
+                        episodeNumber = episode.episodeNumber
+                    ) ?: false
+                }
+
+                if (isDownloaded) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .background(Color(0xFF2E7D32), RoundedCornerShape(20.dp))
+                            .padding(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DownloadDone,
+                            contentDescription = "Downloaded",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
                 // Episode tag & runtime pill
                 Row(
                     modifier = Modifier
@@ -284,6 +317,52 @@ private fun TvEpisodeCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                // Live Episode Download Progress Bar
+                val epKey = "${episode.seasonNumber}_${episode.episodeNumber}_${episode.id}"
+                val context = LocalContext.current
+                val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
+                val activeDownloads by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
+                val epActiveState = activeDownloads[epKey] ?: activeDownloads["S${episode.seasonNumber}E${episode.episodeNumber}"]
+
+                DisposableEffect(epKey) {
+                    downloadTracker.registerObserver(epKey)
+                    onDispose { downloadTracker.unregisterObserver(epKey) }
+                }
+
+                if (epActiveState != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "${epActiveState.progressPercent}%",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = epActiveState.formattedSpeed,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.LightGray
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .background(Color.DarkGray, RoundedCornerShape(2.dp))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .fillMaxWidth(fraction = (epActiveState.progressPercent / 100f).coerceIn(0.01f, 1f))
+                                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
                 }
             }
         }

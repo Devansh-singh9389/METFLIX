@@ -310,14 +310,44 @@ fun MediaDownloadDialog(
 
                         val activeOption = options.getOrNull(selectedOptionIndex) ?: options.first()
 
-                        // 2. Multi-Select Audio Languages
-                        if (activeOption.availableLanguages.isNotEmpty()) {
-                            Text(
-                                text = "Select Audio Languages (Multi-Select)",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
+                        // Calculate dynamic size based on quality & selected audio tracks
+                        val baseSizeMb = when {
+                            activeOption.quality.contains("1080", true) -> 800
+                            activeOption.quality.contains("720", true) -> 450
+                            activeOption.quality.contains("480", true) -> 250
+                            activeOption.quality.contains("360", true) -> 140
+                            activeOption.quality.contains("240", true) -> 75
+                            else -> 150
+                        }
+                        val audioTrackCount = selectedLanguages.size
+                        val totalMb = baseSizeMb + (audioTrackCount * 120)
+                        val formattedDynamicSize = if (totalMb >= 1000) {
+                            String.format("%.2f GB", totalMb / 1000.0)
+                        } else {
+                            "$totalMb MB"
+                        }
 
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2C2C35), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "Total Size: $formattedDynamicSize ($audioTrackCount Audio Track${if (audioTrackCount > 1) "s" else ""})",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        // 2. Multi-Select Audio Languages
+                        Text(
+                            text = "Select Audio Languages (Multi-Select)",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+
+                        if (activeOption.availableLanguages.isNotEmpty()) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -328,7 +358,7 @@ fun MediaDownloadDialog(
                                         onClick = {
                                             val current = selectedLanguages.toMutableSet()
                                             if (current.contains(lang)) {
-                                                if (current.size > 1) current.remove(lang)
+                                                current.remove(lang)
                                             } else {
                                                 current.add(lang)
                                             }
@@ -348,6 +378,22 @@ fun MediaDownloadDialog(
                             }
                         }
 
+                        // Audio Validation Notice
+                        if (selectedLanguages.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFC62828).copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                    .padding(10.dp)
+                            ) {
+                                Text(
+                                    text = "⚠ No audio language selected. Please select at least one audio language to start downloading.",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color(0xFFEF5350)
+                                )
+                            }
+                        }
+
                         // 3. Action Buttons Row (Download & Cancel)
                         Row(
                             modifier = Modifier
@@ -357,9 +403,12 @@ fun MediaDownloadDialog(
                         ) {
                             Button(
                                 onClick = {
-                                    onStartDownload(activeOption, selectedLanguages.toList())
-                                    onDismiss()
+                                    if (selectedLanguages.isNotEmpty()) {
+                                        onStartDownload(activeOption, selectedLanguages.toList())
+                                        onDismiss()
+                                    }
                                 },
+                                enabled = selectedLanguages.isNotEmpty(),
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.colors(
                                     containerColor = MaterialTheme.colorScheme.primary,
@@ -372,7 +421,7 @@ fun MediaDownloadDialog(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Start Download", fontWeight = FontWeight.Bold)
+                                Text("Start Download ($formattedDynamicSize)", fontWeight = FontWeight.Bold)
                             }
 
                             Button(

@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.presentation.screens.Screens
 import com.example.metflix.presentation.screens.categories.CategoriesScreen
+import com.example.metflix.presentation.screens.downloads.DownloadsLibraryScreen
 import com.example.metflix.presentation.screens.favourites.FavouritesScreen
 import com.example.metflix.presentation.screens.home.HomeScreen
 import com.example.metflix.presentation.screens.movies.MoviesScreen
@@ -300,6 +301,20 @@ private fun Body(
                 onMovieClick = { movie -> openMovieDetailsScreen(movie.id) },
                 onScroll = updateTopBarVisibility
             )
+            }
+            Screens.Downloads.name -> {
+                DownloadsLibraryScreen(
+                    onOpenCatalog = { item ->
+                        if (item.mediaType.contains("ANIME", ignoreCase = true)) {
+                            openAnimeCatalog("series", item.mediaId)
+                        } else {
+                            openMovieDetailsScreen(item.mediaId)
+                        }
+                    },
+                    onPlayOffline = { localPath, _ ->
+                        openCachedPlayback(localPath)
+                    }
+                )
             }
         }
     }
