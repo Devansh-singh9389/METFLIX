@@ -21,6 +21,7 @@ import android.util.Base64
 import android.util.Log
 import com.example.metflix.BuildConfig
 import com.example.metflix.data.repositories.LiveTvRepository
+import java.io.File
 import java.nio.ByteBuffer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -163,7 +164,162 @@ class StreamResolverRepository @Inject constructor(
                 lower.contains("vidlink.pro") ||
                 lower.contains("multiembed.mov") ||
                 lower.contains("autoembed") ||
-                lower.contains("2embed")
+                lower.contains("2embed") ||
+                lower.contains("short.icu") ||
+                lower.contains("player1.php") ||
+                lower.contains("watchanimeworld.top") ||
+                lower.contains("abyssplayer.com")
+    }
+
+    private fun isDirectMediaUrl(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.contains(".mp4") ||
+                lower.contains(".mkv") ||
+                lower.contains(".m3u8") ||
+                lower.contains("/hls/") ||
+                lower.contains("master.txt") ||
+                lower.contains(".mpd")
+    }
+
+    private suspend fun parseHlsManifestOptions(
+        manifestUrl: String,
+        serverName: String,
+        defaultLanguages: List<String>,
+        mediaIdKey: String = "video",
+        refererUrl: String = "https://play.zephyrix.org/video/"
+    ): List<DownloadStreamOption> = withContext(Dispatchers.IO) {
+        val options = mutableListOf<DownloadStreamOption>()
+        try {
+            val req = Request.Builder()
+                .url(manifestUrl)
+                .header("User-Agent", BROWSER_USER_AGENT)
+                .header("Referer", refererUrl.ifBlank { "https://play.zephyrix.org/video/" })
+                .header("Origin", "https://play.zephyrix.org")
+                .header("Accept", "*/*")
+                .header("Sec-Fetch-Site", "same-origin")
+                .header("Sec-Fetch-Mode", "cors")
+                .header("Sec-Fetch-Dest", "empty")
+                .build()
+
+            val text = withTimeoutOrNull(4000L) {
+                okHttpClient.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) resp.body?.string().orEmpty() else ""
+                }
+            }.orEmpty()
+
+            if (text.startsWith("#EXTM3U")) {
+                val baseUrl = manifestUrl.substringBeforeLast("/")
+                val origin = runCatching {
+                    val uri = java.net.URI(manifestUrl)
+                    val portStr = if (uri.port != -1 && uri.port != 80 && uri.port != 443) ":${uri.port}" else ""
+                    "${uri.scheme}://${uri.host}$portStr"
+                }.getOrDefault("https://play.zephyrix.org")
+
+                fun toAbsoluteUrl(uri: String): String {
+                    val clean = uri.trim()
+                    return when {
+                        clean.startsWith("http://") || clean.startsWith("https://") -> clean
+                        clean.startsWith("/") -> "$origin$clean"
+                        else -> "$baseUrl/$clean"
+                    }
+                }
+
+                // 1. Parse Audio lines & convert relative URIs to absolute URIs
+                val audioLangs = mutableListOf<String>()
+                val audioLines = mutableListOf<String>()
+                val audioMatcher = Pattern.compile("""#EXT-X-MEDIA:TYPE=AUDIO[^\r\n]*""").matcher(text)
+                while (audioMatcher.find()) {
+                    var audioLine = audioMatcher.group(0) ?: continue
+                    val nameMatcher = Pattern.compile("""NAME="([^"]+)"""").matcher(audioLine)
+                    if (nameMatcher.find()) {
+                        val lang = nameMatcher.group(1).orEmpty()
+                        if (lang.isNotBlank() && !audioLangs.contains(lang)) {
+                            audioLangs.add(lang)
+                        }
+                    }
+                    val uriMatcher = Pattern.compile("""URI="([^"]+)"""").matcher(audioLine)
+                    if (uriMatcher.find()) {
+                        val origUri = uriMatcher.group(1).orEmpty()
+                        val absUri = toAbsoluteUrl(origUri)
+                        audioLine = audioLine.replace("URI=\"$origUri\"", "URI=\"$absUri\"")
+                    }
+                    audioLines.add(audioLine)
+                }
+                val availableLangs = if (audioLangs.isNotEmpty()) audioLangs else defaultLanguages
+
+                // 2. Parse Video Variants (#EXT-X-STREAM-INF)
+                data class VariantInfo(
+                    val qualityLabel: String,
+                    val sortOrder: Int,
+                    val tags: String,
+                    val streamUri: String
+                )
+
+                val streamInfRegex = Regex("""#EXT-X-STREAM-INF:([^\r\n]+)\r?\n([^\r\n]+)""")
+                val matches = streamInfRegex.findAll(text).toList()
+                val parsedVariants = mutableListOf<VariantInfo>()
+                val seenQualities = mutableSetOf<String>()
+
+                for (match in matches) {
+                    val tags = match.groupValues[1]
+                    val streamUri = toAbsoluteUrl(match.groupValues[2].trim())
+
+                    val nameMatch = Regex("""NAME="([^"]+)"""").find(tags)
+                    val resMatch = Regex("""RESOLUTION=(\d+x\d+)""").find(tags)
+
+                    val (qualityLabel, sortOrder) = when {
+                        nameMatch != null && nameMatch.groupValues[1].contains("1080") -> "1080p FHD" to 1080
+                        resMatch != null && resMatch.groupValues[1].endsWith("1080") -> "1080p FHD" to 1080
+                        nameMatch != null && nameMatch.groupValues[1].contains("720") -> "720p HD" to 720
+                        resMatch != null && resMatch.groupValues[1].endsWith("720") -> "720p HD" to 720
+                        nameMatch != null && nameMatch.groupValues[1].contains("480") -> "480p SD" to 480
+                        resMatch != null && resMatch.groupValues[1].endsWith("480") -> "480p SD" to 480
+                        nameMatch != null && nameMatch.groupValues[1].contains("360") -> "360p SD" to 360
+                        resMatch != null && resMatch.groupValues[1].endsWith("360") -> "360p SD" to 360
+                        nameMatch != null && nameMatch.groupValues[1].contains("240") -> "240p SD" to 240
+                        resMatch != null && resMatch.groupValues[1].endsWith("240") -> "240p SD" to 240
+                        else -> (nameMatch?.groupValues?.get(1)?.let { "$it HD" } ?: "1080p FHD") to 700
+                    }
+
+                    if (!seenQualities.contains(qualityLabel)) {
+                        seenQualities.add(qualityLabel)
+                        parsedVariants.add(VariantInfo(qualityLabel, sortOrder, tags, streamUri))
+                    }
+                }
+
+                // 3. Sort Descending by quality resolution (1080p -> 720p -> 480p -> 360p -> 240p)
+                parsedVariants.sortByDescending { it.sortOrder }
+
+                // 4. Create single-variant targeted manifests so Media3 only downloads the chosen stream
+                val manifestDir = File(context.filesDir, "hls_manifests").apply { mkdirs() }
+                val safeKey = mediaIdKey.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+
+                for (variant in parsedVariants) {
+                    val manifestFile = File(manifestDir, "hls_${safeKey}_${variant.sortOrder}p.m3u8")
+                    val manifestContent = buildString {
+                        appendLine("#EXTM3U")
+                        appendLine("#EXT-X-VERSION:3")
+                        audioLines.forEach { appendLine(it) }
+                        appendLine("#EXT-X-STREAM-INF:${variant.tags}")
+                        appendLine(variant.streamUri)
+                    }
+                    manifestFile.writeText(manifestContent)
+
+                    options.add(
+                        DownloadStreamOption(
+                            quality = variant.qualityLabel,
+                            sizeText = "$serverName • HLS Direct",
+                            directUrl = manifestFile.toURI().toString(),
+                            availableLanguages = availableLangs,
+                            format = "HLS"
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse HLS manifest variants: ${e.message}")
+        }
+        options
     }
 
     /**
@@ -184,40 +340,82 @@ class StreamResolverRepository @Inject constructor(
             val slug = animeSlug?.trim()?.ifEmpty { null }
                 ?: title.lowercase().replace(" ", "-").replace(":", "").replace(".", "")
             try {
+                val seenDirectUrls = mutableSetOf<String>()
                 if (mediaId.seasonNumber > 1 || mediaId.episodeNumber > 1 || slug.contains("episode") || slug.contains("-ep-")) {
                     val epResult = animeApiClient.getEpisodeData(slug).getOrNull()
                     if (epResult != null) {
-                        epResult.vlcUrl?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
-                            options.add(
-                                DownloadStreamOption(
-                                    quality = "1080p FHD",
-                                    sizeText = "Backend Stream",
-                                    directUrl = directUrl,
-                                    availableLanguages = preferredLanguages,
-                                    format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
-                                )
-                            )
-                        }
-                        epResult.streamingServers.forEach { server ->
-                            server.directStreamUrl?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
-                                val langs = if (server.audio.isNullOrBlank()) preferredLanguages else listOf(server.audio)
+                        val epLangs = preferredLanguages
+                        val epSlugStr = slug.ifBlank { title }
+                        val epReferer = epResult.streamingServers.firstOrNull { it.embedUrl?.contains("zephyrix") == true }?.embedUrl.orEmpty()
+                        val vlcUrl = epResult.vlcUrl?.trim().orEmpty()
+                        if (vlcUrl.isNotBlank() && !isKnownWebEmbed(vlcUrl) && isDirectMediaUrl(vlcUrl)) {
+                            seenDirectUrls.add(vlcUrl)
+                            val isHls = epResult.vlcStreamType.equals("hls", ignoreCase = true) ||
+                                    vlcUrl.contains(".m3u8", ignoreCase = true) ||
+                                    vlcUrl.contains("/hls/", ignoreCase = true) ||
+                                    vlcUrl.contains("master.txt", ignoreCase = true)
+
+                            if (isHls) {
+                                val hlsVariants = parseHlsManifestOptions(vlcUrl, "Server 1 Play", epLangs, epSlugStr, epReferer)
+                                if (hlsVariants.isNotEmpty()) {
+                                    options.addAll(hlsVariants)
+                                } else {
+                                    options.add(
+                                        DownloadStreamOption(
+                                            quality = "1080p FHD",
+                                            sizeText = "Backend Stream • HLS Direct",
+                                            directUrl = vlcUrl,
+                                            availableLanguages = epLangs,
+                                            format = "HLS"
+                                        )
+                                    )
+                                }
+                            } else {
                                 options.add(
                                     DownloadStreamOption(
-                                        quality = "1080p HD",
-                                        sizeText = server.serverName ?: "Anime Stream",
-                                        directUrl = directUrl,
-                                        availableLanguages = langs,
-                                        format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
+                                        quality = "1080p FHD",
+                                        sizeText = "Backend Stream",
+                                        directUrl = vlcUrl,
+                                        availableLanguages = epLangs,
+                                        format = if (vlcUrl.contains(".mkv")) "MKV" else "MP4"
                                     )
                                 )
                             }
-                            server.decodedStreams?.forEach { dec ->
-                                dec.link?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
-                                    val langs = if (dec.language.isNullOrBlank()) preferredLanguages else listOf(dec.language)
+                        }
+
+                        epResult.streamingServers.forEach { server ->
+                            val srvName = server.serverName ?: "Anime Stream"
+                            val directUrl = server.directStreamUrl?.trim().orEmpty()
+                            if (directUrl.isNotBlank() && !seenDirectUrls.contains(directUrl) && !isKnownWebEmbed(directUrl) && isDirectMediaUrl(directUrl)) {
+                                seenDirectUrls.add(directUrl)
+                                val langs = if (server.audio.isNullOrBlank()) epLangs else listOf(server.audio)
+                                val isHls = server.directStreamType.equals("hls", ignoreCase = true) ||
+                                        directUrl.contains(".m3u8", ignoreCase = true) ||
+                                        directUrl.contains("/hls/", ignoreCase = true) ||
+                                        directUrl.contains("master.txt", ignoreCase = true)
+
+                                val srvReferer = server.embedUrl?.takeIf { it.contains("zephyrix") }
+                                    ?: epReferer
+                                if (isHls) {
+                                    val hlsVariants = parseHlsManifestOptions(directUrl, srvName, langs, epSlugStr, srvReferer)
+                                    if (hlsVariants.isNotEmpty()) {
+                                        options.addAll(hlsVariants)
+                                    } else {
+                                        options.add(
+                                            DownloadStreamOption(
+                                                quality = "1080p HD",
+                                                sizeText = "$srvName • HLS Direct",
+                                                directUrl = directUrl,
+                                                availableLanguages = langs,
+                                                format = "HLS"
+                                            )
+                                        )
+                                    }
+                                } else {
                                     options.add(
                                         DownloadStreamOption(
-                                            quality = "720p HD",
-                                            sizeText = server.serverName ?: "Direct Stream",
+                                            quality = "1080p HD",
+                                            sizeText = srvName,
                                             directUrl = directUrl,
                                             availableLanguages = langs,
                                             format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
@@ -225,47 +423,126 @@ class StreamResolverRepository @Inject constructor(
                                     )
                                 }
                             }
+
+                            if (server.directStreamError == null) {
+                                server.decodedStreams?.forEach { dec ->
+                                    val link = dec.link?.trim().orEmpty()
+                                    if (link.isNotBlank() && !seenDirectUrls.contains(link) && !isKnownWebEmbed(link) && isDirectMediaUrl(link)) {
+                                        seenDirectUrls.add(link)
+                                        val langs = if (dec.language.isNullOrBlank()) epLangs else listOf(dec.language)
+                                        options.add(
+                                            DownloadStreamOption(
+                                                quality = "720p HD",
+                                                sizeText = srvName,
+                                                directUrl = link,
+                                                availableLanguages = langs,
+                                                format = if (link.contains(".mkv")) "MKV" else "MP4"
+                                            )
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
                     val movieResult = animeApiClient.getMovieData(slug).getOrNull()
                     if (movieResult != null) {
-                        movieResult.vlcUrl?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
-                            options.add(
-                                DownloadStreamOption(
-                                    quality = "1080p FHD",
-                                    sizeText = "Backend Stream",
-                                    directUrl = directUrl,
-                                    availableLanguages = movieResult.languages.ifEmpty { preferredLanguages },
-                                    format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
-                                )
-                            )
-                        }
-                        movieResult.streamingServers.forEach { server ->
-                            server.directStreamUrl?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
-                                val langs = if (server.audio.isNullOrBlank()) movieResult.languages.ifEmpty { preferredLanguages } else listOf(server.audio)
+                        val movieLangs = movieResult.languages.ifEmpty { preferredLanguages }
+                        val movieSlugStr = movieResult.slug.ifBlank { slug.ifBlank { title } }
+                        val movieReferer = movieResult.streamingServers.firstOrNull { it.embedUrl?.contains("zephyrix") == true }?.embedUrl.orEmpty()
+                        val vlcUrl = movieResult.vlcUrl?.trim().orEmpty()
+                        if (vlcUrl.isNotBlank() && !seenDirectUrls.contains(vlcUrl) && !isKnownWebEmbed(vlcUrl) && isDirectMediaUrl(vlcUrl)) {
+                            seenDirectUrls.add(vlcUrl)
+                            val isHls = movieResult.vlcStreamType.equals("hls", ignoreCase = true) ||
+                                    vlcUrl.contains(".m3u8", ignoreCase = true) ||
+                                    vlcUrl.contains("/hls/", ignoreCase = true) ||
+                                    vlcUrl.contains("master.txt", ignoreCase = true)
+
+                            if (isHls) {
+                                val hlsVariants = parseHlsManifestOptions(vlcUrl, "Server 1 Play", movieLangs, movieSlugStr, movieReferer)
+                                if (hlsVariants.isNotEmpty()) {
+                                    options.addAll(hlsVariants)
+                                } else {
+                                    options.add(
+                                        DownloadStreamOption(
+                                            quality = "1080p FHD",
+                                            sizeText = "Backend Stream • HLS Direct",
+                                            directUrl = vlcUrl,
+                                            availableLanguages = movieLangs,
+                                            format = "HLS"
+                                        )
+                                    )
+                                }
+                            } else {
                                 options.add(
                                     DownloadStreamOption(
-                                        quality = "1080p HD",
-                                        sizeText = server.serverName ?: "Anime Stream",
-                                        directUrl = directUrl,
-                                        availableLanguages = langs,
-                                        format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
+                                        quality = "1080p FHD",
+                                        sizeText = "Backend Stream",
+                                        directUrl = vlcUrl,
+                                        availableLanguages = movieLangs,
+                                        format = if (vlcUrl.contains(".mkv")) "MKV" else "MP4"
                                     )
                                 )
                             }
-                            server.decodedStreams?.forEach { dec ->
-                                dec.link?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
-                                    val langs = if (dec.language.isNullOrBlank()) movieResult.languages.ifEmpty { preferredLanguages } else listOf(dec.language)
+                        }
+
+                        movieResult.streamingServers.forEach { server ->
+                            val srvName = server.serverName ?: "Anime Stream"
+                            val directUrl = server.directStreamUrl?.trim().orEmpty()
+                            if (directUrl.isNotBlank() && !seenDirectUrls.contains(directUrl) && !isKnownWebEmbed(directUrl) && isDirectMediaUrl(directUrl)) {
+                                seenDirectUrls.add(directUrl)
+                                val langs = if (server.audio.isNullOrBlank()) movieLangs else listOf(server.audio)
+                                val isHls = server.directStreamType.equals("hls", ignoreCase = true) ||
+                                        directUrl.contains(".m3u8", ignoreCase = true) ||
+                                        directUrl.contains("/hls/", ignoreCase = true) ||
+                                        directUrl.contains("master.txt", ignoreCase = true)
+
+                                val srvReferer = server.embedUrl?.takeIf { it.contains("zephyrix") }
+                                    ?: movieReferer
+                                if (isHls) {
+                                    val hlsVariants = parseHlsManifestOptions(directUrl, srvName, langs, movieSlugStr, srvReferer)
+                                    if (hlsVariants.isNotEmpty()) {
+                                        options.addAll(hlsVariants)
+                                    } else {
+                                        options.add(
+                                            DownloadStreamOption(
+                                                quality = "1080p HD",
+                                                sizeText = "$srvName • HLS Direct",
+                                                directUrl = directUrl,
+                                                availableLanguages = langs,
+                                                format = "HLS"
+                                            )
+                                        )
+                                    }
+                                } else {
                                     options.add(
                                         DownloadStreamOption(
-                                            quality = "720p HD",
-                                            sizeText = server.serverName ?: "Direct Stream",
+                                            quality = "1080p HD",
+                                            sizeText = srvName,
                                             directUrl = directUrl,
                                             availableLanguages = langs,
                                             format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
                                         )
                                     )
+                                }
+                            }
+
+                            if (server.directStreamError == null) {
+                                server.decodedStreams?.forEach { dec ->
+                                    val link = dec.link?.trim().orEmpty()
+                                    if (link.isNotBlank() && !seenDirectUrls.contains(link) && !isKnownWebEmbed(link) && isDirectMediaUrl(link)) {
+                                        seenDirectUrls.add(link)
+                                        val langs = if (dec.language.isNullOrBlank()) movieLangs else listOf(dec.language)
+                                        options.add(
+                                            DownloadStreamOption(
+                                                quality = "720p HD",
+                                                sizeText = srvName,
+                                                directUrl = link,
+                                                availableLanguages = langs,
+                                                format = if (link.contains(".mkv")) "MKV" else "MP4"
+                                            )
+                                        )
+                                    }
                                 }
                             }
                         }

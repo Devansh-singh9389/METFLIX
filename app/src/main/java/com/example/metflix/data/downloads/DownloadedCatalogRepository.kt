@@ -71,7 +71,8 @@ class DownloadedCatalogRepository @Inject constructor(
                         languages = optStringList(obj.optJSONArray("languages")),
                         timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
                         posterUrl = obj.optString("posterUrl", ""),
-                        catalogJson = obj.optString("catalogJson", "")
+                        catalogJson = obj.optString("catalogJson", ""),
+                        directUrl = obj.optString("directUrl", "")
                     )
                 )
             }
@@ -108,6 +109,7 @@ class DownloadedCatalogRepository @Inject constructor(
                 put("timestamp", item.timestamp)
                 put("posterUrl", item.posterUrl)
                 put("catalogJson", item.catalogJson)
+                put("directUrl", item.directUrl)
             }
             array.put(obj)
         }

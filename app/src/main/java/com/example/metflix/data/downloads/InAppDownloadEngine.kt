@@ -71,11 +71,6 @@ class InAppDownloadEngine @Inject constructor(
         val map = mutableMapOf<String, ActiveDownloadState>()
         for ((_, state) in activeStreamsMap) {
             map[state.mediaId] = state
-            map[state.title] = state
-            val baseId = state.mediaId.substringBeforeLast('_')
-            if (baseId.isNotBlank()) {
-                map[baseId] = state
-            }
         }
         _activeDownloads.value = map
     }
@@ -168,7 +163,8 @@ class InAppDownloadEngine @Inject constructor(
                 quality = stored?.quality ?: "1080p",
                 languages = stored?.languages ?: emptyList(),
                 posterUrl = stored?.posterUrl ?: "",
-                catalogJson = stored?.catalogJson ?: ""
+                catalogJson = stored?.catalogJson ?: "",
+                directUrl = stored?.directUrl ?: download.request.uri.toString()
             )
             DownloadedCatalogRepository.instance?.addOrUpdateDownloadedItem(completedItem)
         }
@@ -198,6 +194,7 @@ class InAppDownloadEngine @Inject constructor(
         progressPollingJob = scope.launch {
             var lastUpdate = System.currentTimeMillis()
             val previousBytesMap = mutableMapOf<String, Long>()
+            val smoothedSpeedMap = mutableMapOf<String, Long>()
 
             while (isActive) {
                 delay(500L)
@@ -229,7 +226,18 @@ class InAppDownloadEngine @Inject constructor(
 
                         val prev = previousBytesMap[mediaId] ?: downloaded
                         val bytesSince = (downloaded - prev).coerceAtLeast(0L)
-                        val speedBps = if (status == DownloadStatus.RUNNING) (bytesSince * 1000L) / timeDiff else 0L
+                        val rawInstantSpeed = if (status == DownloadStatus.RUNNING) (bytesSince * 1000L) / timeDiff else 0L
+
+                        // EMA smoothing: discrete HLS segments commit in bursts; smooth out spikes & pauses
+                        val prevSmoothed = smoothedSpeedMap[mediaId] ?: rawInstantSpeed
+                        val speedBps = when {
+                            status != DownloadStatus.RUNNING -> 0L
+                            prevSmoothed <= 0L -> rawInstantSpeed
+                            rawInstantSpeed > 0L -> (0.35 * rawInstantSpeed + 0.65 * prevSmoothed).toLong()
+                            else -> (0.80 * prevSmoothed).toLong().coerceAtLeast(0L)
+                        }
+                        smoothedSpeedMap[mediaId] = speedBps
+
                         val remainingBytes = (total - downloaded).coerceAtLeast(0L)
                         val etaSeconds = if (speedBps > 0) remainingBytes / speedBps else 0L
 
@@ -288,15 +296,48 @@ class InAppDownloadEngine @Inject constructor(
         catalogJson: String = "",
         posterUrl: String = ""
     ): Long {
+        val existing = activeStreamsMap[mediaId]
+        if (existing != null && (existing.status == DownloadStatus.RUNNING || existing.status == DownloadStatus.PENDING)) {
+            Log.w(TAG, "Download for $mediaId is already active ($existing). Ignoring duplicate enqueue.")
+            return existing.downloadId
+        }
+
         val downloadId = System.currentTimeMillis()
 
+        var finalDirectUrl = directUrl
+        if (directUrl.startsWith("file://") && languages.isNotEmpty()) {
+            runCatching {
+                val uri = java.net.URI(directUrl)
+                val originalFile = java.io.File(uri.path)
+                if (originalFile.exists()) {
+                    val lines = originalFile.readLines()
+                    val filteredLines = lines.filter { line ->
+                        if (line.startsWith("#EXT-X-MEDIA:TYPE=AUDIO")) {
+                            languages.any { lang ->
+                                line.contains("NAME=\"$lang\"", ignoreCase = true) ||
+                                line.contains("LANGUAGE=\"$lang\"", ignoreCase = true)
+                            }
+                        } else {
+                            true
+                        }
+                    }
+                    if (filteredLines.any { it.startsWith("#EXT-X-MEDIA:TYPE=AUDIO") }) {
+                        originalFile.writeText(filteredLines.joinToString("\n") + "\n")
+                    }
+                }
+            }
+        }
+
         val mimeType = when {
-            directUrl.contains(".m3u8", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
-            directUrl.contains(".mpd", ignoreCase = true) -> MimeTypes.APPLICATION_MPD
+            finalDirectUrl.contains(".m3u8", ignoreCase = true) ||
+            finalDirectUrl.contains("/hls/", ignoreCase = true) ||
+            finalDirectUrl.contains("master.txt", ignoreCase = true) ||
+            finalDirectUrl.contains("master.", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
+            finalDirectUrl.contains(".mpd", ignoreCase = true) -> MimeTypes.APPLICATION_MPD
             else -> null
         }
 
-        val request = DownloadRequest.Builder(mediaId, Uri.parse(directUrl))
+        val request = DownloadRequest.Builder(mediaId, Uri.parse(finalDirectUrl))
             .setMimeType(mimeType)
             .setData(title.toByteArray())
             .build()
@@ -305,7 +346,7 @@ class InAppDownloadEngine @Inject constructor(
             downloadId = downloadId,
             mediaId = mediaId,
             title = title,
-            directUrl = directUrl,
+            directUrl = finalDirectUrl,
             localFilePath = targetFilePath,
             partFilePath = "$targetFilePath.part",
             downloadedBytes = 0L,

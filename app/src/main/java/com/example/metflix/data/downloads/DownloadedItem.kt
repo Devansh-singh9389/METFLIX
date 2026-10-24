@@ -32,5 +32,6 @@ data class DownloadedItem(
     val languages: List<String> = emptyList(),
     val timestamp: Long = System.currentTimeMillis(),
     val posterUrl: String = "",
-    val catalogJson: String = ""
+    val catalogJson: String = "",
+    val directUrl: String = ""
 )

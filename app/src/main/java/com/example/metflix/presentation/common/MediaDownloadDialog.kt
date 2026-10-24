@@ -93,13 +93,21 @@ fun MediaDownloadDialog(
     var selectedOptionIndex by remember { mutableStateOf(0) }
     var selectedLanguages by remember { mutableStateOf<Set<String>>(emptySet()) }
 
+    fun selectPreferredLanguage(languages: List<String>): Set<String> {
+        if (languages.isEmpty()) return emptySet()
+        val preferred = languages.firstOrNull { it.equals("Hindi", ignoreCase = true) }
+            ?: languages.firstOrNull { it.equals("English", ignoreCase = true) }
+            ?: languages.first()
+        return setOf(preferred)
+    }
+
     LaunchedEffect(title) {
         state = DownloadDialogState.Loading("Searching servers for direct stream links (3s - 30s)...")
         val resolved = resolveStreams()
         if (resolved.isNotEmpty()) {
             state = DownloadDialogState.Ready(resolved)
             val defaultOption = resolved.first()
-            selectedLanguages = defaultOption.availableLanguages.toSet()
+            selectedLanguages = selectPreferredLanguage(defaultOption.availableLanguages)
         } else {
             state = DownloadDialogState.NotDownloadable()
         }
@@ -120,9 +128,9 @@ fun MediaDownloadDialog(
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .padding(20.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Header (YouTube-Style Media Banner)
                 Row(
@@ -255,7 +263,8 @@ fun MediaDownloadDialog(
                             Surface(
                                 onClick = {
                                     selectedOptionIndex = idx
-                                    selectedLanguages = option.availableLanguages.toSet()
+                                    val stillAvailable = selectedLanguages.filter { option.availableLanguages.contains(it) }.toSet()
+                                    selectedLanguages = stillAvailable.ifEmpty { selectPreferredLanguage(option.availableLanguages) }
                                 },
                                 shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
                                 colors = ClickableSurfaceDefaults.colors(
@@ -272,7 +281,7 @@ fun MediaDownloadDialog(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(14.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {

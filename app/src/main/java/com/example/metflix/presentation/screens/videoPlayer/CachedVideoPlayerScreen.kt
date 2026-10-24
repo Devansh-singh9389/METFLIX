@@ -71,16 +71,25 @@ class CachedVideoPlayerViewModel @Inject constructor(
         }
 
         val downloaded = DownloadedCatalogRepository.instance?.downloadedItems?.value?.find {
-            it.localFilePath == sessionId || it.id == sessionId
+            it.localFilePath == sessionId || it.id == sessionId || it.mediaId == sessionId
         }
-        if (downloaded != null && File(downloaded.localFilePath).exists()) {
-            val f = File(downloaded.localFilePath)
-            return CachedPlaybackSession(
-                url = Uri.fromFile(f).toString(),
-                title = downloaded.title,
-                torrentId = 0,
-                fileId = null
-            )
+        if (downloaded != null) {
+            if (downloaded.localFilePath.isNotBlank() && File(downloaded.localFilePath).exists()) {
+                val f = File(downloaded.localFilePath)
+                return CachedPlaybackSession(
+                    url = Uri.fromFile(f).toString(),
+                    title = downloaded.title,
+                    torrentId = 0,
+                    fileId = null
+                )
+            } else if (downloaded.directUrl.isNotBlank()) {
+                return CachedPlaybackSession(
+                    url = downloaded.directUrl,
+                    title = downloaded.title,
+                    torrentId = 0,
+                    fileId = null
+                )
+            }
         }
 
         return null

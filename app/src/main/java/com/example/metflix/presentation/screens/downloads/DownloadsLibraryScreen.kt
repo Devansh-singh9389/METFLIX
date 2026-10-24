@@ -81,7 +81,9 @@ fun DownloadsLibraryScreen(
     val downloadedItems by repository.downloadedItems.collectAsStateWithLifecycle()
     val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
     val activeDownloadsMap by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
-    val activeDownloads = activeDownloadsMap.values.toList()
+    val activeDownloads = activeDownloadsMap.values
+        .distinctBy { it.mediaId }
+        .filter { it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.PENDING }
     val childPadding = rememberChildPadding()
 
     DisposableEffect("DownloadsLibraryScreen") {
@@ -257,6 +259,8 @@ fun DownloadsLibraryScreen(
                         onPlayOffline = {
                             if (item.localFilePath.isNotBlank() && File(item.localFilePath).exists()) {
                                 onPlayOffline(item.localFilePath, item.title)
+                            } else if (item.directUrl.isNotBlank()) {
+                                onPlayOffline(item.id, item.title)
                             } else {
                                 Toast.makeText(context, "Local file not found at ${item.localFilePath}", Toast.LENGTH_LONG).show()
                             }
