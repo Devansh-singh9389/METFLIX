@@ -31,5 +31,6 @@ data class DownloadedItem(
     val quality: String = "1080p",
     val languages: List<String> = emptyList(),
     val timestamp: Long = System.currentTimeMillis(),
+    val posterUrl: String = "",
     val catalogJson: String = ""
 )

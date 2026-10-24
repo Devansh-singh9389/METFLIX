@@ -17,30 +17,31 @@
 package com.example.metflix.data.downloads
 
 import android.content.Context
-import android.os.StatFs
+import android.net.Uri
 import android.util.Log
+import androidx.annotation.OptIn
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.offline.Download
+import androidx.media3.exoplayer.offline.DownloadManager
+import androidx.media3.exoplayer.offline.DownloadRequest
+import androidx.media3.exoplayer.offline.DownloadService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.Call
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.File
-import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(UnstableApi::class)
 @Singleton
 class InAppDownloadEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -49,28 +50,208 @@ class InAppDownloadEngine @Inject constructor(
 ) {
     companion object {
         private const val TAG = "InAppDownloadEngine"
-        private const val BUFFER_SIZE = 128 * 1024 // 128 KB write buffer tuned for TV flash storage
-        private const val BROWSER_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
         @Volatile
         var instance: InAppDownloadEngine? = null
             private set
     }
 
-    private val throttledDispatcher = Dispatchers.IO.limitedParallelism(2)
-    private val scope = CoroutineScope(throttledDispatcher)
+    private val media3Manager: DownloadManager by lazy {
+        Media3DownloadManagerProvider.get(context)
+    }
 
-    private val activeJobs = ConcurrentHashMap<String, Job>()
-    private val activeCalls = ConcurrentHashMap<String, Call>()
+    private val scope = CoroutineScope(Dispatchers.Main.immediate)
+    private var progressPollingJob: Job? = null
+
     private val activeStreamsMap = ConcurrentHashMap<String, ActiveDownloadState>()
-
     private val _activeDownloads = MutableStateFlow<Map<String, ActiveDownloadState>>(emptyMap())
     val activeDownloads: StateFlow<Map<String, ActiveDownloadState>> = _activeDownloads.asStateFlow()
+
+    private fun updateActiveDownloadsState() {
+        val map = mutableMapOf<String, ActiveDownloadState>()
+        for ((_, state) in activeStreamsMap) {
+            map[state.mediaId] = state
+            map[state.title] = state
+            val baseId = state.mediaId.substringBeforeLast('_')
+            if (baseId.isNotBlank()) {
+                map[baseId] = state
+            }
+        }
+        _activeDownloads.value = map
+    }
 
     init {
         instance = this
         restoreTasksFromStore()
+        setupMedia3Listener()
+        startProgressPolling()
+    }
+
+    private fun setupMedia3Listener() {
+        media3Manager.addListener(object : DownloadManager.Listener {
+            override fun onDownloadChanged(
+                downloadManager: DownloadManager,
+                download: Download,
+                finalException: Exception?
+            ) {
+                if (finalException != null) {
+                    Log.e(TAG, "Media3 download error for ${download.request.id}: ${finalException.message}", finalException)
+                }
+                syncDownloadState(download)
+            }
+
+            override fun onDownloadRemoved(downloadManager: DownloadManager, download: Download) {
+                val mediaId = download.request.id
+                activeStreamsMap.remove(mediaId)
+                updateActiveDownloadsState()
+                val stored = downloadStore.storedTasks.value.find { it.mediaId == mediaId }
+                if (stored != null) {
+                    try {
+                        val file = java.io.File(stored.localFilePath)
+                        if (file.exists()) file.delete()
+                        val partFile = java.io.File(stored.partFilePath)
+                        if (partFile.exists()) partFile.delete()
+                    } catch (_: Exception) {}
+                }
+                downloadStore.removeTask(mediaId)
+                DownloadedCatalogRepository.instance?.removeDownloadedItem(mediaId)
+            }
+        })
+    }
+
+    private fun syncDownloadState(download: Download) {
+        val mediaId = download.request.id
+        val stored = downloadStore.storedTasks.value.find { it.mediaId == mediaId }
+        val title = stored?.title ?: String(download.request.data)
+        val downloadId = stored?.downloadId ?: mediaId.hashCode().toLong()
+
+        val status = when (download.state) {
+            Download.STATE_DOWNLOADING, Download.STATE_RESTARTING -> DownloadStatus.RUNNING
+            Download.STATE_STOPPED -> DownloadStatus.PAUSED
+            Download.STATE_COMPLETED -> DownloadStatus.COMPLETED
+            Download.STATE_FAILED -> DownloadStatus.FAILED
+            Download.STATE_QUEUED -> DownloadStatus.RUNNING
+            Download.STATE_REMOVING -> DownloadStatus.PAUSED
+            else -> DownloadStatus.PAUSED
+        }
+
+        val total = download.contentLength.takeIf { it > 0 } ?: (stored?.totalBytes ?: 0L)
+        val downloaded = download.bytesDownloaded
+        val percent = if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100)
+        else download.percentDownloaded.toInt().coerceIn(0, 100)
+
+        val state = ActiveDownloadState(
+            downloadId = downloadId,
+            mediaId = mediaId,
+            title = title,
+            bytesDownloaded = downloaded,
+            totalBytes = total,
+            progressPercent = percent,
+            speedBps = 0L,
+            etaSeconds = 0L,
+            status = status
+        )
+
+        activeStreamsMap[mediaId] = state
+        updateActiveDownloadsState()
+
+        if (status == DownloadStatus.COMPLETED) {
+            val completedItem = DownloadedItem(
+                id = mediaId,
+                title = title,
+                mediaType = stored?.mediaType ?: "MOVIE",
+                mediaId = stored?.mediaId ?: mediaId,
+                seasonNumber = stored?.seasonNumber,
+                episodeNumber = stored?.episodeNumber,
+                localFilePath = stored?.localFilePath ?: "",
+                downloadId = downloadId,
+                quality = stored?.quality ?: "1080p",
+                languages = stored?.languages ?: emptyList(),
+                posterUrl = stored?.posterUrl ?: "",
+                catalogJson = stored?.catalogJson ?: ""
+            )
+            DownloadedCatalogRepository.instance?.addOrUpdateDownloadedItem(completedItem)
+        }
+
+        if (stored != null) {
+            val statusStr = when (status) {
+                DownloadStatus.RUNNING -> "RUNNING"
+                DownloadStatus.PAUSED -> "PAUSED"
+                DownloadStatus.COMPLETED -> "COMPLETED"
+                DownloadStatus.FAILED -> "FAILED"
+                DownloadStatus.PENDING -> "RUNNING"
+            }
+            if (stored.status != statusStr || (status == DownloadStatus.COMPLETED && stored.status != "COMPLETED")) {
+                downloadStore.saveOrUpdateTask(
+                    stored.copy(
+                        downloadedBytes = downloaded,
+                        totalBytes = total,
+                        status = statusStr
+                    )
+                )
+            }
+        }
+    }
+
+    private fun startProgressPolling() {
+        progressPollingJob?.cancel()
+        progressPollingJob = scope.launch {
+            var lastUpdate = System.currentTimeMillis()
+            val previousBytesMap = mutableMapOf<String, Long>()
+
+            while (isActive) {
+                delay(500L)
+                val now = System.currentTimeMillis()
+                val timeDiff = (now - lastUpdate).coerceAtLeast(1L)
+
+                val currentDownloads = media3Manager.currentDownloads
+                if (currentDownloads.isNotEmpty()) {
+                    currentDownloads.forEach { download ->
+                        val mediaId = download.request.id
+                        val stored = downloadStore.storedTasks.value.find { it.mediaId == mediaId }
+                        val title = stored?.title ?: String(download.request.data)
+                        val downloadId = stored?.downloadId ?: mediaId.hashCode().toLong()
+
+                        val status = when (download.state) {
+                            Download.STATE_DOWNLOADING, Download.STATE_RESTARTING -> DownloadStatus.RUNNING
+                            Download.STATE_STOPPED -> DownloadStatus.PAUSED
+                            Download.STATE_COMPLETED -> DownloadStatus.COMPLETED
+                            Download.STATE_FAILED -> DownloadStatus.FAILED
+                            Download.STATE_QUEUED -> DownloadStatus.RUNNING
+                            Download.STATE_REMOVING -> DownloadStatus.PAUSED
+                            else -> DownloadStatus.PAUSED
+                        }
+
+                        val total = download.contentLength.takeIf { it > 0 } ?: (stored?.totalBytes ?: 0L)
+                        val downloaded = download.bytesDownloaded
+                        val percent = if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100)
+                        else download.percentDownloaded.toInt().coerceIn(0, 100)
+
+                        val prev = previousBytesMap[mediaId] ?: downloaded
+                        val bytesSince = (downloaded - prev).coerceAtLeast(0L)
+                        val speedBps = if (status == DownloadStatus.RUNNING) (bytesSince * 1000L) / timeDiff else 0L
+                        val remainingBytes = (total - downloaded).coerceAtLeast(0L)
+                        val etaSeconds = if (speedBps > 0) remainingBytes / speedBps else 0L
+
+                        previousBytesMap[mediaId] = downloaded
+
+                        activeStreamsMap[mediaId] = ActiveDownloadState(
+                            downloadId = downloadId,
+                            mediaId = mediaId,
+                            title = title,
+                            bytesDownloaded = downloaded,
+                            totalBytes = total,
+                            progressPercent = percent,
+                            speedBps = speedBps,
+                            etaSeconds = etaSeconds,
+                            status = status
+                        )
+                    }
+                    updateActiveDownloadsState()
+                }
+                lastUpdate = now
+            }
+        }
     }
 
     private fun restoreTasksFromStore() {
@@ -91,7 +272,7 @@ class InAppDownloadEngine @Inject constructor(
                 activeStreamsMap[task.mediaId] = state
             }
         }
-        _activeDownloads.value = activeStreamsMap.toMap()
+        updateActiveDownloadsState()
     }
 
     fun enqueueDownload(
@@ -100,10 +281,25 @@ class InAppDownloadEngine @Inject constructor(
         directUrl: String,
         targetFilePath: String,
         quality: String = "1080p",
-        languages: List<String> = emptyList()
+        languages: List<String> = emptyList(),
+        mediaType: String = "MOVIE",
+        seasonNumber: Int? = null,
+        episodeNumber: Int? = null,
+        catalogJson: String = "",
+        posterUrl: String = ""
     ): Long {
         val downloadId = System.currentTimeMillis()
-        val partFilePath = if (targetFilePath.endsWith(".part")) targetFilePath else "$targetFilePath.part"
+
+        val mimeType = when {
+            directUrl.contains(".m3u8", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
+            directUrl.contains(".mpd", ignoreCase = true) -> MimeTypes.APPLICATION_MPD
+            else -> null
+        }
+
+        val request = DownloadRequest.Builder(mediaId, Uri.parse(directUrl))
+            .setMimeType(mimeType)
+            .setData(title.toByteArray())
+            .build()
 
         val initialTask = StoredDownloadTask(
             downloadId = downloadId,
@@ -111,255 +307,96 @@ class InAppDownloadEngine @Inject constructor(
             title = title,
             directUrl = directUrl,
             localFilePath = targetFilePath,
-            partFilePath = partFilePath,
+            partFilePath = "$targetFilePath.part",
             downloadedBytes = 0L,
             totalBytes = 0L,
             quality = quality,
             languages = languages,
-            status = "RUNNING"
+            status = "RUNNING",
+            mediaType = mediaType,
+            seasonNumber = seasonNumber,
+            episodeNumber = episodeNumber,
+            catalogJson = catalogJson,
+            posterUrl = posterUrl
         )
         downloadStore.saveOrUpdateTask(initialTask)
 
-        startDownloadStream(initialTask)
+        activeStreamsMap[mediaId] = ActiveDownloadState(
+            downloadId = downloadId,
+            mediaId = mediaId,
+            title = title,
+            bytesDownloaded = 0L,
+            totalBytes = 0L,
+            progressPercent = 0,
+            speedBps = 0L,
+            etaSeconds = 0L,
+            status = DownloadStatus.RUNNING
+        )
+        updateActiveDownloadsState()
+
+        DownloadService.sendAddDownload(
+            context,
+            MetFlixDownloadService::class.java,
+            request,
+            /* foreground = */ true
+        )
+
         return downloadId
     }
 
     fun pauseDownload(mediaId: String) {
-        activeCalls[mediaId]?.cancel()
-        activeCalls.remove(mediaId)
-        activeJobs[mediaId]?.cancel()
-        activeJobs.remove(mediaId)
-
+        DownloadService.sendSetStopReason(
+            context,
+            MetFlixDownloadService::class.java,
+            mediaId,
+            Download.STOP_REASON_NONE + 1,
+            /* foreground = */ false
+        )
         activeStreamsMap[mediaId]?.let { current ->
-            val updated = current.copy(status = DownloadStatus.PAUSED, speedBps = 0L)
-            activeStreamsMap[mediaId] = updated
-            _activeDownloads.value = activeStreamsMap.toMap()
-
-            downloadStore.storedTasks.value.find { it.mediaId == mediaId }?.let { stored ->
-                downloadStore.saveOrUpdateTask(stored.copy(status = "PAUSED", downloadedBytes = current.bytesDownloaded))
-            }
+            activeStreamsMap[mediaId] = current.copy(status = DownloadStatus.PAUSED, speedBps = 0L)
+            updateActiveDownloadsState()
         }
-        InAppDownloadService.checkAutoStop(context)
+        downloadStore.storedTasks.value.find { it.mediaId == mediaId }?.let { stored ->
+            downloadStore.saveOrUpdateTask(stored.copy(status = "PAUSED"))
+        }
     }
 
     fun resumeDownload(mediaId: String) {
-        val stored = downloadStore.storedTasks.value.find { it.mediaId == mediaId } ?: return
-        startDownloadStream(stored)
+        DownloadService.sendSetStopReason(
+            context,
+            MetFlixDownloadService::class.java,
+            mediaId,
+            Download.STOP_REASON_NONE,
+            /* foreground = */ true
+        )
+        activeStreamsMap[mediaId]?.let { current ->
+            activeStreamsMap[mediaId] = current.copy(status = DownloadStatus.RUNNING)
+            updateActiveDownloadsState()
+        }
+        downloadStore.storedTasks.value.find { it.mediaId == mediaId }?.let { stored ->
+            downloadStore.saveOrUpdateTask(stored.copy(status = "RUNNING"))
+        }
     }
 
     fun cancelDownload(mediaId: String) {
-        val job = activeJobs.remove(mediaId)
-        activeCalls[mediaId]?.cancel()
-        activeCalls.remove(mediaId)
-
-        scope.launch {
-            job?.cancelAndJoin()
-            activeStreamsMap.remove(mediaId)
-            _activeDownloads.value = activeStreamsMap.toMap()
-            downloadStore.removeTask(mediaId)
-
+        DownloadService.sendRemoveDownload(
+            context,
+            MetFlixDownloadService::class.java,
+            mediaId,
+            /* foreground = */ false
+        )
+        activeStreamsMap.remove(mediaId)
+        updateActiveDownloadsState()
+        val stored = downloadStore.storedTasks.value.find { it.mediaId == mediaId }
+        if (stored != null) {
             try {
-                val stored = downloadStore.storedTasks.value.find { it.mediaId == mediaId }
-                val partPath = stored?.partFilePath ?: "$mediaId.part"
-                val partFile = File(partPath)
+                val file = java.io.File(stored.localFilePath)
+                if (file.exists()) file.delete()
+                val partFile = java.io.File(stored.partFilePath)
                 if (partFile.exists()) partFile.delete()
             } catch (_: Exception) {}
-
-            InAppDownloadService.checkAutoStop(context)
         }
-    }
-
-    private fun startDownloadStream(task: StoredDownloadTask) {
-        activeJobs[task.mediaId]?.cancel()
-
-        InAppDownloadService.startService(context, task.title)
-
-        val job = scope.launch {
-            downloadLoop(task)
-        }
-        activeJobs[task.mediaId] = job
-    }
-
-    private suspend fun downloadLoop(task: StoredDownloadTask) = withContext(throttledDispatcher) {
-        val partFile = File(task.partFilePath)
-        partFile.parentFile?.mkdirs()
-
-        var downloadedBytes = if (partFile.exists()) partFile.length() else 0L
-        var totalBytes = task.totalBytes
-        var eTag = task.eTag
-
-        val reqBuilder = Request.Builder()
-            .url(task.directUrl)
-            .header("User-Agent", BROWSER_USER_AGENT)
-
-        if (downloadedBytes > 0) {
-            reqBuilder.header("Range", "bytes=$downloadedBytes-")
-            if (eTag.isNotBlank()) {
-                reqBuilder.header("If-Range", eTag)
-            }
-        }
-
-        val call = okHttpClient.newCall(reqBuilder.build())
-        activeCalls[task.mediaId] = call
-
-        try {
-            call.execute().use { response ->
-                val code = response.code
-                if (!response.isSuccessful && code != 206) {
-                    Log.e(TAG, "Download failed HTTP $code for ${task.title}")
-                    updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.FAILED)
-                    return@withContext
-                }
-
-                val newETag = response.header("ETag").orEmpty()
-                if (newETag.isNotBlank()) eTag = newETag
-
-                val contentLength = response.body?.contentLength() ?: 0L
-
-                val isPartial = code == 206
-                if (!isPartial && downloadedBytes > 0) {
-                    Log.w(TAG, "Server returned 200 OK instead of 206 Partial Content. Truncating file to byte 0.")
-                    downloadedBytes = 0L
-                }
-
-                if (totalBytes <= 0) {
-                    totalBytes = if (isPartial) downloadedBytes + contentLength else contentLength
-                }
-
-                // Sparse File Pre-Allocation
-                var raf: RandomAccessFile? = null
-                try {
-                    raf = RandomAccessFile(partFile, "rw")
-                    if (!isPartial) {
-                        raf.setLength(0)
-                        if (totalBytes > 0) {
-                            val targetDir = partFile.parentFile ?: context.filesDir
-                            val statFs = StatFs(targetDir.path)
-                            val availableBytes = statFs.availableBytes
-                            if (availableBytes < totalBytes) {
-                                Log.e(TAG, "Insufficient storage space: required $totalBytes bytes, available $availableBytes bytes")
-                                updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.FAILED)
-                                return@withContext
-                            }
-                            try {
-                                raf.setLength(totalBytes)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Sparse pre-allocation ENOSPC error: ${e.message}")
-                            }
-                        }
-                    }
-                    raf.seek(downloadedBytes)
-
-                    val inputStream = response.body?.byteStream()
-                    if (inputStream == null) {
-                        updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.FAILED)
-                        return@withContext
-                    }
-
-                    val buffer = ByteArray(BUFFER_SIZE)
-                    var bytesRead: Int
-                    var lastUpdate = System.currentTimeMillis()
-                    var bytesSinceUpdate = 0L
-                    var lastSavedPercent = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else 0
-
-                    updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.RUNNING)
-
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        raf.write(buffer, 0, bytesRead)
-                        downloadedBytes += bytesRead
-                        bytesSinceUpdate += bytesRead
-
-                        val now = System.currentTimeMillis()
-                        val timeDiff = now - lastUpdate
-                        if (timeDiff >= 500L) { // 500ms UI emission throttling to eliminate Compose TV frame drops
-                            val speedBps = (bytesSinceUpdate * 1000L) / timeDiff
-                            val remainingBytes = (totalBytes - downloadedBytes).coerceAtLeast(0L)
-                            val etaSeconds = if (speedBps > 0) remainingBytes / speedBps else 0L
-
-                            updateState(task, downloadedBytes, totalBytes, speedBps, etaSeconds, DownloadStatus.RUNNING)
-
-                            val currentPercent = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else 0
-                            if (currentPercent - lastSavedPercent >= 5) {
-                                lastSavedPercent = currentPercent
-                                downloadStore.saveOrUpdateTask(
-                                    task.copy(
-                                        downloadedBytes = downloadedBytes,
-                                        totalBytes = totalBytes,
-                                        eTag = eTag,
-                                        status = "RUNNING"
-                                    )
-                                )
-                            }
-
-                            lastUpdate = now
-                            bytesSinceUpdate = 0L
-                        }
-                    }
-
-                    // Complete! Atomic rename .part file to final target file with copyTo fallback
-                    raf.close()
-                    val targetFile = File(task.localFilePath)
-                    targetFile.parentFile?.mkdirs()
-                    if (targetFile.exists()) targetFile.delete()
-
-                    var renamed = partFile.renameTo(targetFile)
-                    if (!renamed) {
-                        try {
-                            partFile.copyTo(targetFile, overwrite = true)
-                            partFile.delete()
-                            renamed = true
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Cross-filesystem copyTo fallback failed: ${e.message}")
-                        }
-                    }
-                    Log.d(TAG, "Download finished! Renamed .part to ${targetFile.name} (Success: $renamed)")
-
-                    updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.COMPLETED)
-                    activeStreamsMap.remove(task.mediaId)
-                    _activeDownloads.value = activeStreamsMap.toMap()
-
-                    downloadStore.saveOrUpdateTask(
-                        task.copy(
-                            downloadedBytes = downloadedBytes,
-                            totalBytes = totalBytes,
-                            status = "COMPLETED"
-                        )
-                    )
-                } finally {
-                    try { raf?.close() } catch (_: Exception) {}
-                }
-            }
-        } catch (e: Exception) {
-            if (coroutineContext.isActive) {
-                Log.e(TAG, "Stream error for ${task.title}: ${e.message}")
-                updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.FAILED)
-            }
-        } finally {
-            InAppDownloadService.checkAutoStop(context)
-        }
-    }
-
-    private fun updateState(
-        task: StoredDownloadTask,
-        downloaded: Long,
-        total: Long,
-        speedBps: Long,
-        etaSeconds: Long,
-        status: DownloadStatus
-    ) {
-        val percent = if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100) else 0
-        val state = ActiveDownloadState(
-            downloadId = task.downloadId,
-            mediaId = task.mediaId,
-            title = task.title,
-            bytesDownloaded = downloaded,
-            totalBytes = total,
-            progressPercent = percent,
-            speedBps = speedBps,
-            etaSeconds = etaSeconds,
-            status = status
-        )
-        activeStreamsMap[task.mediaId] = state
-        _activeDownloads.value = activeStreamsMap.toMap()
+        downloadStore.removeTask(mediaId)
+        DownloadedCatalogRepository.instance?.removeDownloadedItem(mediaId)
     }
 }

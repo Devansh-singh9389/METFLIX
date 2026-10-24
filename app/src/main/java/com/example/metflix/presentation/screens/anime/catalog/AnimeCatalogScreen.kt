@@ -80,6 +80,8 @@ import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
+import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -352,7 +354,7 @@ private fun SeriesEpisodesSection(
                     EpisodeCard(
                         episode = ep,
                         onClick = { onEpisodeClick(ep) },
-                        onLongClick = { selectedDownloadEp = ep }
+                        onDownloadClick = { selectedDownloadEp = ep }
                     )
                 }
             }
@@ -391,7 +393,8 @@ private fun SeriesEpisodesSection(
                         mediaId = epSlug.ifBlank { epTitle },
                         mediaType = "ANIME_EPISODE",
                         seasonNumber = selectedSeasonNumber,
-                        episodeNumber = epNum
+                        episodeNumber = epNum,
+                        posterUrl = ep.thumbnail.orEmpty()
                     )
                 }
             )
@@ -399,97 +402,96 @@ private fun SeriesEpisodesSection(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EpisodeCard(
     episode: AnimeEpisodeItem,
     onClick: () -> Unit,
-    onLongClick: () -> Unit = {}
+    onDownloadClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Card(
-        onClick = onClick,
-        shape = CardDefaults.shape(RoundedCornerShape(12.dp)),
-        colors = CardDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        colors = SurfaceDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
         ),
-        border = CardDefaults.border(
-            focusedBorder = Border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary))
-        ),
-        modifier = Modifier
-            .width(220.dp)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
+        modifier = modifier.width(220.dp)
     ) {
         Column {
-            // Thumbnail (16:9)
-            Box(
+            Card(
+                onClick = onClick,
+                shape = CardDefaults.shape(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 0.dp, bottomEnd = 0.dp)),
+                colors = CardDefaults.colors(
+                    containerColor = Color.DarkGray,
+                    focusedContainerColor = Color(0xFF3C3C3E)
+                ),
+                border = CardDefaults.border(
+                    focusedBorder = Border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary))
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
-                    .background(Color.DarkGray)
             ) {
-                if (!episode.thumbnail.isNullOrBlank()) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(episode.thumbnail)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = episode.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                // Overlay gradient and episode code
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
-                                startY = 60f
-                            )
-                        )
-                )
-
-                val isEpDownloaded = remember(episode.route, episode.episodeCode) {
-                    val key = episode.route.ifEmpty { episode.episodeCode.orEmpty() }
-                    DownloadedCatalogRepository.instance?.isDownloaded(mediaId = key) ?: false
-                }
-
-                if (isEpDownloaded) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(6.dp)
-                            .background(Color(0xFF2E7D32), RoundedCornerShape(20.dp))
-                            .padding(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DownloadDone,
-                            contentDescription = "Downloaded",
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (!episode.thumbnail.isNullOrBlank()) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(episode.thumbnail)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = episode.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
-                }
 
-                if (!episode.episodeCode.isNullOrBlank()) {
+                    // Overlay gradient and episode code
                     Box(
                         modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(6.dp)
-                            .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = episode.episodeCode,
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
-                        )
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
+                                    startY = 60f
+                                )
+                            )
+                    )
+
+                    val isEpDownloaded = remember(episode.route, episode.episodeCode) {
+                        val key = episode.route.ifEmpty { episode.episodeCode.orEmpty() }
+                        DownloadedCatalogRepository.instance?.isDownloaded(mediaId = key) ?: false
+                    }
+
+                    if (isEpDownloaded) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .background(Color(0xFF2E7D32), RoundedCornerShape(20.dp))
+                                .padding(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DownloadDone,
+                                contentDescription = "Downloaded",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+
+                    if (!episode.episodeCode.isNullOrBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(6.dp)
+                                .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = episode.episodeCode,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -501,7 +503,7 @@ private fun EpisodeCard(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
             )
 
             // Live Episode Download Progress Bar
@@ -509,7 +511,9 @@ private fun EpisodeCard(
             val context = LocalContext.current
             val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
             val activeDownloads by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
-            val epActiveState = activeDownloads[epKey]
+            val epActiveState = remember(activeDownloads, epKey, episode.title, episode.episodeCode) {
+                downloadTracker.findActiveDownload(epKey, episode.title, episode.episodeCode, episode.route)
+            }
 
             DisposableEffect(epKey) {
                 downloadTracker.registerObserver(epKey)
@@ -544,6 +548,46 @@ private fun EpisodeCard(
                             .fillMaxWidth()
                             .height(4.dp)
                     )
+                }
+            }
+
+            val isDownloaded = remember(episode.route, episode.episodeCode) {
+                val key = episode.route.ifEmpty { episode.episodeCode.orEmpty() }
+                DownloadedCatalogRepository.instance?.isDownloaded(mediaId = key) ?: false
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onClick,
+                    colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(11.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text("Play", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = onDownloadClick,
+                    colors = ButtonDefaults.colors(
+                        containerColor = if (isDownloaded) Color(0xFF2E7D32) else Color(0xFF2C2C35)
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                        contentDescription = null,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Text(if (isDownloaded) "Saved" else "Save", fontSize = 10.sp)
                 }
             }
         }
@@ -714,7 +758,8 @@ private fun AnimeMovieCatalogContent(
                                     selectedQuality = option.quality,
                                     selectedLanguages = langs,
                                     mediaId = state.slug.ifBlank { state.title },
-                                    mediaType = "ANIME_MOVIE"
+                                    mediaType = "ANIME_MOVIE",
+                                    posterUrl = state.poster.orEmpty()
                                 )
                             }
                         )
@@ -723,7 +768,9 @@ private fun AnimeMovieCatalogContent(
                     // Live Download Progress Card for Anime Movie
                     val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
                     val activeDownloads by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
-                    val activeState = activeDownloads[state.title] ?: activeDownloads[state.slug]
+                    val activeState = remember(activeDownloads, state.title, state.slug) {
+                        downloadTracker.findActiveDownload(state.title, state.slug)
+                    }
 
                     DisposableEffect(state.title) {
                         downloadTracker.registerObserver(state.title)

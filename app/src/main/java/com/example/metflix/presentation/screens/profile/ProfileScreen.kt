@@ -95,7 +95,7 @@ fun ProfileScreen(
     val subtitlePreferences = remember { SubtitlePreferences(context) }
     val performancePreferences = remember { PerformancePreferences(context) }
     val searchHistoryPreferences = remember { SearchHistoryPreferences(context) }
-    val downloadPreferences = remember { DownloadPreferences(context) }
+    val downloadPreferences = remember { DownloadPreferences.from(context) }
 
     val reduceAnimations by performancePreferences.reduceAnimations.collectAsStateWithLifecycle()
     val currentLanguageCode by languagePreferences.currentLanguage.collectAsStateWithLifecycle()

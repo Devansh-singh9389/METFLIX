@@ -25,6 +25,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import java.io.File
 
@@ -38,9 +39,13 @@ object MediaCacheManager {
 
     private const val MAX_CACHE_BYTES = 60L * 1024 * 1024 // 60 MB media disk cache limit
     private const val CACHE_DIR_NAME = "anime_media_cache"
+    private const val DOWNLOAD_CACHE_DIR_NAME = "metflix_downloads_cache"
 
     @Volatile
     private var simpleCache: SimpleCache? = null
+
+    @Volatile
+    private var downloadCache: SimpleCache? = null
 
     @Synchronized
     fun getCache(context: Context): SimpleCache {
@@ -59,20 +64,44 @@ object MediaCacheManager {
         }
     }
 
+    @Synchronized
+    fun getDownloadCache(context: Context): SimpleCache {
+        return downloadCache ?: synchronized(this) {
+            downloadCache ?: run {
+                val downloadDir = File(context.getExternalFilesDir(null) ?: context.filesDir, DOWNLOAD_CACHE_DIR_NAME)
+                if (!downloadDir.exists()) {
+                    downloadDir.mkdirs()
+                }
+                val evictor = NoOpCacheEvictor()
+                val databaseProvider = StandaloneDatabaseProvider(context.applicationContext)
+                SimpleCache(downloadDir, evictor, databaseProvider).also {
+                    downloadCache = it
+                }
+            }
+        }
+    }
+
     /**
      * Builds a CacheDataSource.Factory that wraps upstream HTTP data source (with Referer/Origin headers)
      * and streams content to disk cache without retaining huge memory buffers in the JVM heap.
+     * Offline downloads in downloadCache take priority over streaming cache.
      */
     fun createCacheDataSourceFactory(
         context: Context,
         upstreamHttpFactory: DefaultHttpDataSource.Factory
     ): DataSource.Factory {
-        val cache = getCache(context)
+        val streamCache = getCache(context)
+        val dlCache = getDownloadCache(context)
         val defaultDataSourceFactory = DefaultDataSource.Factory(context, upstreamHttpFactory)
 
-        return CacheDataSource.Factory()
-            .setCache(cache)
+        val streamCacheFactory = CacheDataSource.Factory()
+            .setCache(streamCache)
             .setUpstreamDataSourceFactory(defaultDataSourceFactory)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+        return CacheDataSource.Factory()
+            .setCache(dlCache)
+            .setUpstreamDataSourceFactory(streamCacheFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
     }
 

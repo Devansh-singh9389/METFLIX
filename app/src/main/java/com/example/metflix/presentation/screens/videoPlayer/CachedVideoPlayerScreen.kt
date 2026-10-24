@@ -41,7 +41,10 @@ import com.example.metflix.data.repositories.CachedPlaybackSession
 import com.example.metflix.data.repositories.CachedPlaybackSessionStore
 import com.example.metflix.data.network.torbox.TorBoxClient
 import com.example.metflix.data.settings.DebridPreferences
+import com.example.metflix.data.downloads.DownloadedCatalogRepository
 import com.example.metflix.presentation.screens.videoPlayer.components.rememberPlayer
+import java.io.File
+import android.net.Uri
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import androidx.lifecycle.ViewModel
@@ -53,10 +56,38 @@ class CachedVideoPlayerViewModel @Inject constructor(
     private val torBoxClient: TorBoxClient,
     private val preferences: DebridPreferences
 ) : ViewModel() {
-    fun get(sessionId: String): CachedPlaybackSession? = sessionStore.get(sessionId)
+    fun get(sessionId: String): CachedPlaybackSession? {
+        val torBoxSession = sessionStore.get(sessionId)
+        if (torBoxSession != null) return torBoxSession
+
+        val file = File(sessionId)
+        if (file.exists()) {
+            return CachedPlaybackSession(
+                url = Uri.fromFile(file).toString(),
+                title = file.name,
+                torrentId = 0,
+                fileId = null
+            )
+        }
+
+        val downloaded = DownloadedCatalogRepository.instance?.downloadedItems?.value?.find {
+            it.localFilePath == sessionId || it.id == sessionId
+        }
+        if (downloaded != null && File(downloaded.localFilePath).exists()) {
+            val f = File(downloaded.localFilePath)
+            return CachedPlaybackSession(
+                url = Uri.fromFile(f).toString(),
+                title = downloaded.title,
+                torrentId = 0,
+                fileId = null
+            )
+        }
+
+        return null
+    }
 
     suspend fun refresh(sessionId: String): CachedPlaybackSession? {
-        val current = sessionStore.get(sessionId) ?: return null
+        val current = sessionStore.get(sessionId) ?: return get(sessionId)
         val key = preferences.apiKey.value.trim()
         val refreshedUrl = torBoxClient.requestDownloadLink(key, current.torrentId, current.fileId)
             ?: return null
@@ -82,7 +113,15 @@ fun CachedVideoPlayerScreen(
     var session by remember(sessionId) { mutableStateOf(viewModel.get(sessionId)) }
     val player = rememberPlayer(context)
     var hasError by remember(sessionId) { mutableStateOf(session == null) }
-    var errorMessage by remember(sessionId) { mutableStateOf("Unable to open the cached TorBox file") }
+    var errorMessage by remember(sessionId) {
+        mutableStateOf(
+            if (sessionId.startsWith("/") || sessionId.contains(".")) {
+                "Unable to open the local video file"
+            } else {
+                "Unable to open the cached TorBox file"
+            }
+        )
+    }
     var retryUsed by remember(sessionId) { mutableStateOf(false) }
     var isRefreshing by remember(sessionId) { mutableStateOf(false) }
     var refreshAttempted by remember(sessionId) { mutableStateOf(false) }
@@ -118,7 +157,7 @@ fun CachedVideoPlayerScreen(
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 hasError = true
                 errorMessage = error.localizedMessage ?: "The cached TorBox link could not be played"
-                if (!refreshAttempted && session != null && !isRefreshing && isExpiredLinkError(error)) {
+                if (!refreshAttempted && session != null && session?.torrentId != 0 && !isRefreshing && isExpiredLinkError(error)) {
                     refreshAttempted = true
                     isRefreshing = true
                     coroutineScope.launch {

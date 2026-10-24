@@ -87,7 +87,8 @@ class MediaDownloader @Inject constructor(
         mediaType: String = "MOVIE",
         seasonNumber: Int? = null,
         episodeNumber: Int? = null,
-        catalogJson: String = ""
+        catalogJson: String = "",
+        posterUrl: String = ""
     ): Long {
         if (directUrl.isBlank()) {
             Toast.makeText(context, "Cannot download: Invalid stream URL", Toast.LENGTH_SHORT).show()
@@ -96,7 +97,16 @@ class MediaDownloader @Inject constructor(
 
         return try {
             val dirType = downloadPreferences.downloadLocation.value
-            val targetDir = if (dirType.startsWith("/")) File(dirType) else context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+            val targetDir = if (dirType.startsWith("/")) {
+                File(dirType)
+            } else if (dirType.equalsIgnoreCase(Environment.DIRECTORY_MOVIES)) {
+                context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: File(context.filesDir, "Movies")
+            } else {
+                context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: File(context.filesDir, "Downloads")
+            }
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
             try {
                 val statFs = StatFs(targetDir.path)
                 val availableBytes = statFs.availableBytes
@@ -114,13 +124,7 @@ class MediaDownloader @Inject constructor(
             }
 
             val fileName = sanitizeFileName(catalogTitle, extension)
-            val destinationDir = if (dirType.equalsIgnoreCase(Environment.DIRECTORY_MOVIES)) {
-                Environment.DIRECTORY_MOVIES
-            } else {
-                Environment.DIRECTORY_DOWNLOADS
-            }
-
-            val fullPath = "${Environment.getExternalStoragePublicDirectory(destinationDir)}/MetFlix/$fileName"
+            val fullPath = File(targetDir, fileName).absolutePath
 
             val uniqueId = if (seasonNumber != null && episodeNumber != null) {
                 "${mediaId}_S${seasonNumber}_E${episodeNumber}"
@@ -134,24 +138,13 @@ class MediaDownloader @Inject constructor(
                 directUrl = directUrl,
                 targetFilePath = fullPath,
                 quality = selectedQuality,
-                languages = selectedLanguages
-            )
-
-            val downloadedItem = DownloadedItem(
-                id = uniqueId,
-                title = catalogTitle,
+                languages = selectedLanguages,
                 mediaType = mediaType,
-                mediaId = mediaId,
                 seasonNumber = seasonNumber,
                 episodeNumber = episodeNumber,
-                localFilePath = fullPath,
-                downloadId = downloadId,
-                quality = selectedQuality,
-                languages = selectedLanguages,
-                catalogJson = catalogJson.ifBlank { "{\"title\":\"$catalogTitle\",\"mediaId\":\"$mediaId\",\"mediaType\":\"$mediaType\"}" }
+                catalogJson = catalogJson.ifBlank { "{\"title\":\"$catalogTitle\",\"mediaId\":\"$mediaId\",\"mediaType\":\"$mediaType\"}" },
+                posterUrl = posterUrl
             )
-
-            DownloadedCatalogRepository.instance?.addOrUpdateDownloadedItem(downloadedItem)
 
             Toast.makeText(context, "In-App Download Started: $catalogTitle", Toast.LENGTH_LONG).show()
             downloadId

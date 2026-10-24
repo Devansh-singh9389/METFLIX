@@ -230,7 +230,9 @@ private fun PlaybackActionButtonsRow(
 
     val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
     val activeDownloads by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
-    val activeState = activeDownloads[movieTitle]
+    val activeState = remember(activeDownloads, movieTitle, tmdbId) {
+        downloadTracker.findActiveDownload(movieTitle, tmdbId)
+    }
 
     DisposableEffect(movieTitle) {
         downloadTracker.registerObserver(movieTitle)
@@ -329,7 +331,8 @@ private fun PlaybackActionButtonsRow(
                     selectedQuality = option.quality,
                     selectedLanguages = langs,
                     mediaId = if (tmdbId.isNotBlank()) tmdbId else movieTitle,
-                    mediaType = if (isTvShow) "SERIES" else "MOVIE"
+                    mediaType = if (isTvShow) "SERIES" else "MOVIE",
+                    posterUrl = posterUri.orEmpty()
                 )
             }
         )

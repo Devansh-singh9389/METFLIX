@@ -59,6 +59,8 @@ import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
+import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.example.metflix.data.downloads.DownloadStatus
@@ -283,19 +285,19 @@ private fun DownloadedItemCard(
     onPlayOffline: () -> Unit,
     onDelete: () -> Unit
 ) {
-    // Auto-fetch poster online via internet using mediaId/slug
-    val onlinePosterUrl = remember(item.mediaId) {
-        if (item.mediaId.startsWith("http")) {
-            item.mediaId
-        } else {
-            "https://image.tmdb.org/t/p/w500/${item.mediaId}"
+    // Auto-fetch poster online via internet using posterUrl/mediaId/slug
+    val onlinePosterUrl = remember(item.posterUrl, item.mediaId) {
+        when {
+            item.posterUrl.isNotBlank() -> item.posterUrl
+            item.mediaId.startsWith("http") -> item.mediaId
+            item.mediaId.startsWith("/") -> "https://image.tmdb.org/t/p/w500${item.mediaId}"
+            else -> null
         }
     }
 
-    Card(
-        onClick = onOpenCatalog,
-        shape = CardDefaults.shape(shape = MetFlixCardShape),
-        colors = CardDefaults.colors(
+    Surface(
+        shape = MetFlixCardShape,
+        colors = SurfaceDefaults.colors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
         ),
         modifier = Modifier.fillMaxWidth()

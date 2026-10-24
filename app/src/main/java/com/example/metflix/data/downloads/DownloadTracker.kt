@@ -101,4 +101,24 @@ class DownloadTracker @Inject constructor(
     fun cancelDownloadByMediaId(mediaId: String) {
         engine.cancelDownload(mediaId)
     }
+
+    fun findActiveDownload(vararg keys: String?): ActiveDownloadState? {
+        val map = activeDownloads.value
+        for (k in keys) {
+            if (!k.isNullOrBlank()) {
+                val direct = map[k]
+                if (direct != null) return direct
+            }
+        }
+        val nonNullKeys = keys.filterNotNull().filter { it.isNotBlank() }
+        if (nonNullKeys.isEmpty()) return null
+        return map.values.find { state ->
+            nonNullKeys.any { k ->
+                state.title.equals(k, ignoreCase = true) ||
+                state.mediaId.equals(k, ignoreCase = true) ||
+                state.mediaId.startsWith("${k}_") ||
+                k.startsWith("${state.mediaId}_")
+            }
+        }
+    }
 }

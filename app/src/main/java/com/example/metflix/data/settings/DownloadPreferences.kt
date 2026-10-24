@@ -42,10 +42,44 @@ class DownloadPreferences @Inject constructor(
 
         val AVAILABLE_QUALITIES = listOf("1080p Full HD", "720p HD", "480p SD", "360p Low", "Always Ask")
         val AVAILABLE_LANGUAGES = listOf("Hindi", "English", "Tamil", "Telugu", "Dual Audio", "All Tracks")
+
+        @Volatile
+        private var sInstance: DownloadPreferences? = null
+
+        fun from(context: Context): DownloadPreferences {
+            return sInstance ?: synchronized(this) {
+                sInstance ?: DownloadPreferences(context.applicationContext).also { sInstance = it }
+            }
+        }
     }
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            KEY_DOWNLOAD_LOCATION -> {
+                _downloadLocation.value = prefs.getString(KEY_DOWNLOAD_LOCATION, Environment.DIRECTORY_DOWNLOADS) ?: Environment.DIRECTORY_DOWNLOADS
+            }
+            KEY_PREFERRED_QUALITY -> {
+                _preferredQuality.value = prefs.getString(KEY_PREFERRED_QUALITY, "1080p Full HD") ?: "1080p Full HD"
+            }
+            KEY_PREFERRED_LANGUAGES -> {
+                _preferredLanguages.value = prefs.getStringSet(KEY_PREFERRED_LANGUAGES, setOf("Hindi", "English")) ?: setOf("Hindi", "English")
+            }
+            KEY_ALWAYS_ASK -> {
+                _alwaysAsk.value = prefs.getBoolean(KEY_ALWAYS_ASK, true)
+            }
+            KEY_CUSTOM_LOCATIONS_JSON -> {
+                _customLocations.value = loadCustomLocations()
+            }
+        }
+    }
+
+    init {
+        sInstance = this
+        prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
+    }
 
     private val _downloadLocation = MutableStateFlow(
         prefs.getString(KEY_DOWNLOAD_LOCATION, Environment.DIRECTORY_DOWNLOADS) ?: Environment.DIRECTORY_DOWNLOADS

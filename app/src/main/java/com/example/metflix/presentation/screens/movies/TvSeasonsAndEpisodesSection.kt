@@ -19,9 +19,15 @@ package com.example.metflix.presentation.screens.movies
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.foundation.layout.size
 import androidx.tv.material3.Icon
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Surface
+import androidx.tv.material3.SurfaceDefaults
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusGroup
@@ -174,7 +180,7 @@ fun TvSeasonsAndEpisodesSection(
                     TvEpisodeCard(
                         episode = episode,
                         onClick = { onEpisodeClick(episode.seasonNumber, episode.episodeNumber) },
-                        onLongClick = { selectedDownloadEpisode = episode }
+                        onDownloadClick = { selectedDownloadEpisode = episode }
                     )
                 }
             }
@@ -209,10 +215,11 @@ fun TvSeasonsAndEpisodesSection(
                         directUrl = option.directUrl,
                         selectedQuality = option.quality,
                         selectedLanguages = langs,
-                        mediaId = "${seriesTmdbId.ifBlank { seriesTitle }}_s${ep.seasonNumber}e${ep.episodeNumber}",
+                        mediaId = ep.id.ifBlank { "${seriesTmdbId.ifBlank { seriesTitle }}_s${ep.seasonNumber}e${ep.episodeNumber}" },
                         mediaType = "SERIES",
                         seasonNumber = ep.seasonNumber,
-                        episodeNumber = ep.episodeNumber
+                        episodeNumber = ep.episodeNumber,
+                        posterUrl = ep.stillUri ?: ""
                     )
                 }
             )
@@ -220,99 +227,98 @@ fun TvSeasonsAndEpisodesSection(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TvEpisodeCard(
     episode: TvEpisode,
     onClick: () -> Unit,
-    onLongClick: () -> Unit = {},
+    onDownloadClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        onClick = onClick,
-        shape = CardDefaults.shape(RoundedCornerShape(12.dp)),
-        colors = CardDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        colors = SurfaceDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
         ),
-        border = CardDefaults.border(
-            focusedBorder = Border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary))
-        ),
-        modifier = modifier
-            .width(260.dp)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
+        modifier = modifier.width(260.dp)
     ) {
         Column {
-            Box(
+            Card(
+                onClick = onClick,
+                shape = CardDefaults.shape(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 0.dp, bottomEnd = 0.dp)),
+                colors = CardDefaults.colors(
+                    containerColor = Color(0xFF1C1C1E),
+                    focusedContainerColor = Color(0xFF2C2C2E)
+                ),
+                border = CardDefaults.border(
+                    focusedBorder = Border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary))
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(146.dp)
-                    .background(Color(0xFF1C1C1E))
             ) {
-                if (!episode.stillUri.isNullOrBlank()) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(episode.stillUri)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = episode.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                val isDownloaded = remember(episode.id, episode.seasonNumber, episode.episodeNumber) {
-                    DownloadedCatalogRepository.instance?.isDownloaded(
-                        mediaId = episode.id,
-                        seasonNumber = episode.seasonNumber,
-                        episodeNumber = episode.episodeNumber
-                    ) ?: false
-                }
-
-                if (isDownloaded) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(6.dp)
-                            .background(Color(0xFF2E7D32), RoundedCornerShape(20.dp))
-                            .padding(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DownloadDone,
-                            contentDescription = "Downloaded",
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (!episode.stillUri.isNullOrBlank()) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(episode.stillUri)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = episode.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
-                }
 
-                // Episode tag & runtime pill
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(8.dp)
-                        .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "EP ${episode.episodeNumber}",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                    if (episode.duration.isNotBlank()) {
+                    val isDownloaded = remember(episode.id, episode.seasonNumber, episode.episodeNumber) {
+                        DownloadedCatalogRepository.instance?.isDownloaded(
+                            mediaId = episode.id,
+                            seasonNumber = episode.seasonNumber,
+                            episodeNumber = episode.episodeNumber
+                        ) ?: false
+                    }
+
+                    if (isDownloaded) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .background(Color(0xFF2E7D32), RoundedCornerShape(20.dp))
+                                .padding(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DownloadDone,
+                                contentDescription = "Downloaded",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+
+                    // Episode tag & runtime pill
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(8.dp)
+                            .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "• ${episode.duration}",
+                            text = "EP ${episode.episodeNumber}",
                             style = MaterialTheme.typography.labelSmall.copy(
-                                color = Color.LightGray
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         )
+                        if (episode.duration.isNotBlank()) {
+                            Text(
+                                text = "• ${episode.duration}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = Color.LightGray
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -344,7 +350,14 @@ private fun TvEpisodeCard(
                 val context = LocalContext.current
                 val downloadTracker = remember { DownloadTracker.instance ?: DownloadTracker(context) }
                 val activeDownloads by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
-                val epActiveState = activeDownloads[epKey] ?: activeDownloads["S${episode.seasonNumber}E${episode.episodeNumber}"]
+                val epActiveState = remember(activeDownloads, epKey, episode.name) {
+                    downloadTracker.findActiveDownload(
+                        epKey,
+                        "S${episode.seasonNumber}E${episode.episodeNumber}",
+                        "s${episode.seasonNumber}e${episode.episodeNumber}",
+                        episode.name
+                    )
+                }
 
                 DisposableEffect(epKey) {
                     downloadTracker.registerObserver(epKey)
@@ -382,6 +395,47 @@ private fun TvEpisodeCard(
                                     .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
                             )
                         }
+                    }
+                }
+
+                val isEpDownloaded = remember(episode.id, episode.seasonNumber, episode.episodeNumber) {
+                    DownloadedCatalogRepository.instance?.isDownloaded(
+                        mediaId = episode.id,
+                        seasonNumber = episode.seasonNumber,
+                        episodeNumber = episode.episodeNumber
+                    ) ?: false
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = onClick,
+                        colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Play", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = onDownloadClick,
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (isEpDownloaded) Color(0xFF2E7D32) else Color(0xFF2C2C35)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            if (isEpDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (isEpDownloaded) "Saved" else "Save", fontSize = 11.sp)
                     }
                 }
             }

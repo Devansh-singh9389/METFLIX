@@ -42,7 +42,12 @@ data class StoredDownloadTask(
     val quality: String = "1080p",
     val languages: List<String> = emptyList(),
     val status: String = "PAUSED",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val mediaType: String = "MOVIE",
+    val seasonNumber: Int? = null,
+    val episodeNumber: Int? = null,
+    val posterUrl: String = "",
+    val catalogJson: String = ""
 )
 
 @Singleton
@@ -89,7 +94,12 @@ class InAppDownloadStore @Inject constructor(
                         quality = obj.optString("quality", "1080p"),
                         languages = optStringList(obj.optJSONArray("languages")),
                         status = obj.optString("status", "PAUSED"),
-                        timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                        timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                        mediaType = obj.optString("mediaType", "MOVIE"),
+                        seasonNumber = if (obj.has("seasonNumber")) obj.optInt("seasonNumber") else null,
+                        episodeNumber = if (obj.has("episodeNumber")) obj.optInt("episodeNumber") else null,
+                        posterUrl = obj.optString("posterUrl", ""),
+                        catalogJson = obj.optString("catalogJson", "")
                     )
                 )
             }
@@ -126,6 +136,11 @@ class InAppDownloadStore @Inject constructor(
                 put("languages", JSONArray(task.languages))
                 put("status", task.status)
                 put("timestamp", task.timestamp)
+                put("mediaType", task.mediaType)
+                task.seasonNumber?.let { put("seasonNumber", it) }
+                task.episodeNumber?.let { put("episodeNumber", it) }
+                put("posterUrl", task.posterUrl)
+                put("catalogJson", task.catalogJson)
             }
             array.put(obj)
         }

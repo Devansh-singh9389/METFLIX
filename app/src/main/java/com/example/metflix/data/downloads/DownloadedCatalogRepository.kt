@@ -70,6 +70,7 @@ class DownloadedCatalogRepository @Inject constructor(
                         quality = obj.optString("quality", "1080p"),
                         languages = optStringList(obj.optJSONArray("languages")),
                         timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                        posterUrl = obj.optString("posterUrl", ""),
                         catalogJson = obj.optString("catalogJson", "")
                     )
                 )
@@ -105,6 +106,7 @@ class DownloadedCatalogRepository @Inject constructor(
                 put("quality", item.quality)
                 put("languages", JSONArray(item.languages))
                 put("timestamp", item.timestamp)
+                put("posterUrl", item.posterUrl)
                 put("catalogJson", item.catalogJson)
             }
             array.put(obj)
@@ -128,9 +130,12 @@ class DownloadedCatalogRepository @Inject constructor(
 
     fun isDownloaded(mediaId: String, seasonNumber: Int? = null, episodeNumber: Int? = null): Boolean {
         return _downloadedItems.value.any { item ->
-            item.mediaId.equals(mediaId, ignoreCase = true) &&
-                    (seasonNumber == null || item.seasonNumber == seasonNumber) &&
-                    (episodeNumber == null || item.episodeNumber == episodeNumber)
+            val matchesMedia = item.mediaId.equals(mediaId, ignoreCase = true) ||
+                    item.id.equals(mediaId, ignoreCase = true) ||
+                    (seasonNumber != null && episodeNumber != null && (item.mediaId.contains(mediaId, ignoreCase = true) || mediaId.contains(item.mediaId, ignoreCase = true)))
+            val matchesSeason = seasonNumber == null || item.seasonNumber == seasonNumber
+            val matchesEpisode = episodeNumber == null || item.episodeNumber == episodeNumber
+            matchesMedia && matchesSeason && matchesEpisode
         }
     }
 }
