@@ -16,78 +16,83 @@
 
 package com.example.metflix.data.util
 
+import android.content.Context
+import android.util.Log
+import com.example.metflix.MetFlixApplication
+import com.example.metflix.data.entities.MediaId
+import com.example.metflix.data.network.resolvers.StreamResolverRepository
 import com.example.metflix.presentation.common.DownloadStreamOption
-import kotlinx.coroutines.delay
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface DownloadStreamResolverEntryPoint {
+    fun streamResolverRepository(): StreamResolverRepository
+}
 
 object DownloadStreamResolver {
+    private const val TAG = "DownloadStreamResolver"
+
     /**
      * Resolves the actual available direct stream qualities for a given title/episode.
      * Strictly returns ONLY the qualities that actually exist in the resolved direct stream data.
+     * Queries actual scrapers (AllDebridProvider, TorBoxClient, DualAudioScraper, AnimeScraper, AnimeApiClient).
      * Does NOT populate hardcoded standard filler qualities if they are not present.
      */
     suspend fun resolveActualStreams(
+        context: Context? = null,
         title: String,
-        availableLanguages: List<String> = listOf("Hindi", "English")
+        availableLanguages: List<String> = listOf("Hindi", "English"),
+        tmdbId: String? = null,
+        imdbId: String? = null,
+        releaseYear: String = "",
+        isTvShow: Boolean = false,
+        season: Int = 1,
+        episode: Int = 1,
+        isAnime: Boolean = false,
+        animeSlug: String? = null
     ): List<DownloadStreamOption> {
-        delay(1000) // Query direct stream resolvers across servers
+        val appContext = context?.applicationContext
+            ?: runCatching { MetFlixApplication.instance.applicationContext }.getOrNull()
 
-        val resolved = mutableListOf<DownloadStreamOption>()
+        if (appContext == null) {
+            Log.e(TAG, "Application context unavailable for stream resolution")
+            return emptyList()
+        }
+
+        val repository = EntryPointAccessors.fromApplication(
+            appContext,
+            DownloadStreamResolverEntryPoint::class.java
+        ).streamResolverRepository()
+
         val cleanTitle = title.trim()
-
-        val langs = availableLanguages.ifEmpty { listOf("Hindi", "Japanese", "English") }
-
-        // Dynamically inspect resolved direct stream sources for available variant qualities
-        // 1080p Full HD
-        resolved.add(
-            DownloadStreamOption(
-                quality = "1080p Full HD",
-                sizeText = "1.2 GB",
-                directUrl = "https://metflix.org/stream/$cleanTitle/1080p.mp4",
-                availableLanguages = langs
+        val mediaId: MediaId = when {
+            isAnime -> MediaId.Anime(
+                title = cleanTitle,
+                seasonNumber = season,
+                episodeNumber = episode
             )
-        )
-
-        // 720p HD
-        resolved.add(
-            DownloadStreamOption(
-                quality = "720p HD",
-                sizeText = "650 MB",
-                directUrl = "https://metflix.org/stream/$cleanTitle/720p.mp4",
-                availableLanguages = langs
+            isTvShow -> MediaId.TvShow(
+                tmdbId = tmdbId?.ifBlank { cleanTitle } ?: cleanTitle,
+                seasonNumber = season,
+                episodeNumber = episode,
+                imdbId = imdbId
             )
-        )
-
-        // 480p SD
-        resolved.add(
-            DownloadStreamOption(
-                quality = "480p SD",
-                sizeText = "350 MB",
-                directUrl = "https://metflix.org/stream/$cleanTitle/480p.mp4",
-                availableLanguages = langs
+            else -> MediaId.Movie(
+                tmdbId = tmdbId?.ifBlank { cleanTitle } ?: cleanTitle,
+                imdbId = imdbId
             )
-        )
+        }
 
-        // 360p Low
-        resolved.add(
-            DownloadStreamOption(
-                quality = "360p Low",
-                sizeText = "180 MB",
-                directUrl = "https://metflix.org/stream/$cleanTitle/360p.mp4",
-                availableLanguages = langs
-            )
+        return repository.resolveDownloadStreams(
+            mediaId = mediaId,
+            title = cleanTitle,
+            releaseYear = releaseYear,
+            preferredLanguages = availableLanguages,
+            animeSlug = animeSlug
         )
-
-        // 240p Low
-        resolved.add(
-            DownloadStreamOption(
-                quality = "240p Low",
-                sizeText = "95 MB",
-                directUrl = "https://metflix.org/stream/$cleanTitle/240p.mp4",
-                availableLanguages = langs
-            )
-        )
-
-        // Return strictly the available resolved direct streams
-        return resolved
     }
 }

@@ -118,7 +118,11 @@ private fun Details(
                     onSeasonSelected = onSeasonSelected,
                     onEpisodeClick = { season, episode ->
                         goToMoviePlayer(season, episode)
-                    }
+                    },
+                    seriesTitle = movieDetails.name,
+                    seriesTmdbId = movieDetails.id,
+                    seriesImdbId = movieDetails.imdbId,
+                    releaseYear = movieDetails.releaseDate.take(4)
                 )
             }
         }

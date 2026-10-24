@@ -52,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
 import com.example.metflix.data.settings.DownloadPreferences
 import com.example.metflix.data.util.MediaDownloader
+import com.example.metflix.data.util.MediaDownloaderProvider
 import com.example.metflix.presentation.common.DownloadStreamOption
 import com.example.metflix.presentation.common.MediaDownloadDialog
 import androidx.compose.ui.focus.focusRestorer
@@ -84,6 +85,10 @@ fun TvSeasonsAndEpisodesSection(
     selectedSeasonNumber: Int,
     onSeasonSelected: (Int) -> Unit,
     onEpisodeClick: (seasonNumber: Int, episodeNumber: Int) -> Unit,
+    seriesTitle: String = "",
+    seriesTmdbId: String = "",
+    seriesImdbId: String? = null,
+    releaseYear: String = "",
     modifier: Modifier = Modifier
 ) {
     if (seasons.isEmpty()) return
@@ -147,7 +152,7 @@ fun TvSeasonsAndEpisodesSection(
         // Episodes Horizontal Carousel
         var selectedDownloadEpisode by remember { mutableStateOf<TvEpisode?>(null) }
         val context = LocalContext.current
-        val mediaDownloader = remember { MediaDownloader(context, DownloadPreferences(context)) }
+        val mediaDownloader = remember(context) { MediaDownloaderProvider.get(context) }
 
         if (episodes.isEmpty()) {
             Text(
@@ -176,23 +181,38 @@ fun TvSeasonsAndEpisodesSection(
         }
 
         selectedDownloadEpisode?.let { ep ->
-            val title = "S${ep.seasonNumber} E${ep.episodeNumber}: ${ep.name}"
+            val displayTitle = if (seriesTitle.isNotBlank()) {
+                "$seriesTitle S${ep.seasonNumber}E${ep.episodeNumber}: ${ep.name}"
+            } else {
+                "S${ep.seasonNumber} E${ep.episodeNumber}: ${ep.name}"
+            }
             MediaDownloadDialog(
-                title = title,
+                title = displayTitle,
                 posterUrl = ep.stillUri,
                 resolveStreams = {
                     DownloadStreamResolver.resolveActualStreams(
-                        title = title,
-                        availableLanguages = listOf("Hindi", "English")
+                        context = context,
+                        title = seriesTitle.ifBlank { ep.name },
+                        availableLanguages = listOf("Hindi", "English"),
+                        tmdbId = seriesTmdbId,
+                        imdbId = seriesImdbId,
+                        releaseYear = releaseYear,
+                        isTvShow = true,
+                        season = ep.seasonNumber,
+                        episode = ep.episodeNumber
                     )
                 },
                 onDismiss = { selectedDownloadEpisode = null },
                 onStartDownload = { option, langs ->
                     mediaDownloader.enqueueDownload(
-                        catalogTitle = title,
+                        catalogTitle = displayTitle,
                         directUrl = option.directUrl,
                         selectedQuality = option.quality,
-                        selectedLanguages = langs
+                        selectedLanguages = langs,
+                        mediaId = "${seriesTmdbId.ifBlank { seriesTitle }}_s${ep.seasonNumber}e${ep.episodeNumber}",
+                        mediaType = "SERIES",
+                        seasonNumber = ep.seasonNumber,
+                        episodeNumber = ep.episodeNumber
                     )
                 }
             )

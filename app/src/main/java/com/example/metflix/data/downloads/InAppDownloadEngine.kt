@@ -17,12 +17,15 @@
 package com.example.metflix.data.downloads
 
 import android.content.Context
+import android.os.StatFs
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -145,25 +148,25 @@ class InAppDownloadEngine @Inject constructor(
     }
 
     fun cancelDownload(mediaId: String) {
+        val job = activeJobs.remove(mediaId)
         activeCalls[mediaId]?.cancel()
         activeCalls.remove(mediaId)
-        activeJobs[mediaId]?.cancel()
-        activeJobs.remove(mediaId)
 
-        activeStreamsMap[mediaId]?.let { state ->
+        scope.launch {
+            job?.cancelAndJoin()
+            activeStreamsMap.remove(mediaId)
+            _activeDownloads.value = activeStreamsMap.toMap()
+            downloadStore.removeTask(mediaId)
+
             try {
                 val stored = downloadStore.storedTasks.value.find { it.mediaId == mediaId }
-                val partPath = stored?.partFilePath ?: "${state.mediaId}.part"
+                val partPath = stored?.partFilePath ?: "$mediaId.part"
                 val partFile = File(partPath)
                 if (partFile.exists()) partFile.delete()
             } catch (_: Exception) {}
+
+            InAppDownloadService.checkAutoStop(context)
         }
-
-        activeStreamsMap.remove(mediaId)
-        _activeDownloads.value = activeStreamsMap.toMap()
-        downloadStore.removeTask(mediaId)
-
-        InAppDownloadService.checkAutoStop(context)
     }
 
     private fun startDownloadStream(task: StoredDownloadTask) {
@@ -230,6 +233,14 @@ class InAppDownloadEngine @Inject constructor(
                     if (!isPartial) {
                         raf.setLength(0)
                         if (totalBytes > 0) {
+                            val targetDir = partFile.parentFile ?: context.filesDir
+                            val statFs = StatFs(targetDir.path)
+                            val availableBytes = statFs.availableBytes
+                            if (availableBytes < totalBytes) {
+                                Log.e(TAG, "Insufficient storage space: required $totalBytes bytes, available $availableBytes bytes")
+                                updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.FAILED)
+                                return@withContext
+                            }
                             try {
                                 raf.setLength(totalBytes)
                             } catch (e: Exception) {
@@ -319,8 +330,10 @@ class InAppDownloadEngine @Inject constructor(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Stream error for ${task.title}: ${e.message}")
-            updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.FAILED)
+            if (coroutineContext.isActive) {
+                Log.e(TAG, "Stream error for ${task.title}: ${e.message}")
+                updateState(task, downloadedBytes, totalBytes, 0L, 0L, DownloadStatus.FAILED)
+            }
         } finally {
             InAppDownloadService.checkAutoStop(context)
         }

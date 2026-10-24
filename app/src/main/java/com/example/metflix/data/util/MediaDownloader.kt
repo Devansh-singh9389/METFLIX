@@ -28,16 +28,37 @@ import com.example.metflix.data.downloads.DownloadedItem
 import com.example.metflix.data.downloads.InAppDownloadEngine
 import com.example.metflix.data.downloads.InAppDownloadStore
 import com.example.metflix.data.settings.DownloadPreferences
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface MediaDownloaderEntryPoint {
+    fun mediaDownloader(): MediaDownloader
+}
+
+object MediaDownloaderProvider {
+    fun get(context: Context): MediaDownloader {
+        val appContext = context.applicationContext
+        return EntryPointAccessors.fromApplication(
+            appContext,
+            MediaDownloaderEntryPoint::class.java
+        ).mediaDownloader()
+    }
+}
+
 @Singleton
 class MediaDownloader @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val downloadPreferences: DownloadPreferences
+    private val downloadPreferences: DownloadPreferences,
+    private val inAppDownloadEngine: InAppDownloadEngine
 ) {
     companion object {
         private const val TAG = "MediaDownloader"
@@ -107,14 +128,7 @@ class MediaDownloader @Inject constructor(
                 "${mediaId}_${selectedQuality.replace(" ", "")}"
             }
 
-            val engine = InAppDownloadEngine.instance
-                ?: InAppDownloadEngine(
-                    context,
-                    OkHttpClient(),
-                    InAppDownloadStore.instance ?: InAppDownloadStore(context)
-                )
-
-            val downloadId = engine.enqueueDownload(
+            val downloadId = inAppDownloadEngine.enqueueDownload(
                 mediaId = uniqueId,
                 title = catalogTitle,
                 directUrl = directUrl,

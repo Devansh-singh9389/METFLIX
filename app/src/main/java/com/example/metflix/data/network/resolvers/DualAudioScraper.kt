@@ -2,6 +2,7 @@ package com.example.metflix.data.network.resolvers
 
 import android.util.Base64
 import android.util.Log
+import com.example.metflix.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -73,11 +74,12 @@ class DualAudioScraper @Inject constructor(
         imdbId: String? = null
     ): ResolvedStream? = withContext(Dispatchers.IO) {
         val path = if (isTvShow) "tv/$tmdbId/$season/$episode" else "movie/$tmdbId"
-        val endpoints = mutableListOf(
-            "http://10.227.10.225:8787/api/streams/$path",
-            "http://127.0.0.1:8787/api/streams/$path",
-            "https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/$path"
-        )
+        val endpoints = mutableListOf<String>()
+        if (BuildConfig.DEBUG) {
+            endpoints.add("http://10.227.10.225:8787/api/streams/$path")
+            endpoints.add("http://127.0.0.1:8787/api/streams/$path")
+            endpoints.add("https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/$path")
+        }
 
         // Add MediaFusion public Stremio stream addon when media ID or IMDb ID is available
         val mediaId = imdbId?.takeIf { it.isNotBlank() } ?: tmdbId

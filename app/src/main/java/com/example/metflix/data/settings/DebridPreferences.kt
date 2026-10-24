@@ -63,31 +63,38 @@ class DebridPreferences @Inject constructor(
     /**
      * Hardware-backed Android KeyStore encryption for API keys
      */
-    private fun getOrCreateSecretKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        if (!keyStore.containsAlias(KEYSTORE_ALIAS)) {
-            val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-            keyGenerator.init(
-                KeyGenParameterSpec.Builder(
-                    KEYSTORE_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+    private fun getOrCreateSecretKey(): SecretKey? {
+        return runCatching {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (!keyStore.containsAlias(KEYSTORE_ALIAS)) {
+                val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+                keyGenerator.init(
+                    KeyGenParameterSpec.Builder(
+                        KEYSTORE_ALIAS,
+                        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                    )
+                        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                        .setRandomizedEncryptionRequired(true)
+                        .build()
                 )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setRandomizedEncryptionRequired(true)
-                    .build()
-            )
-            return keyGenerator.generateKey()
+                keyGenerator.generateKey()
+            } else {
+                val entry = keyStore.getEntry(KEYSTORE_ALIAS, null) as KeyStore.SecretKeyEntry
+                entry.secretKey
+            }
+        }.getOrElse { e ->
+            Log.e(TAG, "Hardware KeyStore initialization failed: ${e.message}")
+            null
         }
-        val entry = keyStore.getEntry(KEYSTORE_ALIAS, null) as KeyStore.SecretKeyEntry
-        return entry.secretKey
     }
 
     private fun encrypt(plainText: String): String? {
         if (plainText.isBlank()) return ""
         return try {
+            val key = getOrCreateSecretKey() ?: return null
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
+            cipher.init(Cipher.ENCRYPT_MODE, key)
             val iv = cipher.iv
             val encryptedBytes = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
             val buffer = ByteBuffer.allocate(iv.size + encryptedBytes.size)
@@ -103,6 +110,7 @@ class DebridPreferences @Inject constructor(
     private fun decrypt(encryptedText: String): String? {
         if (encryptedText.isBlank()) return ""
         return try {
+            val key = getOrCreateSecretKey() ?: return null
             val combined = Base64.decode(encryptedText, Base64.NO_WRAP)
             if (combined.size <= GCM_IV_LENGTH) return null
             val buffer = ByteBuffer.wrap(combined)
@@ -113,7 +121,7 @@ class DebridPreferences @Inject constructor(
 
             val cipher = Cipher.getInstance(TRANSFORMATION)
             val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), spec)
+            cipher.init(Cipher.DECRYPT_MODE, key, spec)
             String(cipher.doFinal(cipherBytes), Charsets.UTF_8)
         } catch (e: Exception) {
             Log.w(TAG, "Hardware KeyStore decryption failed: ${e.message}")

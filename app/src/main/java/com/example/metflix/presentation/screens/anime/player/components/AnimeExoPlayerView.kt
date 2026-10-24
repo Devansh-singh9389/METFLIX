@@ -291,6 +291,7 @@ fun AnimeExoPlayerView(
     DisposableEffect(Unit) {
         onDispose {
             exoPlayer.stop()
+            exoPlayer.clearMediaItems()
             exoPlayer.release()
         }
     }

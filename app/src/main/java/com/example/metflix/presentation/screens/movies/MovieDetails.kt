@@ -57,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import com.example.metflix.data.settings.DownloadPreferences
 import com.example.metflix.data.util.MediaDownloader
+import com.example.metflix.data.util.MediaDownloaderProvider
 import com.example.metflix.presentation.common.DownloadStreamOption
 import com.example.metflix.presentation.common.MediaDownloadDialog
 import com.example.metflix.presentation.utils.PlayerResolver
@@ -136,6 +137,9 @@ fun MovieDetails(
                     movieTitle = movieDetails.name,
                     isTvShow = movieDetails.isTvShow,
                     posterUri = movieDetails.posterUri,
+                    tmdbId = movieDetails.id,
+                    imdbId = movieDetails.imdbId,
+                    releaseYear = movieDetails.releaseDate.take(4),
                     goToMoviePlayer = goToMoviePlayer
                 )
             }
@@ -148,12 +152,15 @@ private fun PlaybackActionButtonsRow(
     movieTitle: String,
     isTvShow: Boolean = false,
     posterUri: String? = null,
+    tmdbId: String = "",
+    imdbId: String? = null,
+    releaseYear: String = "",
     modifier: Modifier = Modifier,
     goToMoviePlayer: () -> Unit
 ) {
     val context = LocalContext.current
     var showDownloadDialog by remember { mutableStateOf(false) }
-    val mediaDownloader = remember { MediaDownloader(context, DownloadPreferences(context)) }
+    val mediaDownloader = remember(context) { MediaDownloaderProvider.get(context) }
 
     Row(
         modifier = modifier.padding(top = 24.dp),
@@ -303,8 +310,15 @@ private fun PlaybackActionButtonsRow(
             posterUrl = posterUri,
             resolveStreams = {
                 DownloadStreamResolver.resolveActualStreams(
+                    context = context,
                     title = movieTitle,
-                    availableLanguages = listOf("Hindi", "English")
+                    availableLanguages = listOf("Hindi", "English"),
+                    tmdbId = tmdbId,
+                    imdbId = imdbId,
+                    releaseYear = releaseYear,
+                    isTvShow = isTvShow,
+                    season = 1,
+                    episode = 1
                 )
             },
             onDismiss = { showDownloadDialog = false },
@@ -314,7 +328,7 @@ private fun PlaybackActionButtonsRow(
                     directUrl = option.directUrl,
                     selectedQuality = option.quality,
                     selectedLanguages = langs,
-                    mediaId = movieTitle,
+                    mediaId = if (tmdbId.isNotBlank()) tmdbId else movieTitle,
                     mediaType = if (isTvShow) "SERIES" else "MOVIE"
                 )
             }

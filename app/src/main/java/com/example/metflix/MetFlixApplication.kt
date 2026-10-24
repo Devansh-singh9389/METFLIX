@@ -41,6 +41,11 @@ import javax.inject.Inject
 @HiltAndroidApp(Application::class)
 class MetFlixApplication : Hilt_MetFlixApplication(), ImageLoaderFactory {
 
+    companion object {
+        lateinit var instance: MetFlixApplication
+            private set
+    }
+
     @Inject
     lateinit var performancePreferences: PerformancePreferences
 
@@ -48,6 +53,7 @@ class MetFlixApplication : Hilt_MetFlixApplication(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         SecureHttpClient.getClient(this)
     }
 

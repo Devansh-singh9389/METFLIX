@@ -324,11 +324,11 @@ class AllDebridProvider @Inject constructor(
             for (target in targetsToResolve.take(3)) {
                 try {
                     val existingTorrent = userTorrentByHash[target.hash]
-                    val torrentId = existingTorrent?.id?.takeIf { it > 0 } ?: run {
+                    val torrentId = existingTorrent?.id?.takeIf { it > 0 } ?: if (cachedMap.containsKey(target.hash)) {
                         val encodedName = URLEncoder.encode(target.name.ifBlank { title }, "UTF-8")
                         val magnet = "magnet:?xt=urn:btih:${target.hash}&dn=$encodedName"
                         torBoxClient.createTorrent(apiKey, magnet)
-                    }
+                    } else null
 
                     if (torrentId == null || torrentId <= 0) continue
 

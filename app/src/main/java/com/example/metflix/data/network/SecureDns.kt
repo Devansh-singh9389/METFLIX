@@ -171,8 +171,7 @@ object SecureDns : Dns {
         if (address.isLoopbackAddress || address.isAnyLocalAddress) return true
         if (host in blacklistedIps) return true
         if (host.startsWith("49.44.") ||
-            host.startsWith("2405:200:") ||
-            host.startsWith("2405:") ||
+            host == "2405:200:1607:2820:41::36" ||
             host == "127.0.0.1" ||
             host == "0.0.0.0" ||
             host == "::1"

@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.PlayArrow
 import com.example.metflix.data.settings.DownloadPreferences
 import com.example.metflix.data.util.MediaDownloader
+import com.example.metflix.data.util.MediaDownloaderProvider
 import com.example.metflix.presentation.common.DownloadStreamOption
 import com.example.metflix.presentation.common.MediaDownloadDialog
 import androidx.compose.runtime.Composable
@@ -252,6 +253,9 @@ private fun AnimeSeriesCatalogContent(
                 episodes = state.currentEpisodes,
                 onSeasonClick = onSeasonClick,
                 onEpisodeClick = onEpisodeClick,
+                seriesTitle = state.title,
+                releaseYear = "",
+                languages = state.languages,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -266,6 +270,9 @@ private fun SeriesEpisodesSection(
     episodes: List<AnimeEpisodeItem>,
     onSeasonClick: (Int) -> Unit,
     onEpisodeClick: (AnimeEpisodeItem) -> Unit,
+    seriesTitle: String = "",
+    releaseYear: String = "",
+    languages: List<String> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val childPadding = rememberChildPadding()
@@ -323,7 +330,7 @@ private fun SeriesEpisodesSection(
         // Horizontal Episode Cards Carousel
         var selectedDownloadEp by remember { mutableStateOf<AnimeEpisodeItem?>(null) }
         val context = LocalContext.current
-        val mediaDownloader = remember { MediaDownloader(context, DownloadPreferences(context)) }
+        val mediaDownloader = remember(context) { MediaDownloaderProvider.get(context) }
 
         if (episodes.isEmpty()) {
             Text(
@@ -352,14 +359,26 @@ private fun SeriesEpisodesSection(
         }
 
         selectedDownloadEp?.let { ep ->
-            val epTitle = ep.title ?: ep.episodeCode ?: "Anime Episode"
+            val epNum = ep.episodeCode?.filter { it.isDigit() }?.toIntOrNull() ?: 1
+            val epTitle = if (seriesTitle.isNotBlank()) {
+                "$seriesTitle - ${ep.title ?: "Episode ${ep.episodeCode ?: epNum}"}"
+            } else {
+                ep.title ?: ep.episodeCode ?: "Anime Episode"
+            }
+            val epSlug = ep.route.removePrefix("/episode/").removePrefix("/").ifEmpty { ep.episodeCode.orEmpty() }
             MediaDownloadDialog(
                 title = epTitle,
                 posterUrl = ep.thumbnail,
                 resolveStreams = {
                     DownloadStreamResolver.resolveActualStreams(
-                        title = epTitle,
-                        availableLanguages = listOf("Hindi", "Japanese", "English")
+                        context = context,
+                        title = seriesTitle.ifBlank { epTitle },
+                        availableLanguages = languages.ifEmpty { listOf("Hindi", "Japanese", "English") },
+                        isAnime = true,
+                        season = selectedSeasonNumber,
+                        episode = epNum,
+                        releaseYear = releaseYear,
+                        animeSlug = epSlug
                     )
                 },
                 onDismiss = { selectedDownloadEp = null },
@@ -368,7 +387,11 @@ private fun SeriesEpisodesSection(
                         catalogTitle = epTitle,
                         directUrl = option.directUrl,
                         selectedQuality = option.quality,
-                        selectedLanguages = langs
+                        selectedLanguages = langs,
+                        mediaId = epSlug.ifBlank { epTitle },
+                        mediaType = "ANIME_EPISODE",
+                        seasonNumber = selectedSeasonNumber,
+                        episodeNumber = epNum
                     )
                 }
             )
@@ -628,7 +651,7 @@ private fun AnimeMovieCatalogContent(
 
                     val context = LocalContext.current
                     var showDownloadDialog by remember { mutableStateOf(false) }
-                    val mediaDownloader = remember { MediaDownloader(context, DownloadPreferences(context)) }
+                    val mediaDownloader = remember(context) { MediaDownloaderProvider.get(context) }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
@@ -674,8 +697,13 @@ private fun AnimeMovieCatalogContent(
                             posterUrl = state.poster,
                             resolveStreams = {
                                 DownloadStreamResolver.resolveActualStreams(
+                                    context = context,
                                     title = state.title,
-                                    availableLanguages = state.languages.ifEmpty { listOf("Hindi", "Japanese", "English") }
+                                    availableLanguages = state.languages.ifEmpty { listOf("Hindi", "Japanese", "English") },
+                                    isAnime = true,
+                                    isTvShow = false,
+                                    releaseYear = state.releaseYear,
+                                    animeSlug = state.slug
                                 )
                             },
                             onDismiss = { showDownloadDialog = false },

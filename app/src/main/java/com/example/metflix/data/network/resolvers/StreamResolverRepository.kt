@@ -19,6 +19,7 @@ package com.example.metflix.data.network.resolvers
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import com.example.metflix.BuildConfig
 import com.example.metflix.data.repositories.LiveTvRepository
 import java.nio.ByteBuffer
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -31,8 +32,12 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import com.example.metflix.data.entities.MediaId
+import com.example.metflix.data.entities.StreamFormat
+import com.example.metflix.data.network.anime.AnimeApiClient
 import com.example.metflix.data.settings.DebridPreferences
 import com.example.metflix.data.settings.DebridProviderType
+import com.example.metflix.presentation.common.DownloadStreamOption
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -50,6 +55,7 @@ class StreamResolverRepository @Inject constructor(
     private val liveTvRepository: LiveTvRepository,
     private val dualAudioScraper: DualAudioScraper,
     private val animeScraper: AnimeScraper,
+    private val animeApiClient: AnimeApiClient,
     private val streamRankingEngine: StreamRankingEngine,
     private val debridPreferences: DebridPreferences
 ) {
@@ -150,6 +156,224 @@ class StreamResolverRepository @Inject constructor(
                 )
             )
         }
+
+    private fun isKnownWebEmbed(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.contains("/embed/") ||
+                lower.contains("vidlink.pro") ||
+                lower.contains("multiembed.mov") ||
+                lower.contains("autoembed") ||
+                lower.contains("2embed")
+    }
+
+    /**
+     * Resolves direct, authentic downloadable streams for a media item across scrapers
+     * and providers (AllDebrid, TorBox, DualAudio, AnimeWorld, AnimeApiClient).
+     */
+    suspend fun resolveDownloadStreams(
+        mediaId: MediaId,
+        title: String,
+        releaseYear: String = "",
+        preferredLanguages: List<String> = listOf("Hindi", "English"),
+        animeSlug: String? = null
+    ): List<DownloadStreamOption> = withContext(Dispatchers.IO) {
+        val options = mutableListOf<DownloadStreamOption>()
+
+        // 1. If Anime, query AnimeApiClient backend directly (e.g. your-name, episode slugs)
+        if (mediaId is MediaId.Anime) {
+            val slug = animeSlug?.trim()?.ifEmpty { null }
+                ?: title.lowercase().replace(" ", "-").replace(":", "").replace(".", "")
+            try {
+                if (mediaId.seasonNumber > 1 || mediaId.episodeNumber > 1 || slug.contains("episode") || slug.contains("-ep-")) {
+                    val epResult = animeApiClient.getEpisodeData(slug).getOrNull()
+                    if (epResult != null) {
+                        epResult.vlcUrl?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
+                            options.add(
+                                DownloadStreamOption(
+                                    quality = "1080p FHD",
+                                    sizeText = "Backend Stream",
+                                    directUrl = directUrl,
+                                    availableLanguages = preferredLanguages,
+                                    format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
+                                )
+                            )
+                        }
+                        epResult.streamingServers.forEach { server ->
+                            server.directStreamUrl?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
+                                val langs = if (server.audio.isNullOrBlank()) preferredLanguages else listOf(server.audio)
+                                options.add(
+                                    DownloadStreamOption(
+                                        quality = "1080p HD",
+                                        sizeText = server.serverName ?: "Anime Stream",
+                                        directUrl = directUrl,
+                                        availableLanguages = langs,
+                                        format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
+                                    )
+                                )
+                            }
+                            server.decodedStreams?.forEach { dec ->
+                                dec.link?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
+                                    val langs = if (dec.language.isNullOrBlank()) preferredLanguages else listOf(dec.language)
+                                    options.add(
+                                        DownloadStreamOption(
+                                            quality = "720p HD",
+                                            sizeText = server.serverName ?: "Direct Stream",
+                                            directUrl = directUrl,
+                                            availableLanguages = langs,
+                                            format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    val movieResult = animeApiClient.getMovieData(slug).getOrNull()
+                    if (movieResult != null) {
+                        movieResult.vlcUrl?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
+                            options.add(
+                                DownloadStreamOption(
+                                    quality = "1080p FHD",
+                                    sizeText = "Backend Stream",
+                                    directUrl = directUrl,
+                                    availableLanguages = movieResult.languages.ifEmpty { preferredLanguages },
+                                    format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
+                                )
+                            )
+                        }
+                        movieResult.streamingServers.forEach { server ->
+                            server.directStreamUrl?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
+                                val langs = if (server.audio.isNullOrBlank()) movieResult.languages.ifEmpty { preferredLanguages } else listOf(server.audio)
+                                options.add(
+                                    DownloadStreamOption(
+                                        quality = "1080p HD",
+                                        sizeText = server.serverName ?: "Anime Stream",
+                                        directUrl = directUrl,
+                                        availableLanguages = langs,
+                                        format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
+                                    )
+                                )
+                            }
+                            server.decodedStreams?.forEach { dec ->
+                                dec.link?.takeIf { it.isNotBlank() && !isKnownWebEmbed(it) }?.let { directUrl ->
+                                    val langs = if (dec.language.isNullOrBlank()) movieResult.languages.ifEmpty { preferredLanguages } else listOf(dec.language)
+                                    options.add(
+                                        DownloadStreamOption(
+                                            quality = "720p HD",
+                                            sizeText = server.serverName ?: "Direct Stream",
+                                            directUrl = directUrl,
+                                            availableLanguages = langs,
+                                            format = if (directUrl.contains(".mkv")) "MKV" else "MP4"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Anime backend lookup skipped or failed: ${e.message}")
+            }
+        }
+
+        // 2. Query StreamRankingEngine across all registered scrapers (AllDebrid, TorBox, DualAudio, AnimeWorld)
+        try {
+            val candidates = streamRankingEngine.collectAndRankCandidates(
+                mediaId = mediaId,
+                title = title,
+                releaseYear = releaseYear,
+                preferHindi = true
+            )
+
+            val directCandidates = candidates.filter { candidate ->
+                candidate.streamUrl.isNotBlank() &&
+                        candidate.isDirectStream &&
+                        !isKnownWebEmbed(candidate.streamUrl)
+            }
+
+            for (candidate in directCandidates) {
+                val formatStr = when (candidate.format) {
+                    StreamFormat.MKV -> "MKV"
+                    StreamFormat.MP4 -> "MP4"
+                    StreamFormat.HLS -> "HLS"
+                    else -> if (candidate.streamUrl.contains(".mkv", ignoreCase = true)) "MKV" else "MP4"
+                }
+                options.add(
+                    DownloadStreamOption(
+                        quality = candidate.quality.ifBlank { "1080p HD" },
+                        sizeText = candidate.providerName.ifBlank { "Direct Stream" },
+                        directUrl = candidate.streamUrl,
+                        availableLanguages = candidate.reportedLanguages.ifEmpty { preferredLanguages },
+                        format = formatStr
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error collecting candidates from StreamRankingEngine: ${e.message}")
+        }
+
+        // 3. Fallbacks if still empty
+        if (options.isEmpty()) {
+            try {
+                when (mediaId) {
+                    is MediaId.Anime -> {
+                        val fallback = resolveAnime(
+                            tmdbId = "anime_download",
+                            animeTitle = title,
+                            season = mediaId.seasonNumber,
+                            episode = mediaId.absoluteEpisodeNumber ?: mediaId.episodeNumber,
+                            server = availableServers.first { it.id == "anime" }
+                        )
+                        if (fallback.isDirectStream && !isKnownWebEmbed(fallback.streamUrl)) {
+                            options.add(
+                                DownloadStreamOption(
+                                    quality = "1080p HD",
+                                    sizeText = "AnimeWorld Direct",
+                                    directUrl = fallback.streamUrl,
+                                    availableLanguages = fallback.audioLanguages.ifEmpty { preferredLanguages },
+                                    format = if (fallback.streamUrl.contains(".mkv")) "MKV" else "MP4"
+                                )
+                            )
+                        }
+                    }
+                    is MediaId.Movie, is MediaId.TvShow -> {
+                        val dummyServer = availableServers.first { it.id == "dualaudio" }
+                        val isTv = mediaId is MediaId.TvShow
+                        val season = (mediaId as? MediaId.TvShow)?.seasonNumber ?: 1
+                        val ep = (mediaId as? MediaId.TvShow)?.episodeNumber ?: 1
+                        val tmdbId = (mediaId as? MediaId.Movie)?.tmdbId ?: (mediaId as? MediaId.TvShow)?.tmdbId.orEmpty()
+                        val imdbId = (mediaId as? MediaId.Movie)?.imdbId ?: (mediaId as? MediaId.TvShow)?.imdbId
+
+                        val fallback = resolveDualAudio(
+                            tmdbId = tmdbId,
+                            movieTitle = title,
+                            releaseYear = releaseYear,
+                            server = dummyServer,
+                            isTvShow = isTv,
+                            season = season,
+                            episode = ep,
+                            imdbId = imdbId
+                        )
+                        if (fallback.isDirectStream && !isKnownWebEmbed(fallback.streamUrl)) {
+                            options.add(
+                                DownloadStreamOption(
+                                    quality = "1080p HD",
+                                    sizeText = "Dual-Audio Direct",
+                                    directUrl = fallback.streamUrl,
+                                    availableLanguages = fallback.audioLanguages.ifEmpty { preferredLanguages },
+                                    format = if (fallback.streamUrl.contains(".mkv")) "MKV" else "MP4"
+                                )
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Download direct fallback failed: ${e.message}")
+            }
+        }
+
+        options.distinctBy { it.directUrl }
+    }
 
     /**
      * Resolves a video stream for a given movie using the requested or default server.
@@ -1315,11 +1539,12 @@ class StreamResolverRepository @Inject constructor(
         imdbId: String? = null
     ): ResolvedStream = withContext(Dispatchers.IO) {
         val path = if (isTvShow) "tv/$tmdbId/$season/$episode" else "movie/$tmdbId"
-        val endpoints = mutableListOf(
-            "http://10.227.10.225:8787/api/streams/$path",
-            "http://127.0.0.1:8787/api/streams/$path",
-            "https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/$path"
-        )
+        val endpoints = mutableListOf<String>()
+        if (BuildConfig.DEBUG) {
+            endpoints.add("http://10.227.10.225:8787/api/streams/$path")
+            endpoints.add("http://127.0.0.1:8787/api/streams/$path")
+            endpoints.add("https://representative-grams-take-incoming.trycloudflare.com:8787/api/streams/$path")
+        }
         val mediaId = imdbId?.takeIf { it.isNotBlank() } ?: tmdbId
         if (mediaId.isNotBlank()) {
             val stremioPath = if (isTvShow) "series/$mediaId:$season:$episode.json" else "movie/$mediaId.json"

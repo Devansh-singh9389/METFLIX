@@ -123,7 +123,9 @@ class AnimeStreamSniffer @Inject constructor(
                     }
                 }
 
-                continuation.invokeOnCancellation { cleanup() }
+                continuation.invokeOnCancellation {
+                    mainHandler.post { cleanup() }
+                }
 
                 try {
                     val wv = createSnifferWebView(
