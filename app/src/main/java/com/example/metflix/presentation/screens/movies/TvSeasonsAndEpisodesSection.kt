@@ -91,6 +91,7 @@ fun TvSeasonsAndEpisodesSection(
     selectedSeasonNumber: Int,
     onSeasonSelected: (Int) -> Unit,
     onEpisodeClick: (seasonNumber: Int, episodeNumber: Int) -> Unit,
+    onPlayOffline: (sessionId: String) -> Unit = {},
     seriesTitle: String = "",
     seriesTmdbId: String = "",
     seriesImdbId: String? = null,
@@ -177,9 +178,21 @@ fun TvSeasonsAndEpisodesSection(
                     .focusRestorer()
             ) {
                 items(episodes, key = { "${it.seasonNumber}_${it.episodeNumber}_${it.id}" }) { episode ->
+                    val downloadedItem = remember(episode.id, episode.seasonNumber, episode.episodeNumber, seriesTitle) {
+                        DownloadedCatalogRepository.instance?.findDownloaded(episode.id, episode.seasonNumber, episode.episodeNumber)
+                            ?: DownloadedCatalogRepository.instance?.findDownloaded(seriesTitle, episode.seasonNumber, episode.episodeNumber)
+                    }
+                    val isEpDownloaded = downloadedItem != null
                     TvEpisodeCard(
                         episode = episode,
-                        onClick = { onEpisodeClick(episode.seasonNumber, episode.episodeNumber) },
+                        isDownloaded = isEpDownloaded,
+                        onClick = {
+                            if (downloadedItem != null) {
+                                onPlayOffline(downloadedItem.id)
+                            } else {
+                                onEpisodeClick(episode.seasonNumber, episode.episodeNumber)
+                            }
+                        },
                         onDownloadClick = { selectedDownloadEpisode = episode }
                     )
                 }
@@ -210,6 +223,17 @@ fun TvSeasonsAndEpisodesSection(
                 },
                 onDismiss = { selectedDownloadEpisode = null },
                 onStartDownload = { option, langs ->
+                    val epJson = org.json.JSONObject().apply {
+                        put("title", displayTitle)
+                        put("seriesTitle", seriesTitle)
+                        put("seriesTmdbId", seriesTmdbId)
+                        put("seasonNumber", ep.seasonNumber)
+                        put("episodeNumber", ep.episodeNumber)
+                        put("poster", ep.stillUri.orEmpty())
+                        put("overview", ep.overview.orEmpty())
+                        put("type", "series")
+                    }.toString()
+
                     mediaDownloader.enqueueDownload(
                         catalogTitle = displayTitle,
                         directUrl = option.directUrl,
@@ -219,7 +243,8 @@ fun TvSeasonsAndEpisodesSection(
                         mediaType = "SERIES",
                         seasonNumber = ep.seasonNumber,
                         episodeNumber = ep.episodeNumber,
-                        posterUrl = ep.stillUri ?: ""
+                        posterUrl = ep.stillUri ?: "",
+                        catalogJson = epJson
                     )
                 }
             )
@@ -232,7 +257,8 @@ private fun TvEpisodeCard(
     episode: TvEpisode,
     onClick: () -> Unit,
     onDownloadClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isDownloaded: Boolean = false
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -398,7 +424,7 @@ private fun TvEpisodeCard(
                     }
                 }
 
-                val isEpDownloaded = remember(episode.id, episode.seasonNumber, episode.episodeNumber) {
+                val effectiveDownloaded = isDownloaded || remember(episode.id, episode.seasonNumber, episode.episodeNumber) {
                     DownloadedCatalogRepository.instance?.isDownloaded(
                         mediaId = episode.id,
                         seasonNumber = episode.seasonNumber,
@@ -419,23 +445,25 @@ private fun TvEpisodeCard(
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Play", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(if (effectiveDownloaded) "Play Offline" else "Play", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
-                    Button(
-                        onClick = onDownloadClick,
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (isEpDownloaded) Color(0xFF2E7D32) else Color(0xFF2C2C35)
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            if (isEpDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (isEpDownloaded) "Saved" else "Save", fontSize = 11.sp)
+                    if (!effectiveDownloaded) {
+                        Button(
+                            onClick = onDownloadClick,
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color(0xFF2C2C35)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Save", fontSize = 11.sp)
+                        }
                     }
                 }
             }

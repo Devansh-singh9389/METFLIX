@@ -305,10 +305,15 @@ private fun Body(
             Screens.Downloads.name -> {
                 DownloadsLibraryScreen(
                     onOpenCatalog = { item ->
+                        val cleanSlug = when {
+                            item.mediaId.contains("_") -> item.mediaId.substringBefore("_")
+                            else -> item.mediaId
+                        }
                         if (item.mediaType.contains("ANIME", ignoreCase = true)) {
-                            openAnimeCatalog("series", item.mediaId)
+                            val type = if (item.mediaType.contains("MOVIE", ignoreCase = true)) "movie" else "series"
+                            openAnimeCatalog(type, cleanSlug)
                         } else {
-                            openMovieDetailsScreen(item.mediaId)
+                            openMovieDetailsScreen(cleanSlug)
                         }
                     },
                     onPlayOffline = { localPath, _ ->

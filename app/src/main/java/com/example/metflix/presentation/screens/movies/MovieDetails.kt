@@ -85,7 +85,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun MovieDetails(
     movieDetails: MovieDetails,
-    goToMoviePlayer: () -> Unit
+    goToMoviePlayer: () -> Unit,
+    onPlayOffline: (sessionId: String) -> Unit = {}
 ) {
     val childPadding = rememberChildPadding()
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
@@ -140,7 +141,8 @@ fun MovieDetails(
                     tmdbId = movieDetails.id,
                     imdbId = movieDetails.imdbId,
                     releaseYear = movieDetails.releaseDate.take(4),
-                    goToMoviePlayer = goToMoviePlayer
+                    goToMoviePlayer = goToMoviePlayer,
+                    onPlayOffline = onPlayOffline
                 )
             }
         }
@@ -156,55 +158,104 @@ private fun PlaybackActionButtonsRow(
     imdbId: String? = null,
     releaseYear: String = "",
     modifier: Modifier = Modifier,
-    goToMoviePlayer: () -> Unit
+    goToMoviePlayer: () -> Unit,
+    onPlayOffline: (sessionId: String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showDownloadDialog by remember { mutableStateOf(false) }
     val mediaDownloader = remember(context) { MediaDownloaderProvider.get(context) }
+
+    val downloadedItem = remember(tmdbId, movieTitle) {
+        com.example.metflix.data.downloads.DownloadedCatalogRepository.instance?.findDownloaded(tmdbId)
+            ?: com.example.metflix.data.downloads.DownloadedCatalogRepository.instance?.findDownloaded(movieTitle)
+    }
+    val isDownloaded = downloadedItem != null
 
     Row(
         modifier = modifier.padding(top = 24.dp),
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Button(
-            onClick = goToMoviePlayer,
-            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-            shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
-            colors = ButtonDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                focusedContainerColor = MaterialTheme.colorScheme.onPrimary
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.PlayArrow,
-                contentDescription = null
-            )
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = if (isTvShow) "Play S1 E1" else "Play Movie",
-                style = MaterialTheme.typography.titleSmall
-            )
-        }
+        if (isDownloaded) {
+            Button(
+                onClick = { onPlayOffline(downloadedItem!!.id) },
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
+                colors = ButtonDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    focusedContainerColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.PlayArrow,
+                    contentDescription = null
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = "Play Offline",
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
 
-        Button(
-            onClick = { showDownloadDialog = true },
-            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-            shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
-            colors = ButtonDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                focusedContainerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.Download,
-                contentDescription = null
-            )
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = "Download",
-                style = MaterialTheme.typography.titleSmall
-            )
+            Button(
+                onClick = goToMoviePlayer,
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
+                colors = ButtonDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    focusedContainerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.PlayArrow,
+                    contentDescription = null
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = "Watch Online",
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+        } else {
+            Button(
+                onClick = goToMoviePlayer,
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
+                colors = ButtonDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    focusedContainerColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.PlayArrow,
+                    contentDescription = null
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = if (isTvShow) "Play S1 E1" else "Play Movie",
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+
+            Button(
+                onClick = { showDownloadDialog = true },
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                shape = ButtonDefaults.shape(shape = MetFlixButtonShape),
+                colors = ButtonDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    focusedContainerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = null
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = "Download",
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
         }
 
         Button(
@@ -325,6 +376,15 @@ private fun PlaybackActionButtonsRow(
             },
             onDismiss = { showDownloadDialog = false },
             onStartDownload = { option, langs ->
+                val fullJson = org.json.JSONObject().apply {
+                    put("title", movieTitle)
+                    put("tmdbId", tmdbId)
+                    put("imdbId", imdbId ?: "")
+                    put("poster", posterUri.orEmpty())
+                    put("releaseYear", releaseYear)
+                    put("type", if (isTvShow) "series" else "movie")
+                }.toString()
+
                 mediaDownloader.enqueueDownload(
                     catalogTitle = movieTitle,
                     directUrl = option.directUrl,
@@ -332,7 +392,8 @@ private fun PlaybackActionButtonsRow(
                     selectedLanguages = langs,
                     mediaId = if (tmdbId.isNotBlank()) tmdbId else movieTitle,
                     mediaType = if (isTvShow) "SERIES" else "MOVIE",
-                    posterUrl = posterUri.orEmpty()
+                    posterUrl = posterUri.orEmpty(),
+                    catalogJson = fullJson
                 )
             }
         )

@@ -82,6 +82,9 @@ fun App(
                         val targetArg = if (season > 0 && episode > 0) "$movieId:$season:$episode" else movieId
                         navController.navigate(Screens.VideoPlayer.withArgs(targetArg))
                     },
+                    onPlayOffline = { sessionId ->
+                        navController.navigate(Screens.CachedVideoPlayer.withArgs(sessionId))
+                    },
                     refreshScreenWithNewMovie = { movie ->
                         navController.navigate(
                             Screens.MovieDetails.withArgs(movie.id)
@@ -155,6 +158,9 @@ fun App(
                     onMoviePlayClick = { slug, title ->
                         val cleanSlug = slug.substringAfterLast("/")
                         navController.navigate(Screens.AnimePlayer.withArgs("movie", cleanSlug))
+                    },
+                    onPlayOffline = { sessionId ->
+                        navController.navigate(Screens.CachedVideoPlayer.withArgs(sessionId))
                     },
                     onRecommendedMovieClick = { movie ->
                         val slug = movie.id.substringAfterLast("/")

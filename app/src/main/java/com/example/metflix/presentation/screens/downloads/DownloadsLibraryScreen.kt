@@ -16,6 +16,7 @@
 
 package com.example.metflix.presentation.screens.downloads
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Folder
@@ -41,7 +44,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,8 +73,10 @@ import com.example.metflix.data.downloads.DownloadStatus
 import com.example.metflix.data.downloads.DownloadTracker
 import com.example.metflix.data.downloads.DownloadedCatalogRepository
 import com.example.metflix.data.downloads.DownloadedItem
+import com.example.metflix.data.downloads.MediaOptimizer
 import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import com.example.metflix.presentation.theme.MetFlixCardShape
+import kotlinx.coroutines.launch
 import java.io.File
 
 @Composable
@@ -85,6 +93,8 @@ fun DownloadsLibraryScreen(
         .distinctBy { it.mediaId }
         .filter { it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.PENDING }
     val childPadding = rememberChildPadding()
+    val coroutineScope = rememberCoroutineScope()
+    var optimizingId by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect("DownloadsLibraryScreen") {
         downloadTracker.registerObserver("DownloadsLibraryScreen")
@@ -255,6 +265,7 @@ fun DownloadsLibraryScreen(
                     val item = downloadedItems[index]
                     DownloadedItemCard(
                         item = item,
+                        isOptimizing = optimizingId == item.id,
                         onOpenCatalog = { onOpenCatalog(item) },
                         onPlayOffline = {
                             if (item.localFilePath.isNotBlank() && File(item.localFilePath).exists()) {
@@ -265,11 +276,41 @@ fun DownloadsLibraryScreen(
                                 Toast.makeText(context, "Local file not found at ${item.localFilePath}", Toast.LENGTH_LONG).show()
                             }
                         },
+                        onOptimize = {
+                            if (optimizingId == null) {
+                                optimizingId = item.id
+                                Toast.makeText(context, "Optimizing ${item.title}... Converting stream to standalone video", Toast.LENGTH_SHORT).show()
+                                coroutineScope.launch {
+                                    MediaOptimizer.optimize(
+                                        context = context,
+                                        item = item,
+                                        onProgress = { _, status ->
+                                            Log.d("DownloadsLibraryScreen", "Optimize [${item.title}]: $status")
+                                        }
+                                    ).onSuccess { file ->
+                                        optimizingId = null
+                                        Toast.makeText(context, "Optimized: ${file.name} saved! Ready for VLC", Toast.LENGTH_LONG).show()
+                                    }.onFailure { err ->
+                                        optimizingId = null
+                                        Log.e("DownloadsLibraryScreen", "Optimization failed: ${err.message}", err)
+                                        Toast.makeText(context, "Optimization failed: ${err.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        },
                         onDelete = {
                             try {
                                 if (item.localFilePath.isNotBlank()) {
                                     val f = File(item.localFilePath)
-                                    if (f.exists()) f.delete()
+                                    if (f.exists()) {
+                                        val parent = f.parentFile
+                                        // If stored in dedicated folder, delete folder
+                                        if (parent != null && parent.name.equals(MediaOptimizer.sanitizeFolderName(item.title), ignoreCase = true)) {
+                                            parent.deleteRecursively()
+                                        } else {
+                                            f.delete()
+                                        }
+                                    }
                                 }
                             } catch (_: Exception) {}
                             repository.removeDownloadedItem(item.id)
@@ -285,8 +326,10 @@ fun DownloadsLibraryScreen(
 @Composable
 private fun DownloadedItemCard(
     item: DownloadedItem,
+    isOptimizing: Boolean = false,
     onOpenCatalog: () -> Unit,
     onPlayOffline: () -> Unit,
+    onOptimize: () -> Unit,
     onDelete: () -> Unit
 ) {
     // Auto-fetch poster online via internet using posterUrl/mediaId/slug
@@ -296,6 +339,23 @@ private fun DownloadedItemCard(
             item.mediaId.startsWith("http") -> item.mediaId
             item.mediaId.startsWith("/") -> "https://image.tmdb.org/t/p/w500${item.mediaId}"
             else -> null
+        }
+    }
+
+    val isOptimized = remember(item.localFilePath) {
+        item.localFilePath.isNotBlank() &&
+                (item.localFilePath.endsWith(".mp4", ignoreCase = true) ||
+                 item.localFilePath.endsWith(".mkv", ignoreCase = true) ||
+                 item.localFilePath.endsWith(".ts", ignoreCase = true)) &&
+                File(item.localFilePath).exists()
+    }
+
+    val posterModel = remember(item.localFilePath, onlinePosterUrl) {
+        if (item.localFilePath.isNotBlank()) {
+            val localPoster = File(File(item.localFilePath).parentFile, "poster.jpg")
+            if (localPoster.exists() && localPoster.length() > 0) localPoster else onlinePosterUrl
+        } else {
+            onlinePosterUrl
         }
     }
 
@@ -311,7 +371,7 @@ private fun DownloadedItemCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             AsyncImage(
-                model = onlinePosterUrl,
+                model = posterModel,
                 contentDescription = item.title,
                 modifier = Modifier
                     .size(width = 80.dp, height = 110.dp)
@@ -331,7 +391,10 @@ private fun DownloadedItemCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
                         modifier = Modifier
                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
@@ -342,6 +405,20 @@ private fun DownloadedItemCard(
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary
                         )
+                    }
+
+                    if (isOptimized) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF2E7D32).copy(alpha = 0.25f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Standalone Video",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = Color(0xFF66BB6A)
+                            )
+                        }
                     }
 
                     if (item.languages.isNotEmpty()) {
@@ -385,6 +462,22 @@ private fun DownloadedItemCard(
                         Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Catalog", fontSize = 11.sp)
+                    }
+
+                    // Optimize button appears ONLY when not yet optimized
+                    if (!isOptimized) {
+                        Button(
+                            onClick = onOptimize,
+                            enabled = !isOptimizing,
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color(0xFF6200EA),
+                                focusedContainerColor = Color(0xFF7C4DFF)
+                            )
+                        ) {
+                            Icon(Icons.Default.AutoFixHigh, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (isOptimizing) "Optimizing..." else "Optimize", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
 
                     Button(

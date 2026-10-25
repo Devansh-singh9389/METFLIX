@@ -20,6 +20,8 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.metflix.data.downloads.DownloadedCatalogRepository
+import com.example.metflix.data.downloads.DownloadedItem
 import com.example.metflix.data.entities.Movie
 import com.example.metflix.data.network.anime.models.AnimeEpisodeItem
 import com.example.metflix.data.network.anime.models.AnimeMovieResponse
@@ -115,11 +117,41 @@ class AnimeCatalogViewModel @Inject constructor(
                         recommendations = recs
                     )
                 }.onFailure { err ->
-                    _uiState.value = AnimeCatalogUiState.Error(
-                        message = err.message ?: "Failed to load movie details",
-                        fallbackTitle = knownMovie?.name.orEmpty(),
-                        fallbackPoster = knownMovie?.posterUri.orEmpty()
-                    )
+                    val downloaded = DownloadedCatalogRepository.instance?.findDownloaded(slug)
+                    if (downloaded != null) {
+                        val meta = runCatching {
+                            if (downloaded.catalogJson.isNotBlank()) org.json.JSONObject(downloaded.catalogJson) else null
+                        }.getOrNull()
+                        val title = meta?.optString("title")?.ifBlank { null } ?: downloaded.title
+                        val poster = meta?.optString("poster")?.ifBlank { null } ?: downloaded.posterUrl
+                        val synopsis = meta?.optString("synopsis").orEmpty()
+                        val duration = meta?.optString("duration").orEmpty()
+                        val releaseYear = meta?.optString("releaseYear").orEmpty()
+                        val genresList = mutableListOf<String>()
+                        meta?.optJSONArray("genres")?.let { arr ->
+                            for (i in 0 until arr.length()) {
+                                val g = arr.optString(i)
+                                if (g.isNotBlank()) genresList.add(g)
+                            }
+                        }
+                        _uiState.value = AnimeCatalogUiState.MovieCatalog(
+                            slug = slug,
+                            title = title,
+                            poster = poster,
+                            synopsis = synopsis.ifBlank { "Offline saved movie" },
+                            duration = duration,
+                            releaseYear = releaseYear,
+                            genres = genresList,
+                            languages = downloaded.languages,
+                            recommendations = emptyList()
+                        )
+                    } else {
+                        _uiState.value = AnimeCatalogUiState.Error(
+                            message = err.message ?: "Failed to load movie details",
+                            fallbackTitle = knownMovie?.name.orEmpty(),
+                            fallbackPoster = knownMovie?.posterUri.orEmpty()
+                        )
+                    }
                 }
             } else {
                 val result = animeDataSource.getSeriesData(slug, forceRefresh = forceRefresh)
@@ -140,11 +172,40 @@ class AnimeCatalogViewModel @Inject constructor(
                         currentEpisodes = initialEps
                     )
                 }.onFailure { err ->
-                    _uiState.value = AnimeCatalogUiState.Error(
-                        message = err.message ?: "Failed to load series details",
-                        fallbackTitle = knownMovie?.name.orEmpty(),
-                        fallbackPoster = knownMovie?.posterUri.orEmpty()
-                    )
+                    val downloaded = DownloadedCatalogRepository.instance?.findDownloaded(slug)
+                    if (downloaded != null) {
+                        val meta = runCatching {
+                            if (downloaded.catalogJson.isNotBlank()) org.json.JSONObject(downloaded.catalogJson) else null
+                        }.getOrNull()
+                        val title = meta?.optString("title")?.ifBlank { null } ?: downloaded.title
+                        val poster = meta?.optString("poster")?.ifBlank { null } ?: downloaded.posterUrl
+                        val synopsis = meta?.optString("synopsis").orEmpty()
+                        val genresList = mutableListOf<String>()
+                        meta?.optJSONArray("genres")?.let { arr ->
+                            for (i in 0 until arr.length()) {
+                                val g = arr.optString(i)
+                                if (g.isNotBlank()) genresList.add(g)
+                            }
+                        }
+                        _uiState.value = AnimeCatalogUiState.Series(
+                            slug = slug,
+                            title = title,
+                            poster = poster,
+                            synopsis = synopsis.ifBlank { "Offline saved series" },
+                            genres = genresList,
+                            languages = downloaded.languages,
+                            totalSeasons = 1,
+                            seasons = emptyList(),
+                            selectedSeasonNumber = 1,
+                            currentEpisodes = emptyList()
+                        )
+                    } else {
+                        _uiState.value = AnimeCatalogUiState.Error(
+                            message = err.message ?: "Failed to load series details",
+                            fallbackTitle = knownMovie?.name.orEmpty(),
+                            fallbackPoster = knownMovie?.posterUri.orEmpty()
+                        )
+                    }
                 }
             }
         }

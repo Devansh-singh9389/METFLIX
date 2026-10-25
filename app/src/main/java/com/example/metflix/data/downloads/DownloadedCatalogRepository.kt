@@ -130,14 +130,22 @@ class DownloadedCatalogRepository @Inject constructor(
         saveItems(current)
     }
 
-    fun isDownloaded(mediaId: String, seasonNumber: Int? = null, episodeNumber: Int? = null): Boolean {
-        return _downloadedItems.value.any { item ->
-            val matchesMedia = item.mediaId.equals(mediaId, ignoreCase = true) ||
-                    item.id.equals(mediaId, ignoreCase = true) ||
-                    (seasonNumber != null && episodeNumber != null && (item.mediaId.contains(mediaId, ignoreCase = true) || mediaId.contains(item.mediaId, ignoreCase = true)))
+    fun findDownloaded(key: String, seasonNumber: Int? = null, episodeNumber: Int? = null): DownloadedItem? {
+        if (key.isBlank()) return null
+        return _downloadedItems.value.firstOrNull { item ->
+            val matchesMedia = item.mediaId.equals(key, ignoreCase = true) ||
+                    item.id.equals(key, ignoreCase = true) ||
+                    item.title.equals(key, ignoreCase = true) ||
+                    item.mediaId.startsWith("${key}_", ignoreCase = true) ||
+                    key.startsWith("${item.mediaId}_", ignoreCase = true) ||
+                    (seasonNumber != null && episodeNumber != null && (item.mediaId.contains(key, ignoreCase = true) || key.contains(item.mediaId, ignoreCase = true)))
             val matchesSeason = seasonNumber == null || item.seasonNumber == seasonNumber
             val matchesEpisode = episodeNumber == null || item.episodeNumber == episodeNumber
             matchesMedia && matchesSeason && matchesEpisode
         }
+    }
+
+    fun isDownloaded(mediaId: String, seasonNumber: Int? = null, episodeNumber: Int? = null): Boolean {
+        return findDownloaded(mediaId, seasonNumber, episodeNumber) != null
     }
 }

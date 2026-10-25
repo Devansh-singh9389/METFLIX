@@ -105,6 +105,7 @@ fun AnimeCatalogScreen(
     onEpisodeClick: (episode: AnimeEpisodeItem, seriesTitle: String) -> Unit,
     onMoviePlayClick: (slug: String, title: String) -> Unit,
     onRecommendedMovieClick: (movie: Movie) -> Unit,
+    onPlayOffline: (sessionId: String) -> Unit = {},
     viewModel: AnimeCatalogViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -130,7 +131,8 @@ fun AnimeCatalogScreen(
             AnimeSeriesCatalogContent(
                 state = state,
                 onSeasonClick = { seasonNumber -> viewModel.onSeasonClicked(seasonNumber) },
-                onEpisodeClick = { ep -> onEpisodeClick(ep, state.title) }
+                onEpisodeClick = { ep -> onEpisodeClick(ep, state.title) },
+                onPlayOffline = onPlayOffline
             )
         }
 
@@ -138,6 +140,7 @@ fun AnimeCatalogScreen(
             AnimeMovieCatalogContent(
                 state = state,
                 onPlayClick = { onMoviePlayClick(state.slug, state.title) },
+                onPlayOfflineClick = onPlayOffline,
                 onRecommendedClick = onRecommendedMovieClick
             )
         }
@@ -148,7 +151,8 @@ fun AnimeCatalogScreen(
 private fun AnimeSeriesCatalogContent(
     state: AnimeCatalogUiState.Series,
     onSeasonClick: (seasonNumber: Int) -> Unit,
-    onEpisodeClick: (episode: AnimeEpisodeItem) -> Unit
+    onEpisodeClick: (episode: AnimeEpisodeItem) -> Unit,
+    onPlayOffline: (sessionId: String) -> Unit = {}
 ) {
     val childPadding = rememberChildPadding()
 
@@ -255,6 +259,7 @@ private fun AnimeSeriesCatalogContent(
                 episodes = state.currentEpisodes,
                 onSeasonClick = onSeasonClick,
                 onEpisodeClick = onEpisodeClick,
+                onPlayOffline = onPlayOffline,
                 seriesTitle = state.title,
                 releaseYear = "",
                 languages = state.languages,
@@ -272,6 +277,7 @@ private fun SeriesEpisodesSection(
     episodes: List<AnimeEpisodeItem>,
     onSeasonClick: (Int) -> Unit,
     onEpisodeClick: (AnimeEpisodeItem) -> Unit,
+    onPlayOffline: (sessionId: String) -> Unit = {},
     seriesTitle: String = "",
     releaseYear: String = "",
     languages: List<String> = emptyList(),
@@ -351,9 +357,30 @@ private fun SeriesEpisodesSection(
                     .focusRestorer()
             ) {
                 items(episodes, key = { it.route.ifEmpty { it.episodeCode.orEmpty() } }) { ep ->
+                    val epSlug = ep.route.removePrefix("/episode/").removePrefix("/").ifEmpty { ep.episodeCode.orEmpty() }
+                    val epNum = ep.episodeCode?.filter { it.isDigit() }?.toIntOrNull() ?: 1
+                    val epTitle = if (seriesTitle.isNotBlank()) {
+                        "$seriesTitle - ${ep.title ?: "Episode ${ep.episodeCode ?: epNum}"}"
+                    } else {
+                        ep.title ?: ep.episodeCode ?: "Anime Episode"
+                    }
+                    val downloadedItem = remember(epSlug, epTitle, selectedSeasonNumber, epNum) {
+                        DownloadedCatalogRepository.instance?.findDownloaded(epSlug, selectedSeasonNumber, epNum)
+                            ?: DownloadedCatalogRepository.instance?.findDownloaded(epTitle, selectedSeasonNumber, epNum)
+                            ?: DownloadedCatalogRepository.instance?.findDownloaded(epSlug)
+                            ?: DownloadedCatalogRepository.instance?.findDownloaded(epTitle)
+                    }
+
                     EpisodeCard(
                         episode = ep,
-                        onClick = { onEpisodeClick(ep) },
+                        isDownloaded = downloadedItem != null,
+                        onClick = {
+                            if (downloadedItem != null) {
+                                onPlayOffline(downloadedItem.id)
+                            } else {
+                                onEpisodeClick(ep)
+                            }
+                        },
                         onDownloadClick = { selectedDownloadEp = ep }
                     )
                 }
@@ -385,6 +412,17 @@ private fun SeriesEpisodesSection(
                 },
                 onDismiss = { selectedDownloadEp = null },
                 onStartDownload = { option, langs ->
+                    val epJson = org.json.JSONObject().apply {
+                        put("title", epTitle)
+                        put("slug", epSlug)
+                        put("seriesTitle", seriesTitle)
+                        put("seasonNumber", selectedSeasonNumber)
+                        put("episodeNumber", epNum)
+                        put("thumbnail", ep.thumbnail.orEmpty())
+                        
+                        put("type", "series")
+                    }.toString()
+
                     mediaDownloader.enqueueDownload(
                         catalogTitle = epTitle,
                         directUrl = option.directUrl,
@@ -394,7 +432,8 @@ private fun SeriesEpisodesSection(
                         mediaType = "ANIME_EPISODE",
                         seasonNumber = selectedSeasonNumber,
                         episodeNumber = epNum,
-                        posterUrl = ep.thumbnail.orEmpty()
+                        posterUrl = ep.thumbnail.orEmpty(),
+                        catalogJson = epJson
                     )
                 }
             )
@@ -407,7 +446,8 @@ private fun EpisodeCard(
     episode: AnimeEpisodeItem,
     onClick: () -> Unit,
     onDownloadClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isDownloaded: Boolean = false
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -551,9 +591,10 @@ private fun EpisodeCard(
                 }
             }
 
-            val isDownloaded = remember(episode.route, episode.episodeCode) {
-                val key = episode.route.ifEmpty { episode.episodeCode.orEmpty() }
-                DownloadedCatalogRepository.instance?.isDownloaded(mediaId = key) ?: false
+            val effectiveDownloaded = isDownloaded || remember(episode.route, episode.episodeCode, episode.title) {
+                val key = episode.route.removePrefix("/episode/").removePrefix("/").ifEmpty { episode.episodeCode.orEmpty() }
+                DownloadedCatalogRepository.instance?.findDownloaded(key) != null
+                    || DownloadedCatalogRepository.instance?.findDownloaded(episode.title ?: "") != null
             }
 
             Spacer(Modifier.height(4.dp))
@@ -571,23 +612,25 @@ private fun EpisodeCard(
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(11.dp))
                     Spacer(Modifier.width(2.dp))
-                    Text("Play", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(if (effectiveDownloaded) "Play Offline" else "Play", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
 
-                Button(
-                    onClick = onDownloadClick,
-                    colors = ButtonDefaults.colors(
-                        containerColor = if (isDownloaded) Color(0xFF2E7D32) else Color(0xFF2C2C35)
-                    ),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(11.dp)
-                    )
-                    Spacer(Modifier.width(2.dp))
-                    Text(if (isDownloaded) "Saved" else "Save", fontSize = 10.sp)
+                if (!effectiveDownloaded) {
+                    Button(
+                        onClick = onDownloadClick,
+                        colors = ButtonDefaults.colors(
+                            containerColor = Color(0xFF2C2C35)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Text("Save", fontSize = 10.sp)
+                    }
                 }
             }
         }
@@ -619,6 +662,7 @@ private fun LiveProgressBar(
 private fun AnimeMovieCatalogContent(
     state: AnimeCatalogUiState.MovieCatalog,
     onPlayClick: () -> Unit,
+    onPlayOfflineClick: (sessionId: String) -> Unit,
     onRecommendedClick: (Movie) -> Unit
 ) {
     val childPadding = rememberChildPadding()
@@ -696,41 +740,84 @@ private fun AnimeMovieCatalogContent(
                     val context = LocalContext.current
                     var showDownloadDialog by remember { mutableStateOf(false) }
                     val mediaDownloader = remember(context) { MediaDownloaderProvider.get(context) }
+                    val downloadedItem = remember(state.slug, state.title) {
+                        DownloadedCatalogRepository.instance?.findDownloaded(state.slug)
+                            ?: DownloadedCatalogRepository.instance?.findDownloaded(state.title)
+                    }
+                    val isDownloaded = downloadedItem != null
 
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = onPlayClick,
-                            colors = ButtonDefaults.colors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        if (isDownloaded) {
+                            Button(
+                                onClick = { onPlayOfflineClick(downloadedItem!!.id) },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ),
+                                shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
                             ) {
-                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                                Text(text = "Watch Movie", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                    Text(text = "Play Offline", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                }
                             }
-                        }
 
-                        Button(
-                            onClick = { showDownloadDialog = true },
-                            colors = ButtonDefaults.colors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            Button(
+                                onClick = onPlayClick,
+                                colors = ButtonDefaults.colors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
                             ) {
-                                Icon(imageVector = Icons.Default.Download, contentDescription = null)
-                                Text(text = "Download Movie", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                    Text(text = "Watch Online", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = onPlayClick,
+                                colors = ButtonDefaults.colors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ),
+                                shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                    Text(text = "Watch Movie", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                }
+                            }
+
+                            Button(
+                                onClick = { showDownloadDialog = true },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = ButtonDefaults.shape(RoundedCornerShape(12.dp))
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Download, contentDescription = null)
+                                    Text(text = "Download Movie", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                }
                             }
                         }
                     }
@@ -752,6 +839,17 @@ private fun AnimeMovieCatalogContent(
                             },
                             onDismiss = { showDownloadDialog = false },
                             onStartDownload = { option, langs ->
+                                val movieJson = org.json.JSONObject().apply {
+                                    put("title", state.title)
+                                    put("slug", state.slug)
+                                    put("poster", state.poster.orEmpty())
+                                    put("genres", org.json.JSONArray(state.genres))
+                                    put("synopsis", state.synopsis)
+                                    
+                                    put("releaseYear", state.releaseYear)
+                                    put("type", "movie")
+                                }.toString()
+
                                 mediaDownloader.enqueueDownload(
                                     catalogTitle = state.title,
                                     directUrl = option.directUrl,
@@ -759,7 +857,8 @@ private fun AnimeMovieCatalogContent(
                                     selectedLanguages = langs,
                                     mediaId = state.slug.ifBlank { state.title },
                                     mediaType = "ANIME_MOVIE",
-                                    posterUrl = state.poster.orEmpty()
+                                    posterUrl = state.poster.orEmpty(),
+                                    catalogJson = movieJson
                                 )
                             }
                         )

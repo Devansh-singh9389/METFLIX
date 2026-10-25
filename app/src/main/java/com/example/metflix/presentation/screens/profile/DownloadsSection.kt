@@ -62,7 +62,6 @@ fun DownloadsSection(
     val preferredLanguages by downloadPreferences.preferredLanguages.collectAsStateWithLifecycle()
     val alwaysAsk by downloadPreferences.alwaysAsk.collectAsStateWithLifecycle()
 
-    var showLocationPicker by remember { mutableStateOf(false) }
     var showTvFolderPicker by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -84,18 +83,20 @@ fun DownloadsSection(
                 Environment.DIRECTORY_DOWNLOADS -> "Downloads Folder (Default)"
                 Environment.DIRECTORY_MOVIES -> "Movies Folder"
                 else -> {
-                    customLocations.find { it.second == downloadLocation }?.first ?: "Custom Storage Folder"
+                    customLocations.find { it.second == downloadLocation }?.first
+                        ?: File(downloadLocation).name.ifBlank { downloadLocation }
                 }
             }
 
             ListItem(
                 modifier = Modifier.padding(top = 8.dp),
                 selected = false,
-                onClick = { showLocationPicker = true },
+                onClick = { showTvFolderPicker = true },
                 trailingContent = {
                     Text(
                         text = "$displayName ▾",
-                        style = MaterialTheme.typography.labelLarge
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 },
                 headlineContent = {
@@ -106,7 +107,7 @@ fun DownloadsSection(
                 },
                 supportingContent = {
                     Text(
-                        text = "Select default destination directory or browse device to add custom folder.",
+                        text = "Location: $downloadLocation",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -234,100 +235,23 @@ fun DownloadsSection(
         }
     }
 
-    if (showLocationPicker) {
-        Dialog(onDismissRequest = { showLocationPicker = false }) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "Select Storage Download Location",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                    )
-
-                    Button(
-                        onClick = {
-                            downloadPreferences.setDownloadLocation(Environment.DIRECTORY_DOWNLOADS)
-                            showLocationPicker = false
-                            Toast.makeText(context, "Set to Downloads Folder", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (downloadLocation == Environment.DIRECTORY_DOWNLOADS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Text(if (downloadLocation == Environment.DIRECTORY_DOWNLOADS) "✓ Downloads Folder (Default)" else "Downloads Folder (Default)")
-                    }
-
-                    Button(
-                        onClick = {
-                            downloadPreferences.setDownloadLocation(Environment.DIRECTORY_MOVIES)
-                            showLocationPicker = false
-                            Toast.makeText(context, "Set to Movies Folder", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (downloadLocation == Environment.DIRECTORY_MOVIES) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Text(if (downloadLocation == Environment.DIRECTORY_MOVIES) "✓ Movies Folder" else "Movies Folder")
-                    }
-
-                    customLocations.forEach { loc ->
-                        val isSelected = downloadLocation == loc.second
-                        Button(
-                            onClick = {
-                                downloadPreferences.setDownloadLocation(loc.second)
-                                showLocationPicker = false
-                                Toast.makeText(context, "Set to ${loc.first}", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.colors(
-                                containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            Text(if (isSelected) "✓ ${loc.first}" else loc.first)
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            showLocationPicker = false
-                            showTvFolderPicker = true
-                        },
-                        colors = ButtonDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
-                    ) {
-                        Text("+ Add Custom Folder (In-App Folder Browser)", fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = { showLocationPicker = false },
-                        colors = ButtonDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp)
-                        )
-                    ) {
-                        Text("Cancel")
-                    }
-                }
-            }
-        }
-    }
-
     if (showTvFolderPicker) {
         val initialFile = remember(downloadLocation) {
-            if (downloadLocation.startsWith("/")) File(downloadLocation)
-            else Environment.getExternalStorageDirectory()
+            when {
+                downloadLocation.startsWith("/") -> File(downloadLocation)
+                downloadLocation.equals(Environment.DIRECTORY_MOVIES, ignoreCase = true) ->
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+                else -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            }
         }
         TvFolderPickerDialog(
-            initialDirectory = initialFile,
+            initialDirectory = initialFile ?: Environment.getExternalStorageDirectory(),
             onDismissRequest = { showTvFolderPicker = false },
             onFolderSelected = { chosenFolder ->
                 showTvFolderPicker = false
-                downloadPreferences.addCustomLocation(chosenFolder.name, chosenFolder.absolutePath)
-                Toast.makeText(context, "Added storage location: ${chosenFolder.name}", Toast.LENGTH_SHORT).show()
+                val chosenName = chosenFolder.name.ifBlank { chosenFolder.absolutePath }
+                downloadPreferences.addCustomLocation(chosenName, chosenFolder.absolutePath)
+                Toast.makeText(context, "Storage location set to: $chosenName", Toast.LENGTH_SHORT).show()
             }
         )
     }

@@ -56,6 +56,7 @@ fun MovieDetailsScreen(
     goToMoviePlayer: (season: Int, episode: Int) -> Unit,
     onBackPressed: () -> Unit,
     refreshScreenWithNewMovie: (Movie) -> Unit,
+    onPlayOffline: (sessionId: String) -> Unit = {},
     movieDetailsScreenViewModel: MovieDetailsScreenViewModel = hiltViewModel()
 ) {
     val uiState by movieDetailsScreenViewModel.uiState.collectAsStateWithLifecycle()
@@ -76,6 +77,7 @@ fun MovieDetailsScreen(
                 selectedSeason = selectedSeason,
                 onSeasonSelected = movieDetailsScreenViewModel::onSeasonSelected,
                 goToMoviePlayer = goToMoviePlayer,
+                onPlayOffline = onPlayOffline,
                 onBackPressed = onBackPressed,
                 refreshScreenWithNewMovie = refreshScreenWithNewMovie,
                 modifier = Modifier
@@ -94,6 +96,7 @@ private fun Details(
     goToMoviePlayer: (season: Int, episode: Int) -> Unit,
     onBackPressed: () -> Unit,
     refreshScreenWithNewMovie: (Movie) -> Unit,
+    onPlayOffline: (sessionId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val childPadding = rememberChildPadding()
@@ -106,7 +109,8 @@ private fun Details(
         item {
             MovieDetails(
                 movieDetails = movieDetails,
-                goToMoviePlayer = { goToMoviePlayer(1, 1) }
+                goToMoviePlayer = { goToMoviePlayer(1, 1) },
+                onPlayOffline = onPlayOffline
             )
         }
 
@@ -119,6 +123,7 @@ private fun Details(
                     onEpisodeClick = { season, episode ->
                         goToMoviePlayer(season, episode)
                     },
+                    onPlayOffline = onPlayOffline,
                     seriesTitle = movieDetails.name,
                     seriesTmdbId = movieDetails.id,
                     seriesImdbId = movieDetails.imdbId,
