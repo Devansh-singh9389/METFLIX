@@ -108,7 +108,8 @@ import com.example.metflix.presentation.screens.livetv.player.components.LiveTvN
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvSettingsOverlay
 import com.example.metflix.presentation.screens.livetv.player.components.LiveTvStatsOverlay
 import com.example.metflix.presentation.screens.videoPlayer.components.VideoPlayerBufferingSpinner
-import com.example.metflix.presentation.screens.videoPlayer.components.rememberPlayer
+import com.example.metflix.presentation.screens.livetv.player.components.rememberLiveTvPlayer
+import com.example.metflix.presentation.screens.livetv.player.components.LiveTvStreamEngine
 import com.example.metflix.presentation.theme.MetFlixCardShape
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -164,7 +165,8 @@ private fun LiveTvPlayerContent(
 ) {
     val context = LocalContext.current
     val deviceProfile = remember { DeviceCapabilityManager().profile }
-    val exoPlayer = rememberPlayer(context, state.currentChannel.requestHeaders)
+    val exoPlayer = rememberLiveTvPlayer(context)
+    var isUsingFallbackStream by remember(state.currentChannel.id) { mutableStateOf(false) }
 
     var isDrawerOpen by remember { mutableStateOf(false) }
     var isSettingsOpen by remember { mutableStateOf(false) }
@@ -389,8 +391,20 @@ private fun LiveTvPlayerContent(
                 playbackError = streamSelection.blockedReason
                 return
             }
+            val targetStreamUrl = if (isUsingFallbackStream && !state.currentChannel.fallbackStreamUrl.isNullOrBlank()) {
+                state.currentChannel.fallbackStreamUrl!!
+            } else {
+                streamSelection.url
+            }
+
             val mediaItemBuilder = MediaItem.Builder()
-                .setUri(Uri.parse(streamSelection.url))
+                .setUri(Uri.parse(targetStreamUrl))
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setMinPlaybackSpeed(0.97f)
+                        .setMaxPlaybackSpeed(1.05f)
+                        .build()
+                )
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setTitle(state.currentChannel.name)
@@ -428,8 +442,12 @@ private fun LiveTvPlayerContent(
                 }
                 .build()
             val mediaItem = mediaItemBuilder.build()
-
-            exoPlayer.setMediaItem(mediaItem)
+            val mediaSource = LiveTvStreamEngine.createLiveMediaSource(
+                context = context,
+                mediaItem = mediaItem,
+                headers = state.currentChannel.requestHeaders
+            )
+            exoPlayer.setMediaSource(mediaSource)
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
         } catch (e: Exception) {
@@ -538,6 +556,15 @@ private fun LiveTvPlayerContent(
                     "LiveTvPlayerScreen",
                     "Playback failed code=${error.errorCode} name=${error.errorCodeName}: $causeChain"
                 )
+                // Automatic stream failover to backup mirror if available
+                if (!isUsingFallbackStream && !state.currentChannel.fallbackStreamUrl.isNullOrBlank()) {
+                    Log.i("LiveTvPlayerScreen", "Primary stream failed. Auto-failing over to fallback stream: ${state.currentChannel.fallbackStreamUrl}")
+                    isUsingFallbackStream = true
+                    android.widget.Toast.makeText(context, "Switching to backup live stream...", android.widget.Toast.LENGTH_SHORT).show()
+                    loadCurrentStream(isAutoRetry = true)
+                    return
+                }
+
                 isBuffering = false
                 if (isTerminalPlaybackError(error)) {
                     isReconnecting = false
