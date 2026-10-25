@@ -83,7 +83,7 @@ fun App(
                         navController.navigate(Screens.VideoPlayer.withArgs(targetArg))
                     },
                     onPlayOffline = { sessionId ->
-                        navController.navigate(Screens.CachedVideoPlayer.withArgs(sessionId))
+                        navController.navigate(Screens.CachedVideoPlayer.withArgs(android.net.Uri.encode(sessionId)))
                     },
                     refreshScreenWithNewMovie = { movie ->
                         navController.navigate(
@@ -123,7 +123,7 @@ fun App(
                         navController.navigate(Screens.VideoPlayer.withArgs(movie.id))
                     },
                     openCachedPlayback = { sessionId ->
-                        navController.navigate(Screens.CachedVideoPlayer.withArgs(sessionId))
+                        navController.navigate(Screens.CachedVideoPlayer.withArgs(android.net.Uri.encode(sessionId)))
                     },
                     openLiveTvPlayer = { channelId ->
                         navController.navigate(
@@ -160,7 +160,7 @@ fun App(
                         navController.navigate(Screens.AnimePlayer.withArgs("movie", cleanSlug))
                     },
                     onPlayOffline = { sessionId ->
-                        navController.navigate(Screens.CachedVideoPlayer.withArgs(sessionId))
+                        navController.navigate(Screens.CachedVideoPlayer.withArgs(android.net.Uri.encode(sessionId)))
                     },
                     onRecommendedMovieClick = { movie ->
                         val slug = movie.id.substringAfterLast("/")
@@ -241,8 +241,10 @@ fun App(
                     }
                 )
             ) { backStackEntry ->
+                val rawSessionId = backStackEntry.arguments?.getString("sessionId").orEmpty()
+                val decodedSessionId = android.net.Uri.decode(rawSessionId)
                 CachedVideoPlayerScreen(
-                    sessionId = backStackEntry.arguments?.getString("sessionId").orEmpty(),
+                    sessionId = decodedSessionId,
                     onBackPressed = {
                         if (navController.navigateUp()) {
                             isComingBackFromDifferentScreen = true

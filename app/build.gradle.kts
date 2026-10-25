@@ -153,12 +153,14 @@ dependencies {
     // Networking & DNS-over-HTTPS (DoH)
     implementation(libs.okhttp)
 
-    // Media3 (video player)
+    // Media3 (video player & transformer)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
 
     // Kotlinx Serialization
     implementation(libs.kotlinx.serialization.json)

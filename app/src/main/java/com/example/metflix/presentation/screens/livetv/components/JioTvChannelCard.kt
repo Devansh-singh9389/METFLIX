@@ -136,40 +136,6 @@ fun JioTvChannelCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                if (channel.name.contains("FHD", ignoreCase = true) || channel.name.contains("4K", ignoreCase = true)) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .background(Color(0xFFE50914).copy(alpha = 0.25f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = "FHD",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFF5252),
-                                fontSize = 9.sp
-                            )
-                        )
-                    }
-                } else if (channel.name.contains("HD", ignoreCase = true)) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .background(Color(0xFF1976D2).copy(alpha = 0.25f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = "HD",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF64B5F6),
-                                fontSize = 9.sp
-                            )
-                        )
-                    }
-                }
-
                 Spacer(modifier = Modifier.weight(1f))
 
                 if (channel.isFavorite) {

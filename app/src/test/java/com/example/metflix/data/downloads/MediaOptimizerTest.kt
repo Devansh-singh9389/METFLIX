@@ -138,4 +138,20 @@ class MediaOptimizerTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun testBuildMetadataJson_containsMp4Path() {
+        val dummyMp4 = File("C:/Downloads/Naruto/Naruto.mp4")
+        val item = DownloadedItem(
+            id = "sess_naruto",
+            mediaId = "naruto_ep1",
+            title = "Naruto - Episode 1",
+            mediaType = "ANIME_EPISODE",
+            localFilePath = dummyMp4.absolutePath,
+            posterUrl = "https://example.com/naruto.jpg"
+        )
+        val jsonStr = MediaOptimizer.buildMetadataJson(item, dummyMp4)
+        assertTrue(jsonStr.contains("Naruto.mp4"))
+        assertTrue(jsonStr.contains("mp4Path"))
+    }
 }

@@ -53,8 +53,7 @@ sealed interface DownloadedMediaGroup {
             get() = episodes.isNotEmpty() && episodes.all { ep ->
                 ep.localFilePath.isNotBlank() &&
                         (ep.localFilePath.endsWith(".mp4", ignoreCase = true) ||
-                         ep.localFilePath.endsWith(".mkv", ignoreCase = true) ||
-                         ep.localFilePath.endsWith(".ts", ignoreCase = true)) &&
+                         ep.localFilePath.endsWith(".mkv", ignoreCase = true)) &&
                         File(ep.localFilePath).exists()
             }
     }

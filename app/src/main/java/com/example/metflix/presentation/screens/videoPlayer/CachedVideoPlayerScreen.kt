@@ -57,20 +57,22 @@ class CachedVideoPlayerViewModel @Inject constructor(
     private val preferences: DebridPreferences
 ) : ViewModel() {
     fun get(sessionId: String): CachedPlaybackSession? {
-        val torBoxSession = sessionStore.get(sessionId)
+        val decodedId = Uri.decode(sessionId)
+        val torBoxSession = sessionStore.get(decodedId) ?: sessionStore.get(sessionId)
         if (torBoxSession != null) return torBoxSession
 
-        val file = File(sessionId)
-        if (file.exists()) {
+        val file = listOf(File(decodedId), File(sessionId)).firstOrNull { it.exists() && it.length() > 0 }
+        if (file != null) {
             return CachedPlaybackSession(
                 url = Uri.fromFile(file).toString(),
-                title = file.name,
+                title = file.nameWithoutExtension,
                 torrentId = 0,
                 fileId = null
             )
         }
 
         val downloaded = DownloadedCatalogRepository.instance?.downloadedItems?.value?.find {
+            it.localFilePath == decodedId || it.id == decodedId || it.mediaId == decodedId ||
             it.localFilePath == sessionId || it.id == sessionId || it.mediaId == sessionId
         }
         if (downloaded != null) {

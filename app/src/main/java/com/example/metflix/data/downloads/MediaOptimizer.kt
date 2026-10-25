@@ -20,13 +20,27 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.util.Log
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.ProgressHolder
+import androidx.media3.transformer.Transformer
 import com.example.metflix.data.player.MediaCacheManager
 import com.example.metflix.data.settings.DownloadPreferences
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -37,6 +51,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
+import kotlin.coroutines.resume
 
 object MediaOptimizer {
     private const val TAG = "MediaOptimizer"
@@ -115,13 +130,14 @@ object MediaOptimizer {
 
             val cleanTitle = sanitizeFolderName(item.title)
             val dedicatedFolder = File(targetDir, cleanTitle).apply { mkdirs() }
-            val finalVideoFile = File(dedicatedFolder, "$cleanTitle.mkv")
+            val isProgressiveMp4 = item.localFilePath.endsWith(".mp4", ignoreCase = true) || item.directUrl.contains(".mp4", ignoreCase = true)
+            val finalVideoFile = File(dedicatedFolder, "$cleanTitle.mp4")
 
-            // 1. If final standalone file already exists and is valid, return early
+            // 1. If final standalone MP4/MKV file already exists and is valid, return early
             val existingFinal = listOf(
                 finalVideoFile,
                 File(dedicatedFolder, "$cleanTitle.mp4"),
-                File(dedicatedFolder, "$cleanTitle.ts")
+                File(dedicatedFolder, "$cleanTitle.mkv")
             ).firstOrNull { it.exists() && it.length() > 5 * 1024 * 1024L }
 
             if (existingFinal != null) {
@@ -131,18 +147,39 @@ object MediaOptimizer {
                 return@runCatching existingFinal
             }
 
-            // 2. Check if localFilePath already points to an existing progressive MP4/MKV file
+            // 2. Check if localFilePath already points to an existing file
             if (item.localFilePath.isNotBlank()) {
                 val existingFile = File(item.localFilePath)
                 if (existingFile.exists() && existingFile.length() > 5 * 1024 * 1024L) {
-                    onProgress(40, "Organizing standalone video file...")
-                    if (existingFile.absolutePath != finalVideoFile.absolutePath) {
-                        existingFile.copyTo(finalVideoFile, overwrite = true)
+                    if (existingFile.name.endsWith(".mp4", ignoreCase = true) || existingFile.name.endsWith(".mkv", ignoreCase = true)) {
+                        onProgress(40, "Organizing standalone video file...")
+                        if (existingFile.absolutePath != finalVideoFile.absolutePath) {
+                            existingFile.copyTo(finalVideoFile, overwrite = true)
+                        }
+                        saveMetadataAndPoster(context, dedicatedFolder, item, finalVideoFile)
+                        updateRepository(item, finalVideoFile)
+                        onProgress(100, "Optimized!")
+                        return@runCatching finalVideoFile
+                    } else if (existingFile.name.endsWith(".ts", ignoreCase = true)) {
+                        // Upgrade existing .ts file (like Naruto) directly to .mp4 with full seeking and audio!
+                        onProgress(40, "Upgrading TS to seekable MP4 via Media3...")
+                        val transmuxSuccess = transmuxToMp4(
+                            context = context,
+                            videoTsFile = existingFile,
+                            audioTsFile = null,
+                            outputMp4File = finalVideoFile,
+                            onProgress = onProgress
+                        )
+                        if (transmuxSuccess && finalVideoFile.exists() && finalVideoFile.length() > 1024 * 500L) {
+                            if (existingFile.absolutePath != finalVideoFile.absolutePath) {
+                                runCatching { existingFile.delete() }
+                            }
+                            saveMetadataAndPoster(context, dedicatedFolder, item, finalVideoFile)
+                            updateRepository(item, finalVideoFile)
+                            onProgress(100, "Optimized: Standalone MP4 ready!")
+                            return@runCatching finalVideoFile
+                        }
                     }
-                    saveMetadataAndPoster(context, dedicatedFolder, item, finalVideoFile)
-                    updateRepository(item, finalVideoFile)
-                    onProgress(100, "Optimized!")
-                    return@runCatching finalVideoFile
                 }
             }
 
@@ -177,17 +214,29 @@ object MediaOptimizer {
                     throw IllegalStateException("Failed to extract video stream from cache")
                 }
 
-                // Multiplex Video & Audio streams using pure Kotlin Transport Stream multiplexer
-                // 100% crash-proof: eliminates native MediaMuxer SIGABRT crashes on Android TV
-                onProgress(75, "Multiplexing video and audio streams...")
-                val multiplexSuccess = multiplexStreams(
+                // Transmux Video & Audio streams to MP4 using Google Media3 Transformer (hardware-accelerated, 0% CPU re-encoding)
+                onProgress(75, "Transmuxing streams to seekable MP4...")
+                val audioInput = if (tempAudioTs.exists() && tempAudioTs.length() > 188L) tempAudioTs else null
+                var transmuxSuccess = transmuxToMp4(
+                    context = context,
                     videoTsFile = tempVideoTs,
-                    audioTsFile = if (tempAudioTs.exists() && tempAudioTs.length() > 188L) tempAudioTs else null,
-                    outputFile = finalVideoFile,
+                    audioTsFile = audioInput,
+                    outputMp4File = finalVideoFile,
                     onProgress = onProgress
                 )
 
-                if (!multiplexSuccess || !finalVideoFile.exists() || finalVideoFile.length() < 1024 * 100) {
+                if (!transmuxSuccess || !finalVideoFile.exists() || finalVideoFile.length() < 1024 * 100) {
+                    Log.w(TAG, "Media3 Transformer fallback engaged for ${item.title}")
+                    onProgress(80, "Applying fallback multiplexer...")
+                    multiplexStreams(
+                        videoTsFile = tempVideoTs,
+                        audioTsFile = audioInput,
+                        outputFile = finalVideoFile,
+                        onProgress = onProgress
+                    )
+                }
+
+                if (!finalVideoFile.exists() || finalVideoFile.length() < 1024 * 100) {
                     throw IllegalStateException("Failed to multiplex streams into standalone video")
                 }
 
@@ -195,12 +244,14 @@ object MediaOptimizer {
                 onProgress(90, "Saving metadata and poster in folder...")
                 saveMetadataAndPoster(context, dedicatedFolder, item, finalVideoFile)
 
-                // Purge raw stream cache to free device storage
-                onProgress(95, "Purging raw stream cache...")
-                purgeStreamCache(context, manifestContent)
-
-                // Update repository
+                // Update repository FIRST
                 updateRepository(item, finalVideoFile)
+
+                // Purge raw stream cache to free device storage ONLY IF final file is verified
+                if (finalVideoFile.exists() && finalVideoFile.length() > 1024 * 500L) {
+                    onProgress(95, "Purging raw stream cache...")
+                    purgeStreamCache(context, manifestContent)
+                }
                 onProgress(100, "Optimized: Standalone video ready!")
                 finalVideoFile
             } finally {
@@ -378,6 +429,89 @@ object MediaOptimizer {
         return out.toByteArray()
     }
 
+    @OptIn(UnstableApi::class)
+    suspend fun transmuxToMp4(
+        context: Context,
+        videoTsFile: File,
+        audioTsFile: File?,
+        outputMp4File: File,
+        onProgress: (percent: Int, status: String) -> Unit = { _, _ -> }
+    ): Boolean {
+        return try {
+            if (outputMp4File.exists()) {
+                outputMp4File.delete()
+            }
+            withContext(Dispatchers.Main) {
+                suspendCancellableCoroutine<Boolean> { continuation ->
+                    try {
+                        val listener = object : Transformer.Listener {
+                            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                                Log.i(TAG, "Transformer completed: ${outputMp4File.name} (${outputMp4File.length()} bytes)")
+                                if (continuation.isActive) continuation.resume(true)
+                            }
+
+                            override fun onError(
+                                composition: Composition,
+                                exportResult: ExportResult,
+                                exception: ExportException
+                            ) {
+                                Log.e(TAG, "Transformer error: ${exception.message}", exception)
+                                if (continuation.isActive) continuation.resume(false)
+                            }
+                        }
+
+                        val transformer = Transformer.Builder(context.applicationContext)
+                            .addListener(listener)
+                            .build()
+
+                        val videoItem = EditedMediaItem.Builder(
+                            MediaItem.fromUri(Uri.fromFile(videoTsFile))
+                        ).build()
+
+                        val progressJob = CoroutineScope(Dispatchers.Main).launch {
+                            val progressHolder = ProgressHolder()
+                            while (continuation.isActive) {
+                                delay(250)
+                                if (!continuation.isActive) break
+                                val state = transformer.getProgress(progressHolder)
+                                if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
+                                    val pct = 75 + ((progressHolder.progress / 100f) * 15).toInt()
+                                    onProgress(pct, "Transmuxing to MP4 ($pct%)...")
+                                }
+                            }
+                        }
+
+                        continuation.invokeOnCancellation {
+                            progressJob.cancel()
+                            runCatching { transformer.cancel() }
+                        }
+
+                        if (audioTsFile != null && audioTsFile.exists() && audioTsFile.length() > 188L) {
+                            val audioItem = EditedMediaItem.Builder(
+                                MediaItem.fromUri(Uri.fromFile(audioTsFile))
+                            ).build()
+                            val composition = Composition.Builder(
+                                listOf(
+                                    EditedMediaItemSequence.Builder(listOf(videoItem)).build(),
+                                    EditedMediaItemSequence.Builder(listOf(audioItem)).build()
+                                )
+                            ).build()
+                            transformer.start(composition, outputMp4File.absolutePath)
+                        } else {
+                            transformer.start(videoItem, outputMp4File.absolutePath)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to start transformer: ${e.message}", e)
+                        if (continuation.isActive) continuation.resume(false)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "transmuxToMp4 exception: ${e.message}", e)
+            false
+        }
+    }
+
     fun multiplexStreams(
         videoTsFile: File,
         audioTsFile: File?,
@@ -401,8 +535,8 @@ object MediaOptimizer {
             val totalBytes = videoLength + audioLength
             var bytesProcessed = 0L
 
-            val videoBuf = ByteArray(188 * 340) // ~64 KB
-            val audioBuf = ByteArray(188 * 170) // ~32 KB
+            val videoBuf = ByteArray(188 * 10) // 10 packets (~1.88 KB) for tight interleaving
+            val audioBuf = ByteArray(188 * 1)  // 1 packet (188 B) for synchronized PTS alignment
 
             FileOutputStream(outputFile).buffered(128 * 1024).use { out ->
                 // Write initial PAT and PMT
@@ -463,8 +597,8 @@ object MediaOptimizer {
                                 }
                             }
 
-                            // Periodically re-emit PAT and PMT (approx every 1,000 packets / ~188 KB) for fast player seek recovery
-                            if (packetsSincePatPmt >= 1000) {
+                            // Frequently re-emit PAT and PMT (every 200 packets / ~37 KB) for instant player seek recovery in VLC and ExoPlayer
+                            if (packetsSincePatPmt >= 200) {
                                 out.write(patPacket)
                                 out.write(pmtPacket)
                                 packetsSincePatPmt = 0

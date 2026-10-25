@@ -381,20 +381,7 @@ private fun LiveTvCatalog(
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                     ),
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                val catCount = remember(cat, state.allChannels) {
-                                    when {
-                                        cat.equals("All", ignoreCase = true) -> state.allChannels.size
-                                        cat.equals("Favorites", ignoreCase = true) -> state.allChannels.count { it.isFavorite }
-                                        else -> state.allChannels.count { it.category.equals(cat, ignoreCase = true) }
-                                    }
-                                }
-                                Text(
-                                    text = "$catCount",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f) else Color.Gray
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }

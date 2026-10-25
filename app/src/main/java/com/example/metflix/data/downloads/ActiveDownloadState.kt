@@ -37,8 +37,15 @@ data class ActiveDownloadState(
     val progressPercent: Int = 0,
     val speedBps: Long = 0L,
     val etaSeconds: Long = 0L,
-    val status: DownloadStatus = DownloadStatus.PENDING
+    val status: DownloadStatus = DownloadStatus.PENDING,
+    val partCount: Int = 8
 ) {
+    fun getPartProgress(partIndex: Int): Float {
+        val segmentSize = 100f / partCount
+        val start = partIndex * segmentSize
+        return ((progressPercent - start) / segmentSize).coerceIn(0f, 1f)
+    }
+
     val formattedSpeed: String
         get() {
             if (speedBps <= 0) return "0 KB/s"
@@ -59,6 +66,26 @@ data class ActiveDownloadState(
         get() {
             val currentMb = bytesDownloaded / (1024.0 * 1024.0)
             val totalMb = totalBytes / (1024.0 * 1024.0)
-            return if (totalBytes > 0) String.format(Locale.US, "%.1f MB / %.1f MB (%d%%)", currentMb, totalMb, progressPercent) else "$progressPercent%"
+            return if (totalBytes > 0) {
+                String.format(Locale.US, "%.1f MB / %.1f MB (%d%%)", currentMb, totalMb, progressPercent)
+            } else if (bytesDownloaded > 0) {
+                String.format(Locale.US, "%.1f MB downloaded (%d%%)", currentMb, progressPercent)
+            } else {
+                "$progressPercent%"
+            }
+        }
+
+    val formattedDownloadedSize: String
+        get() {
+            val currentMb = bytesDownloaded / (1024.0 * 1024.0)
+            val currentGb = currentMb / 1024.0
+            return if (currentGb >= 1.0) String.format(Locale.US, "%.2f GB", currentGb) else String.format(Locale.US, "%.1f MB", currentMb)
+        }
+
+    val formattedTotalSize: String
+        get() {
+            val totalMb = totalBytes / (1024.0 * 1024.0)
+            val totalGb = totalMb / 1024.0
+            return if (totalGb >= 1.0) String.format(Locale.US, "%.2f GB", totalGb) else String.format(Locale.US, "%.1f MB", totalMb)
         }
 }

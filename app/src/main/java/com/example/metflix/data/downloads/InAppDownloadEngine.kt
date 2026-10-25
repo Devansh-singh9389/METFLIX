@@ -137,10 +137,19 @@ class InAppDownloadEngine @Inject constructor(
             else -> DownloadStatus.PAUSED
         }
 
-        val total = download.contentLength.takeIf { it > 0 } ?: (stored?.totalBytes ?: 0L)
+        val media3Percent = download.percentDownloaded.takeIf { it in 0.0f..100.0f }?.toInt()
         val downloaded = download.bytesDownloaded.takeIf { it > 0 } ?: (stored?.downloadedBytes ?: 0L)
-        val percent = if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100)
-        else (stored?.downloadedBytes?.let { if (total > 0) ((it * 100) / total).toInt().coerceIn(0, 100) else 0 } ?: download.percentDownloaded.toInt().coerceIn(0, 100))
+        val total = when {
+            download.contentLength > 0 -> download.contentLength
+            stored?.totalBytes != null && stored.totalBytes > 0 -> stored.totalBytes
+            media3Percent != null && media3Percent > 0 && downloaded > 0 -> (downloaded * 100.0 / media3Percent).toLong()
+            else -> 0L
+        }
+        val percent = when {
+            media3Percent != null && media3Percent > 0 -> media3Percent
+            total > 0 && downloaded > 0 -> ((downloaded * 100) / total).toInt().coerceIn(0, 100)
+            else -> 0
+        }
 
         val state = ActiveDownloadState(
             downloadId = downloadId,
@@ -226,10 +235,23 @@ class InAppDownloadEngine @Inject constructor(
                             else -> DownloadStatus.PAUSED
                         }
 
-                        val total = download.contentLength.takeIf { it > 0 } ?: (stored?.totalBytes ?: 0L)
+                        val media3Percent = download.percentDownloaded.takeIf { it in 0.0f..100.0f }?.toInt()
                         val downloaded = download.bytesDownloaded.takeIf { it > 0 } ?: (stored?.downloadedBytes ?: 0L)
-                        val percent = if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100)
-                        else (stored?.downloadedBytes?.let { if (total > 0) ((it * 100) / total).toInt().coerceIn(0, 100) else 0 } ?: download.percentDownloaded.toInt().coerceIn(0, 100))
+                        val total = when {
+                            download.contentLength > 0 -> download.contentLength
+                            stored?.totalBytes != null && stored.totalBytes > 0 -> stored.totalBytes
+                            media3Percent != null && media3Percent > 0 && downloaded > 0 -> (downloaded * 100.0 / media3Percent).toLong()
+                            else -> 0L
+                        }
+                        val percent = when {
+                            media3Percent != null && media3Percent > 0 -> media3Percent
+                            total > 0 && downloaded > 0 -> ((downloaded * 100) / total).toInt().coerceIn(0, 100)
+                            else -> 0
+                        }
+
+                        if (total > 0 && stored != null && stored.totalBytes == 0L) {
+                            downloadStore.saveOrUpdateTask(stored.copy(totalBytes = total, downloadedBytes = downloaded))
+                        }
 
                         // Storage safety check for ultra-low-end devices (<150MB free)
                         if (status == DownloadStatus.RUNNING) {
@@ -259,7 +281,7 @@ class InAppDownloadEngine @Inject constructor(
                         smoothedSpeedMap[mediaId] = speedBps
 
                         val remainingBytes = (total - downloaded).coerceAtLeast(0L)
-                        val etaSeconds = if (speedBps > 0) remainingBytes / speedBps else 0L
+                        val etaSeconds = if (speedBps > 0 && remainingBytes > 0) remainingBytes / speedBps else 0L
 
                         previousBytesMap[mediaId] = downloaded
 
@@ -314,7 +336,8 @@ class InAppDownloadEngine @Inject constructor(
         seasonNumber: Int? = null,
         episodeNumber: Int? = null,
         catalogJson: String = "",
-        posterUrl: String = ""
+        posterUrl: String = "",
+        estimatedTotalBytes: Long = 0L
     ): Long {
         val existing = activeStreamsMap[mediaId]
         if (existing != null && (existing.status == DownloadStatus.RUNNING || existing.status == DownloadStatus.PENDING)) {
@@ -362,7 +385,7 @@ class InAppDownloadEngine @Inject constructor(
             localFilePath = targetFilePath,
             partFilePath = "$targetFilePath.part",
             downloadedBytes = 0L,
-            totalBytes = 0L,
+            totalBytes = estimatedTotalBytes,
             quality = quality,
             languages = languages,
             status = "RUNNING",
@@ -379,7 +402,7 @@ class InAppDownloadEngine @Inject constructor(
             mediaId = mediaId,
             title = title,
             bytesDownloaded = 0L,
-            totalBytes = 0L,
+            totalBytes = estimatedTotalBytes,
             progressPercent = 0,
             speedBps = 0L,
             etaSeconds = 0L,

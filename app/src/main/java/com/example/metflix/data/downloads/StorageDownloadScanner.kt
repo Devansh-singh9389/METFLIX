@@ -166,15 +166,15 @@ object StorageDownloadScanner {
             val quality = json.optString("quality", "1080p")
             val posterUrl = json.optString("posterUrl", "")
 
-            // Locate the actual video file in this folder
+            // Locate the actual video file in this folder (prefer MP4)
             val videoFile = listOf(
-                json.optString("videoFilePath").takeIf { it.isNotBlank() }?.let { File(it) },
                 json.optString("mp4Path").takeIf { it.isNotBlank() }?.let { File(it) },
+                json.optString("videoFilePath").takeIf { it.isNotBlank() }?.let { File(it) },
                 json.optString("videoFileName").takeIf { it.isNotBlank() }?.let { File(folder, it) }
             ).firstOrNull { it != null && it.exists() }
                 ?: folder.listFiles { f ->
-                    f.isFile && (f.name.endsWith(".mkv", ignoreCase = true) || f.name.endsWith(".mp4", ignoreCase = true) || f.name.endsWith(".ts", ignoreCase = true))
-                }?.firstOrNull()
+                    f.isFile && (f.name.endsWith(".mp4", ignoreCase = true) || f.name.endsWith(".mkv", ignoreCase = true) || f.name.endsWith(".ts", ignoreCase = true))
+                }?.sortedBy { if (it.name.endsWith(".mp4", true)) 0 else if (it.name.endsWith(".mkv", true)) 1 else 2 }?.firstOrNull()
 
             val actualPath = videoFile?.absolutePath ?: ""
             if (actualPath.isBlank()) return null

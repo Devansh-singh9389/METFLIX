@@ -197,91 +197,15 @@ fun DownloadsLibraryScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 activeDownloads.forEach { active ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF2C2C35), RoundedCornerShape(12.dp))
-                            .padding(14.dp)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = active.title,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = if (active.status == DownloadStatus.FAILED) "Network Interrupted" else "${active.formattedSpeed} • ${active.formattedEta}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (active.status == DownloadStatus.FAILED) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .background(Color.DarkGray, RoundedCornerShape(3.dp))
-                                    .clip(RoundedCornerShape(3.dp))
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .fillMaxWidth(fraction = (active.progressPercent / 100f).coerceIn(0.01f, 1f))
-                                        .background(if (active.status == DownloadStatus.FAILED) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp))
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = active.formattedProgress,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.LightGray
-                                )
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (active.status == DownloadStatus.PAUSED) {
-                                        Button(
-                                            onClick = { downloadTracker.resumeDownloadByMediaId(active.mediaId) },
-                                            colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.primary)
-                                        ) {
-                                            Text("Resume", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    } else if (active.status == DownloadStatus.FAILED) {
-                                        Button(
-                                            onClick = { downloadTracker.resumeDownloadByMediaId(active.mediaId) },
-                                            colors = ButtonDefaults.colors(containerColor = Color(0xFFE65100))
-                                        ) {
-                                            Text("Retry", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    } else {
-                                        Button(
-                                            onClick = { downloadTracker.pauseDownloadByMediaId(active.mediaId) },
-                                            colors = ButtonDefaults.colors(containerColor = Color(0xFF388E3C))
-                                        ) {
-                                            Text("Pause", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                    Button(
-                                        onClick = { downloadTracker.cancelDownloadByMediaId(active.mediaId) },
-                                        colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.error)
-                                    ) {
-                                        Text("Cancel", fontSize = 11.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    IdmDownloadCard(
+                        active = active,
+                        onPause = { downloadTracker.pauseDownloadByMediaId(active.mediaId) },
+                        onResume = { downloadTracker.resumeDownloadByMediaId(active.mediaId) },
+                        onRetry = { downloadTracker.resumeDownloadByMediaId(active.mediaId) },
+                        onCancel = { downloadTracker.cancelDownloadByMediaId(active.mediaId) }
+                    )
                 }
             }
 
@@ -662,8 +586,7 @@ private fun DownloadedItemCard(
     val isOptimized = remember(item.localFilePath) {
         item.localFilePath.isNotBlank() &&
                 (item.localFilePath.endsWith(".mp4", ignoreCase = true) ||
-                 item.localFilePath.endsWith(".mkv", ignoreCase = true) ||
-                 item.localFilePath.endsWith(".ts", ignoreCase = true)) &&
+                 item.localFilePath.endsWith(".mkv", ignoreCase = true)) &&
                 File(item.localFilePath).exists()
     }
 
@@ -892,4 +815,228 @@ private fun deleteDownloadedItem(
     } catch (_: Exception) {}
     repository.removeDownloadedItem(item.id)
     Toast.makeText(context, "Removed ${item.title} from downloads", Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+fun IdmDownloadCard(
+    active: com.example.metflix.data.downloads.ActiveDownloadState,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF22222B), RoundedCornerShape(14.dp))
+            .border(1.dp, Color(0xFF353544), RoundedCornerShape(14.dp))
+            .padding(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 1. Header: Title, Status Badge, Resume capability, Action Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = active.title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val (statusText, statusBg, statusColor) = when (active.status) {
+                            DownloadStatus.RUNNING -> Triple("Downloading (8 Parts Active)", Color(0xFF1B5E20).copy(alpha = 0.5f), Color(0xFF4CAF50))
+                            DownloadStatus.PAUSED -> Triple("Paused", Color(0xFFE65100).copy(alpha = 0.35f), Color(0xFFFFB74D))
+                            DownloadStatus.FAILED -> Triple("Network Interrupted", Color(0xFFB71C1C).copy(alpha = 0.35f), Color(0xFFFF5252))
+                            DownloadStatus.COMPLETED -> Triple("Complete", Color(0xFF1B5E20).copy(alpha = 0.5f), Color(0xFF81C784))
+                            DownloadStatus.PENDING -> Triple("Starting (Connecting)", Color(0xFF0D47A1).copy(alpha = 0.35f), Color(0xFF64B5F6))
+                        }
+                        Box(
+                            modifier = Modifier
+                                .background(statusBg, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(statusText, fontSize = 11.sp, color = statusColor, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF2D303E), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text("Resume: Yes", fontSize = 10.sp, color = Color(0xFFB0BEC5))
+                        }
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (active.status == DownloadStatus.PAUSED) {
+                        Button(
+                            onClick = onResume,
+                            colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Resume", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else if (active.status == DownloadStatus.FAILED) {
+                        Button(
+                            onClick = onRetry,
+                            colors = ButtonDefaults.colors(containerColor = Color(0xFFE65100))
+                        ) {
+                            Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = onPause,
+                            colors = ButtonDefaults.colors(containerColor = Color(0xFF388E3C))
+                        ) {
+                            Text("Pause", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Button(
+                        onClick = onCancel,
+                        colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Cancel", fontSize = 12.sp)
+                    }
+                }
+            }
+
+            // 2. IDM Metrics Panel
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1A1A22), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Downloaded", fontSize = 10.sp, color = Color.Gray)
+                    Text(
+                        text = active.formattedProgress,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Transfer Rate", fontSize = 10.sp, color = Color.Gray)
+                    Text(
+                        text = if (active.status == DownloadStatus.RUNNING) active.formattedSpeed else "0 KB/s",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF00E5FF)
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Time Left", fontSize = 10.sp, color = Color.Gray)
+                    val etaStr = if (active.status == DownloadStatus.RUNNING) {
+                        if (active.formattedEta.isNotBlank()) active.formattedEta else "Estimating..."
+                    } else {
+                        "-"
+                    }
+                    Text(
+                        text = etaStr,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            // 3. Main Overall Progress Bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .background(Color(0xFF30303D), RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(4.dp))
+            ) {
+                val progressFraction = (active.progressPercent / 100f).coerceIn(0.01f, 1f)
+                val barColor = when (active.status) {
+                    DownloadStatus.FAILED -> Color(0xFFFF5252)
+                    DownloadStatus.PAUSED -> Color(0xFFFFB74D)
+                    else -> Color(0xFF00E5FF)
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .fillMaxWidth(fraction = progressFraction)
+                        .background(barColor, RoundedCornerShape(4.dp))
+                )
+            }
+
+            // 4. IDM 8-Part Parallel Multi-Segment Visualizer
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("IDM Multi-Part Streams (8 Parallel Threads)", fontSize = 10.sp, color = Color.Gray)
+                    Text("${active.progressPercent}% Overall", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E5FF))
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    for (i in 0 until 8) {
+                        val partProgress = active.getPartProgress(i)
+                        val partPct = (partProgress * 100).toInt()
+                        val isCurrentActive = partProgress > 0f && partProgress < 1f && active.status == DownloadStatus.RUNNING
+                        val partBg = when {
+                            partProgress >= 1f -> Color(0xFF4CAF50)
+                            partProgress > 0f -> Color(0xFF00E5FF)
+                            else -> Color(0xFF2C2C38)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(Color(0xFF181820), RoundedCornerShape(4.dp))
+                                .border(
+                                    width = if (isCurrentActive) 1.dp else 0.5.dp,
+                                    color = if (isCurrentActive) Color(0xFF00E5FF) else Color(0xFF333342),
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .padding(vertical = 4.dp, horizontal = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text("P${i + 1}", fontSize = 9.sp, color = if (partProgress >= 1f) Color(0xFF81C784) else Color.LightGray)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .height(4.dp)
+                                        .background(Color(0xFF2C2C38), RoundedCornerShape(2.dp))
+                                        .clip(RoundedCornerShape(2.dp))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .fillMaxWidth(partProgress.coerceIn(0f, 1f))
+                                            .background(partBg, RoundedCornerShape(2.dp))
+                                    )
+                                }
+                                Text("$partPct%", fontSize = 8.sp, color = if (partProgress >= 1f) Color(0xFF81C784) else Color.Gray)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
