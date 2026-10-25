@@ -121,7 +121,8 @@ private fun AnimeCatalog(
     LazyColumn(
         modifier = modifier,
         state = lazyListState,
-        contentPadding = PaddingValues(top = childPadding.top, bottom = 104.dp)
+        contentPadding = PaddingValues(top = childPadding.top, bottom = 104.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // 1. Newest Drops Hero Section (Featured grid with episodes and badges)
         if (homeData.newestDrops.isNotEmpty()) {
@@ -132,7 +133,7 @@ private fun AnimeCatalog(
                         fontWeight = FontWeight.Medium,
                         fontSize = 30.sp
                     ),
-                    modifier = Modifier.padding(start = childPadding.start, top = 8.dp, bottom = 16.dp)
+                    modifier = Modifier.padding(start = childPadding.start, top = 8.dp, bottom = 12.dp)
                 )
             }
             item(contentType = "newest_drops_grid") {
@@ -154,7 +155,6 @@ private fun AnimeCatalog(
         if (homeData.bigTitles.isNotEmpty()) {
             item(contentType = "big_titles_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "🔥 Popular Anime & Cartoon Franchises",
                     movieList = homeData.bigTitles,
                     onMovieSelected = { movie ->
@@ -171,7 +171,6 @@ private fun AnimeCatalog(
         if (homeData.newAnimeArrivals.isNotEmpty()) {
             item(contentType = "new_anime_arrivals_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "🎌 New Anime Arrivals",
                     movieList = homeData.newAnimeArrivals,
                     onMovieSelected = { movie ->
@@ -186,7 +185,6 @@ private fun AnimeCatalog(
         if (homeData.mostWatchedShows.isNotEmpty()) {
             item(contentType = "most_watched_shows_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "⭐ Most Watched Anime Series",
                     movieList = homeData.mostWatchedShows,
                     onMovieSelected = { movie ->
@@ -201,7 +199,6 @@ private fun AnimeCatalog(
         if (homeData.latestAnimeMovies.isNotEmpty()) {
             item(contentType = "latest_anime_movies_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "🍿 Latest Anime Movies",
                     movieList = homeData.latestAnimeMovies,
                     onMovieSelected = { movie ->
@@ -216,7 +213,6 @@ private fun AnimeCatalog(
         if (homeData.mostWatchedFilms.isNotEmpty()) {
             item(contentType = "most_watched_films_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "🏆 All-Time Popular Anime Movies",
                     movieList = homeData.mostWatchedFilms,
                     onMovieSelected = { movie ->
@@ -231,7 +227,6 @@ private fun AnimeCatalog(
         if (homeData.cartoonSeries.isNotEmpty()) {
             item(contentType = "cartoon_series_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "🎙️ Hindi Dubbed Cartoons & Kids Shows",
                     movieList = homeData.cartoonSeries,
                     onMovieSelected = { movie ->
@@ -246,7 +241,6 @@ private fun AnimeCatalog(
         if (homeData.cartoonFilms.isNotEmpty()) {
             item(contentType = "cartoon_films_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "🎬 Cartoon & Animated Movies",
                     movieList = homeData.cartoonFilms,
                     onMovieSelected = { movie ->
@@ -261,7 +255,6 @@ private fun AnimeCatalog(
         if (homeData.languages.isNotEmpty()) {
             item(contentType = "languages_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "🌐 Stream In Your Language",
                     movieList = homeData.languages,
                     onMovieSelected = { movie ->
@@ -278,7 +271,6 @@ private fun AnimeCatalog(
         if (homeData.networks.isNotEmpty()) {
             item(contentType = "networks_row") {
                 MoviesRow(
-                    modifier = Modifier.padding(top = childPadding.top),
                     title = "📺 Networks & Channels",
                     movieList = homeData.networks,
                     onMovieSelected = { movie ->

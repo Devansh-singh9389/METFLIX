@@ -45,21 +45,31 @@ class AnimeApiClient @Inject constructor(
         val path = endpoint.trimStart('/')
         val bases = listOf(
             AnimeBackendConfig.BASE_URL.trimEnd('/'),
-            AnimeBackendConfig.FALLBACK_BASE_URL.trimEnd('/')
+            AnimeBackendConfig.DEV_LOCAL_URL.trimEnd('/'),
+            AnimeBackendConfig.DEV_LAN_URL.trimEnd('/')
         ).distinct()
 
         var lastException: Throwable? = null
         for (base in bases) {
             val fullUrl = "$base/$path"
+            val isLocal = base.contains("127.0.0.1") || base.contains("10.") || base.contains("192.168.")
             val attempt = runCatching {
                 Log.d(TAG, "Anime API request: $fullUrl")
+                val client = if (isLocal) {
+                    animeHttpClient.newBuilder()
+                        .connectTimeout(1500, TimeUnit.MILLISECONDS)
+                        .readTimeout(10, TimeUnit.SECONDS)
+                        .build()
+                } else {
+                    animeHttpClient
+                }
                 val request = Request.Builder()
                     .url(fullUrl)
                     .header("Accept", "application/json")
                     .header("User-Agent", "MetFlix-AndroidTV/1.0")
                     .build()
 
-                val response = animeHttpClient.newCall(request).execute()
+                val response = client.newCall(request).execute()
                 response.use { resp ->
                     if (!resp.isSuccessful) {
                         val errorBody = resp.body?.string().orEmpty()

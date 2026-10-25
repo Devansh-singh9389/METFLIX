@@ -21,6 +21,9 @@ import android.content.SharedPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
@@ -142,6 +145,39 @@ class DownloadedCatalogRepository @Inject constructor(
             val matchesSeason = seasonNumber == null || item.seasonNumber == seasonNumber
             val matchesEpisode = episodeNumber == null || item.episodeNumber == episodeNumber
             matchesMedia && matchesSeason && matchesEpisode
+        }
+    }
+
+    fun scanAllStorageLocations(coroutineScope: CoroutineScope) {
+        coroutineScope.launch(Dispatchers.IO) {
+            val discovered = StorageDownloadScanner.scanAll(context)
+            if (discovered.isNotEmpty()) {
+                val current = _downloadedItems.value.toMutableList()
+                var changed = false
+                for (item in discovered) {
+                    val existingIndex = current.indexOfFirst {
+                        it.id == item.id || it.mediaId == item.mediaId ||
+                        (it.localFilePath.isNotBlank() && it.localFilePath == item.localFilePath) ||
+                        it.title.equals(item.title, ignoreCase = true)
+                    }
+                    if (existingIndex >= 0) {
+                        val existing = current[existingIndex]
+                        if (existing.localFilePath != item.localFilePath || (existing.posterUrl.isBlank() && item.posterUrl.isNotBlank())) {
+                            current[existingIndex] = existing.copy(
+                                localFilePath = item.localFilePath,
+                                posterUrl = if (existing.posterUrl.isBlank()) item.posterUrl else existing.posterUrl
+                            )
+                            changed = true
+                        }
+                    } else {
+                        current.add(item)
+                        changed = true
+                    }
+                }
+                if (changed) {
+                    saveItems(current)
+                }
+            }
         }
     }
 

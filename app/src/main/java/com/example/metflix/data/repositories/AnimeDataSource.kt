@@ -167,9 +167,23 @@ class AnimeDataSource @Inject constructor(
         val cleanSlug = slug.trim().removePrefix("/series/").trim('/')
         if (!forceRefresh) {
             seriesCache[cleanSlug]?.let { return@withContext Result.success(it) }
+            val diskCached = animeDiskCache.loadSeriesResponse(cleanSlug)
+            if (diskCached != null) {
+                seriesCache[cleanSlug] = diskCached
+                return@withContext Result.success(diskCached)
+            }
         }
         val result = animeApiClient.getSeriesData(cleanSlug)
-        result.getOrNull()?.let { seriesCache[cleanSlug] = it }
+        result.getOrNull()?.let {
+            seriesCache[cleanSlug] = it
+            animeDiskCache.saveSeriesResponse(cleanSlug, it)
+        } ?: run {
+            val diskFallback = animeDiskCache.loadSeriesResponse(cleanSlug, ttlMs = Long.MAX_VALUE)
+            if (diskFallback != null) {
+                seriesCache[cleanSlug] = diskFallback
+                return@withContext Result.success(diskFallback)
+            }
+        }
         result
     }
 
@@ -193,9 +207,23 @@ class AnimeDataSource @Inject constructor(
         val cleanSlug = slug.trim().removePrefix("/movie/").trim('/')
         if (!forceRefresh) {
             movieCache[cleanSlug]?.let { return@withContext Result.success(it) }
+            val diskCached = animeDiskCache.loadMovieResponse(cleanSlug)
+            if (diskCached != null) {
+                movieCache[cleanSlug] = diskCached
+                return@withContext Result.success(diskCached)
+            }
         }
         val result = animeApiClient.getMovieData(cleanSlug)
-        result.getOrNull()?.let { movieCache[cleanSlug] = it }
+        result.getOrNull()?.let {
+            movieCache[cleanSlug] = it
+            animeDiskCache.saveMovieResponse(cleanSlug, it)
+        } ?: run {
+            val diskFallback = animeDiskCache.loadMovieResponse(cleanSlug, ttlMs = Long.MAX_VALUE)
+            if (diskFallback != null) {
+                movieCache[cleanSlug] = diskFallback
+                return@withContext Result.success(diskFallback)
+            }
+        }
         result
     }
 

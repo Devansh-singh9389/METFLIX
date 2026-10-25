@@ -23,7 +23,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -229,6 +231,7 @@ private fun MoviesRowItem(
     onMovieFocused: (Movie) -> Unit = {},
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val cardWidth = if (itemDirection == ItemDirection.Vertical) 150.dp else 240.dp
 
     MovieCard(
         onClick = { onMovieSelected(movie) },
@@ -240,6 +243,7 @@ private fun MoviesRowItem(
             )
         },
         modifier = Modifier
+            .width(cardWidth)
             .onFocusChanged {
                 isFocused = it.isFocused
                 if (it.isFocused) {
@@ -264,7 +268,10 @@ private fun MoviesRowItemImage(
     index: Int,
     modifier: Modifier = Modifier,
 ) {
-    Box(contentAlignment = Alignment.CenterStart) {
+    Box(
+        contentAlignment = Alignment.CenterStart,
+        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+    ) {
         PosterImage(
             movie = movie,
             modifier = modifier
@@ -309,7 +316,7 @@ private fun MoviesRowItemText(
         val textColor = if (isItemFocused) {
             MaterialTheme.colorScheme.onSurface
         } else {
-            Color.Transparent
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
         }
         Text(
             text = movie.name,

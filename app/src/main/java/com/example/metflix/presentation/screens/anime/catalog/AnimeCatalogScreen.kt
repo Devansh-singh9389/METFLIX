@@ -476,7 +476,11 @@ private fun EpisodeCard(
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(episode.thumbnail)
-                                .crossfade(true)
+                                .size(320, 180)
+                                .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                                .allowRgb565(true)
+                                .precision(coil.size.Precision.INEXACT)
+                                .crossfade(false)
                                 .build(),
                             contentDescription = episode.title,
                             contentScale = ContentScale.Crop,
@@ -496,12 +500,7 @@ private fun EpisodeCard(
                             )
                     )
 
-                    val isEpDownloaded = remember(episode.route, episode.episodeCode) {
-                        val key = episode.route.ifEmpty { episode.episodeCode.orEmpty() }
-                        DownloadedCatalogRepository.instance?.isDownloaded(mediaId = key) ?: false
-                    }
-
-                    if (isEpDownloaded) {
+                    if (isDownloaded) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
