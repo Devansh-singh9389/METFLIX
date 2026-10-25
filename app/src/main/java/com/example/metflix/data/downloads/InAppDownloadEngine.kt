@@ -305,27 +305,19 @@ class InAppDownloadEngine @Inject constructor(
         val downloadId = System.currentTimeMillis()
 
         var finalDirectUrl = directUrl
-        if (directUrl.startsWith("file://") && languages.isNotEmpty()) {
-            runCatching {
-                val uri = java.net.URI(directUrl)
-                val originalFile = java.io.File(uri.path)
-                if (originalFile.exists()) {
-                    val lines = originalFile.readLines()
-                    val filteredLines = lines.filter { line ->
-                        if (line.startsWith("#EXT-X-MEDIA:TYPE=AUDIO")) {
-                            languages.any { lang ->
-                                line.contains("NAME=\"$lang\"", ignoreCase = true) ||
-                                line.contains("LANGUAGE=\"$lang\"", ignoreCase = true)
-                            }
-                        } else {
-                            true
-                        }
-                    }
-                    if (filteredLines.any { it.startsWith("#EXT-X-MEDIA:TYPE=AUDIO") }) {
-                        originalFile.writeText(filteredLines.joinToString("\n") + "\n")
-                    }
-                }
-            }
+        val isHls = directUrl.contains(".m3u8", ignoreCase = true) ||
+            directUrl.contains("/hls/", ignoreCase = true) ||
+            directUrl.contains("master.txt", ignoreCase = true) ||
+            directUrl.contains("master.", ignoreCase = true)
+
+        if (isHls) {
+            finalDirectUrl = HlsManifestFilter.filterHlsManifest(
+                context = context,
+                rawUrl = directUrl,
+                selectedQuality = quality,
+                selectedLanguages = languages,
+                mediaId = mediaId
+            )
         }
 
         val mimeType = when {

@@ -17,7 +17,7 @@ class M3uParserTest {
             https://provider.example/disney.mpd|User-Agent=InlineOverride
         """.trimIndent()
 
-        val channel = M3uParser.parse(playlist).single()
+        val channel = M3uParser.parsePlaylist(playlist).channels.single()
 
         assertEquals("https://provider.example/disney.m3u8", channel.fallbackStreamUrl)
         assertEquals("InlineOverride", channel.requestHeaders["User-Agent"])
@@ -36,7 +36,7 @@ class M3uParserTest {
             https://provider.example/second.m3u8
         """.trimIndent()
 
-        val channels = M3uParser.parse(playlist)
+        val channels = M3uParser.parsePlaylist(playlist).channels
 
         assertEquals("FirstAgent", channels[0].requestHeaders["User-Agent"])
         assertNull(channels[1].requestHeaders["User-Agent"])
