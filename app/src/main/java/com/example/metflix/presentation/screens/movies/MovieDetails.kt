@@ -141,12 +141,27 @@ fun MovieDetails(
                     tmdbId = movieDetails.id,
                     imdbId = movieDetails.imdbId,
                     releaseYear = movieDetails.releaseDate.take(4),
+                    duration = movieDetails.duration,
                     goToMoviePlayer = goToMoviePlayer,
                     onPlayOffline = onPlayOffline
                 )
             }
         }
     }
+}
+
+private fun parseDurationMinutes(duration: String?): Int? {
+    if (duration.isNullOrBlank()) return null
+    var total = 0
+    val hMatch = Regex("(\\d+)\\s*h", RegexOption.IGNORE_CASE).find(duration)
+    if (hMatch != null) total += hMatch.groupValues[1].toInt() * 60
+    val mMatch = Regex("(\\d+)\\s*m", RegexOption.IGNORE_CASE).find(duration)
+    if (mMatch != null) total += mMatch.groupValues[1].toInt()
+    if (total == 0) {
+        val numMatch = Regex("\\b(\\d+)\\b").find(duration)
+        if (numMatch != null) total = numMatch.groupValues[1].toInt()
+    }
+    return if (total > 0) total else null
 }
 
 @Composable
@@ -157,6 +172,7 @@ private fun PlaybackActionButtonsRow(
     tmdbId: String = "",
     imdbId: String? = null,
     releaseYear: String = "",
+    duration: String = "",
     modifier: Modifier = Modifier,
     goToMoviePlayer: () -> Unit,
     onPlayOffline: (sessionId: String) -> Unit = {}
@@ -358,9 +374,12 @@ private fun PlaybackActionButtonsRow(
     }
 
     if (showDownloadDialog) {
+        val parsedRuntime = parseDurationMinutes(duration) ?: if (isTvShow) 45 else 110
         MediaDownloadDialog(
             title = movieTitle,
             posterUrl = posterUri,
+            runtimeMinutes = parsedRuntime,
+            mediaType = if (isTvShow) "SERIES" else "MOVIE",
             resolveStreams = {
                 DownloadStreamResolver.resolveActualStreams(
                     context = context,

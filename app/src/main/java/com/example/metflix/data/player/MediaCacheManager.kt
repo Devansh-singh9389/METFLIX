@@ -65,10 +65,33 @@ object MediaCacheManager {
     }
 
     @Synchronized
+    fun resolveDownloadBaseDir(context: Context): File {
+        return try {
+            val dirType = com.example.metflix.data.settings.DownloadPreferences.from(context).downloadLocation.value
+            val targetDir = when {
+                dirType.startsWith("/") -> File(dirType)
+                dirType.equals(android.os.Environment.DIRECTORY_MOVIES, ignoreCase = true) -> {
+                    context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: File(context.filesDir, "Movies")
+                }
+                else -> {
+                    context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: File(context.filesDir, "Downloads")
+                }
+            }
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
+            if (targetDir.canWrite()) targetDir else (context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir)
+        } catch (_: Exception) {
+            context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+        }
+    }
+
+    @Synchronized
     fun getDownloadCache(context: Context): SimpleCache {
         return downloadCache ?: synchronized(this) {
             downloadCache ?: run {
-                val downloadDir = File(context.getExternalFilesDir(null) ?: context.filesDir, DOWNLOAD_CACHE_DIR_NAME)
+                val baseDir = resolveDownloadBaseDir(context)
+                val downloadDir = File(baseDir, DOWNLOAD_CACHE_DIR_NAME)
                 if (!downloadDir.exists()) {
                     downloadDir.mkdirs()
                 }
@@ -79,6 +102,14 @@ object MediaCacheManager {
                 }
             }
         }
+    }
+
+    @Synchronized
+    fun releaseDownloadCache() {
+        try {
+            downloadCache?.release()
+        } catch (_: Exception) {}
+        downloadCache = null
     }
 
     /**

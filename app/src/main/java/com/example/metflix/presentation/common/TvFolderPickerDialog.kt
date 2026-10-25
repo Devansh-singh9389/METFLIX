@@ -24,6 +24,10 @@ import android.os.Environment
 import android.os.StatFs
 import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -355,6 +359,23 @@ fun TvFolderPickerDialog(
     var hasPermission by remember { mutableStateOf(hasAllFilesAccess()) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val updated = hasAllFilesAccess()
+                if (updated != hasPermission) {
+                    hasPermission = updated
+                    refreshKey++
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     var currentDir by remember {
         val startDir = when {
@@ -915,11 +936,36 @@ private fun CreateFolderDialog(
 ) {
     var folderName by remember { mutableStateOf("") }
     val context = LocalContext.current
+    var hasPermission by remember { mutableStateOf(hasAllFilesAccess()) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasPermission = hasAllFilesAccess()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val isParentWritable = remember(parentDirectory, hasPermission) {
+        if (!hasPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            false
+        } else {
+            parentDirectory.canWrite() || runCatching {
+                val t = File(parentDirectory, ".metflix_test_${System.currentTimeMillis()}")
+                t.createNewFile() && t.delete()
+            }.getOrDefault(false)
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
-                .width(440.dp)
+                .width(480.dp)
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
             colors = SurfaceDefaults.colors(
@@ -937,10 +983,89 @@ private fun CreateFolderDialog(
                 )
 
                 Text(
-                    text = "In: ${parentDirectory.name.ifBlank { parentDirectory.absolutePath }}",
+                    text = "Target directory: ${parentDirectory.name.ifBlank { parentDirectory.absolutePath }}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = Color.LightGray
                 )
+
+                // Warning / Action if storage permission is not granted on Android 11+
+                if (!hasPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF3E2723), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFFFFB74D), RoundedCornerShape(10.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "⚠️ Android All Files Access Required",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color(0xFFFFCC80)
+                            )
+                            Text(
+                                text = "To create custom folders on device storage, please grant 'All files access' in TV Settings.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFE0E0E0)
+                            )
+                            Button(
+                                onClick = { requestAllFilesAccess(context) },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = Color(0xFFF57C00),
+                                    focusedContainerColor = Color(0xFFFF9800)
+                                )
+                            ) {
+                                Text("Grant Access in Settings", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                } else if (!isParentWritable) {
+                    // System-restricted directory (e.g. /storage root)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF263238), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFF80DEEA), RoundedCornerShape(10.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "ℹ️ Root Directory Restricted by Android",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color(0xFF80DEEA)
+                            )
+                            Text(
+                                text = "Android does not permit creating top-level folders directly in '${parentDirectory.name}'. You can create it in Download or App Storage:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFE0E0E0)
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = {
+                                        val clean = folderName.trim().ifBlank { "MetFlix" }
+                                        val dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                                        val target = File(dlDir, clean).apply { mkdirs() }
+                                        onFolderCreated(target)
+                                    },
+                                    colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Text("In Downloads", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Button(
+                                    onClick = {
+                                        val clean = folderName.trim().ifBlank { "MetFlix" }
+                                        val appDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+                                        val target = File(appDir, clean).apply { mkdirs() }
+                                        onFolderCreated(target)
+                                    },
+                                    colors = ButtonDefaults.colors(containerColor = Color(0xFF00897B))
+                                ) {
+                                    Text("In App Storage", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
 
                 Box(
                     modifier = Modifier
@@ -951,7 +1076,7 @@ private fun CreateFolderDialog(
                 ) {
                     if (folderName.isEmpty()) {
                         Text(
-                            text = "Folder name (e.g. Movies)",
+                            text = "Folder name (e.g. MetFlix Downloads)",
                             color = Color.Gray,
                             fontSize = 13.sp
                         )
@@ -985,16 +1110,33 @@ private fun CreateFolderDialog(
                                 Toast.makeText(context, "Please enter a valid folder name", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
+
+                            if (!hasPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                Toast.makeText(context, "Storage permission required. Opening Android Settings...", Toast.LENGTH_LONG).show()
+                                requestAllFilesAccess(context)
+                                return@Button
+                            }
+
                             val target = File(parentDirectory, cleanName)
                             if (target.exists()) {
                                 Toast.makeText(context, "Folder already exists", Toast.LENGTH_SHORT).show()
                                 onFolderCreated(target)
                             } else {
-                                val success = target.mkdirs()
+                                val success = runCatching { target.mkdirs() }.getOrDefault(false)
                                 if (success) {
+                                    Toast.makeText(context, "Created folder: $cleanName", Toast.LENGTH_SHORT).show()
                                     onFolderCreated(target)
                                 } else {
-                                    Toast.makeText(context, "Failed to create folder. Permission denied.", Toast.LENGTH_LONG).show()
+                                    // Robust Fallback: create in App-Safe External Storage which is 100% permitted by OS
+                                    val safeFallback = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir, cleanName)
+                                    val safeSuccess = runCatching { safeFallback.mkdirs() || safeFallback.exists() }.getOrDefault(false)
+                                    if (safeSuccess) {
+                                        Toast.makeText(context, "Created in App-Safe storage due to system restriction: $cleanName", Toast.LENGTH_LONG).show()
+                                        onFolderCreated(safeFallback)
+                                    } else {
+                                        Toast.makeText(context, "Failed to create folder. Please grant 'All files access' in Settings.", Toast.LENGTH_LONG).show()
+                                        requestAllFilesAccess(context)
+                                    }
                                 }
                             }
                         }

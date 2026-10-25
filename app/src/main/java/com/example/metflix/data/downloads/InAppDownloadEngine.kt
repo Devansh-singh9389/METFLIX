@@ -17,7 +17,13 @@
 package com.example.metflix.data.downloads
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
+import android.os.StatFs
+import com.example.metflix.data.player.MediaCacheManager
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.MimeTypes
@@ -80,6 +86,7 @@ class InAppDownloadEngine @Inject constructor(
         restoreTasksFromStore()
         setupMedia3Listener()
         startProgressPolling()
+        registerNetworkCallback()
     }
 
     private fun setupMedia3Listener() {
@@ -131,9 +138,9 @@ class InAppDownloadEngine @Inject constructor(
         }
 
         val total = download.contentLength.takeIf { it > 0 } ?: (stored?.totalBytes ?: 0L)
-        val downloaded = download.bytesDownloaded
+        val downloaded = download.bytesDownloaded.takeIf { it > 0 } ?: (stored?.downloadedBytes ?: 0L)
         val percent = if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100)
-        else download.percentDownloaded.toInt().coerceIn(0, 100)
+        else (stored?.downloadedBytes?.let { if (total > 0) ((it * 100) / total).toInt().coerceIn(0, 100) else 0 } ?: download.percentDownloaded.toInt().coerceIn(0, 100))
 
         val state = ActiveDownloadState(
             downloadId = downloadId,
@@ -220,9 +227,22 @@ class InAppDownloadEngine @Inject constructor(
                         }
 
                         val total = download.contentLength.takeIf { it > 0 } ?: (stored?.totalBytes ?: 0L)
-                        val downloaded = download.bytesDownloaded
+                        val downloaded = download.bytesDownloaded.takeIf { it > 0 } ?: (stored?.downloadedBytes ?: 0L)
                         val percent = if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100)
-                        else download.percentDownloaded.toInt().coerceIn(0, 100)
+                        else (stored?.downloadedBytes?.let { if (total > 0) ((it * 100) / total).toInt().coerceIn(0, 100) else 0 } ?: download.percentDownloaded.toInt().coerceIn(0, 100))
+
+                        // Storage safety check for ultra-low-end devices (<150MB free)
+                        if (status == DownloadStatus.RUNNING) {
+                            try {
+                                val targetFile = stored?.localFilePath?.let { java.io.File(it) }
+                                val parentDir = targetFile?.parentFile ?: MediaCacheManager.resolveDownloadBaseDir(context)
+                                val statFs = StatFs(parentDir.path)
+                                if (statFs.availableBytes < 150 * 1024 * 1024L) {
+                                    Log.w(TAG, "Storage critically low (<150 MB). Pausing download for $mediaId")
+                                    pauseDownload(mediaId)
+                                }
+                            } catch (_: Exception) {}
+                        }
 
                         val prev = previousBytesMap[mediaId] ?: downloaded
                         val bytesSince = (downloaded - prev).coerceAtLeast(0L)
@@ -265,7 +285,7 @@ class InAppDownloadEngine @Inject constructor(
     private fun restoreTasksFromStore() {
         val tasks = downloadStore.storedTasks.value
         tasks.forEach { task ->
-            if (task.status == "RUNNING" || task.status == "PAUSED") {
+            if (task.status == "RUNNING" || task.status == "PAUSED" || task.status == "FAILED") {
                 val state = ActiveDownloadState(
                     downloadId = task.downloadId,
                     mediaId = task.mediaId,
@@ -275,7 +295,7 @@ class InAppDownloadEngine @Inject constructor(
                     progressPercent = if (task.totalBytes > 0) ((task.downloadedBytes * 100) / task.totalBytes).toInt().coerceIn(0, 100) else 0,
                     speedBps = 0L,
                     etaSeconds = 0L,
-                    status = DownloadStatus.PAUSED
+                    status = if (task.status == "FAILED") DownloadStatus.FAILED else DownloadStatus.PAUSED
                 )
                 activeStreamsMap[task.mediaId] = state
             }
@@ -395,19 +415,79 @@ class InAppDownloadEngine @Inject constructor(
     }
 
     fun resumeDownload(mediaId: String) {
-        DownloadService.sendSetStopReason(
+        val stored = downloadStore.storedTasks.value.find { it.mediaId == mediaId }
+        val current = activeStreamsMap[mediaId]
+        val isFailed = current?.status == DownloadStatus.FAILED || stored?.status == "FAILED"
+
+        if (isFailed && stored != null) {
+            val mimeType = when {
+                stored.directUrl.contains(".m3u8", ignoreCase = true) ||
+                stored.directUrl.contains("/hls/", ignoreCase = true) ||
+                stored.directUrl.contains("master.txt", ignoreCase = true) ||
+                stored.directUrl.contains("master.", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
+                stored.directUrl.contains(".mpd", ignoreCase = true) -> MimeTypes.APPLICATION_MPD
+                else -> null
+            }
+            val request = DownloadRequest.Builder(mediaId, Uri.parse(stored.directUrl))
+                .setMimeType(mimeType)
+                .setData(stored.title.toByteArray())
+                .build()
+
+            DownloadService.sendAddDownload(
+                context,
+                MetFlixDownloadService::class.java,
+                request,
+                /* foreground = */ true
+            )
+        } else {
+            DownloadService.sendSetStopReason(
+                context,
+                MetFlixDownloadService::class.java,
+                mediaId,
+                Download.STOP_REASON_NONE,
+                /* foreground = */ true
+            )
+        }
+
+        DownloadService.sendResumeDownloads(
             context,
             MetFlixDownloadService::class.java,
-            mediaId,
-            Download.STOP_REASON_NONE,
             /* foreground = */ true
         )
-        activeStreamsMap[mediaId]?.let { current ->
-            activeStreamsMap[mediaId] = current.copy(status = DownloadStatus.RUNNING)
+
+        activeStreamsMap[mediaId]?.let { cur ->
+            activeStreamsMap[mediaId] = cur.copy(status = DownloadStatus.RUNNING)
             updateActiveDownloadsState()
         }
-        downloadStore.storedTasks.value.find { it.mediaId == mediaId }?.let { stored ->
-            downloadStore.saveOrUpdateTask(stored.copy(status = "RUNNING"))
+        stored?.let {
+            downloadStore.saveOrUpdateTask(it.copy(status = "RUNNING"))
+        }
+    }
+
+    private fun registerNetworkCallback() {
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            if (cm != null) {
+                val req = NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+                cm.registerNetworkCallback(req, object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        Log.d(TAG, "Network restored. Auto-resuming interrupted downloads...")
+                        scope.launch {
+                            delay(1200L) // Wait for network to stabilize
+                            media3Manager.resumeDownloads()
+                            for ((mediaId, state) in activeStreamsMap) {
+                                if (state.status == DownloadStatus.FAILED) {
+                                    resumeDownload(mediaId)
+                                }
+                            }
+                        }
+                    }
+                })
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register network callback: ${e.message}")
         }
     }
 

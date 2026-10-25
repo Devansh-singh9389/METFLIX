@@ -85,6 +85,20 @@ import com.example.metflix.presentation.screens.dashboard.rememberChildPadding
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalComposeUiApi::class)
+private fun parseDurationMinutes(duration: String?): Int? {
+    if (duration.isNullOrBlank()) return null
+    var total = 0
+    val hMatch = Regex("(\\d+)\\s*h", RegexOption.IGNORE_CASE).find(duration)
+    if (hMatch != null) total += hMatch.groupValues[1].toInt() * 60
+    val mMatch = Regex("(\\d+)\\s*m", RegexOption.IGNORE_CASE).find(duration)
+    if (mMatch != null) total += mMatch.groupValues[1].toInt()
+    if (total == 0) {
+        val numMatch = Regex("\\b(\\d+)\\b").find(duration)
+        if (numMatch != null) total = numMatch.groupValues[1].toInt()
+    }
+    return if (total > 0) total else null
+}
+
 @Composable
 fun TvSeasonsAndEpisodesSection(
     seasons: List<TvSeason>,
@@ -205,9 +219,12 @@ fun TvSeasonsAndEpisodesSection(
             } else {
                 "S${ep.seasonNumber} E${ep.episodeNumber}: ${ep.name}"
             }
+            val epRuntime = parseDurationMinutes(ep.duration) ?: 45
             MediaDownloadDialog(
                 title = displayTitle,
                 posterUrl = ep.stillUri,
+                runtimeMinutes = epRuntime,
+                mediaType = "TV_EPISODE",
                 resolveStreams = {
                     DownloadStreamResolver.resolveActualStreams(
                         context = context,

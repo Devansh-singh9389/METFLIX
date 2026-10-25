@@ -106,7 +106,7 @@ fun DownloadsLibraryScreen(
     val activeDownloadsMap by downloadTracker.activeDownloads.collectAsStateWithLifecycle()
     val activeDownloads = activeDownloadsMap.values
         .distinctBy { it.mediaId }
-        .filter { it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.PENDING }
+        .filter { it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.PENDING || it.status == DownloadStatus.FAILED }
 
     val downloadPreferences = remember { DownloadPreferences.from(context) }
     val downloadLocation by downloadPreferences.downloadLocation.collectAsStateWithLifecycle()
@@ -217,9 +217,9 @@ fun DownloadsLibraryScreen(
                                     color = Color.White
                                 )
                                 Text(
-                                    text = "${active.formattedSpeed} • ${active.formattedEta}",
+                                    text = if (active.status == DownloadStatus.FAILED) "Network Interrupted" else "${active.formattedSpeed} • ${active.formattedEta}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = if (active.status == DownloadStatus.FAILED) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary
                                 )
                             }
 
@@ -234,7 +234,7 @@ fun DownloadsLibraryScreen(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .fillMaxWidth(fraction = (active.progressPercent / 100f).coerceIn(0.01f, 1f))
-                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp))
+                                        .background(if (active.status == DownloadStatus.FAILED) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp))
                                 )
                             }
 
@@ -256,6 +256,13 @@ fun DownloadsLibraryScreen(
                                             colors = ButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.primary)
                                         ) {
                                             Text("Resume", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else if (active.status == DownloadStatus.FAILED) {
+                                        Button(
+                                            onClick = { downloadTracker.resumeDownloadByMediaId(active.mediaId) },
+                                            colors = ButtonDefaults.colors(containerColor = Color(0xFFE65100))
+                                        ) {
+                                            Text("Retry", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                         }
                                     } else {
                                         Button(

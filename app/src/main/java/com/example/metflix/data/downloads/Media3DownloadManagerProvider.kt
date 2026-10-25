@@ -10,6 +10,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.offline.DownloadManager
+import androidx.media3.exoplayer.scheduler.Requirements
 import com.example.metflix.data.network.SecureHttpClient
 import com.example.metflix.data.player.MediaCacheManager
 import okhttp3.ConnectionPool
@@ -103,11 +104,21 @@ object Media3DownloadManagerProvider {
                     executor
                 ).apply {
                     maxParallelDownloads = 2
+                    minRetryCount = 10
+                    requirements = Requirements(Requirements.NETWORK)
                 }
 
                 downloadManager = manager
                 manager
             }
         }
+    }
+
+    @Synchronized
+    fun resetDownloadManager() {
+        try {
+            downloadManager?.release()
+        } catch (_: Exception) {}
+        downloadManager = null
     }
 }

@@ -398,6 +398,8 @@ private fun SeriesEpisodesSection(
             MediaDownloadDialog(
                 title = epTitle,
                 posterUrl = ep.thumbnail,
+                runtimeMinutes = 24,
+                mediaType = "ANIME_EPISODE",
                 resolveStreams = {
                     DownloadStreamResolver.resolveActualStreams(
                         context = context,

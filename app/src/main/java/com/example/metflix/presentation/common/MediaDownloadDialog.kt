@@ -65,6 +65,41 @@ import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 
+fun calculateEstimatedSizeMb(
+    quality: String,
+    audioTrackCount: Int = 1,
+    runtimeMinutes: Int? = null,
+    mediaType: String = "MOVIE"
+): Int {
+    val effectiveMinutes = when {
+        runtimeMinutes != null && runtimeMinutes > 0 -> runtimeMinutes
+        mediaType.contains("ANIME", ignoreCase = true) -> 24
+        mediaType.contains("TV", ignoreCase = true) || mediaType.contains("SERIES", ignoreCase = true) -> 45
+        else -> 110 // Standard movie
+    }
+
+    val videoMbPerMin = when {
+        quality.contains("2160", true) || quality.contains("4k", true) -> 65.0
+        quality.contains("1080", true) -> 24.0
+        quality.contains("720", true) -> 13.5
+        quality.contains("480", true) -> 6.8
+        quality.contains("360", true) -> 3.8
+        quality.contains("240", true) -> 2.2
+        else -> 10.0
+    }
+
+    val audioMbPerMin = 0.75 * audioTrackCount.coerceAtLeast(1)
+    return ((videoMbPerMin + audioMbPerMin) * effectiveMinutes).toInt()
+}
+
+fun formatEstimatedSize(sizeMb: Int): String {
+    return if (sizeMb >= 1000) {
+        String.format(java.util.Locale.US, "%.2f GB", sizeMb / 1000.0)
+    } else {
+        "$sizeMb MB"
+    }
+}
+
 data class DownloadStreamOption(
     val quality: String,
     val sizeText: String = "Direct Stream",
@@ -85,6 +120,8 @@ sealed interface DownloadDialogState {
 fun MediaDownloadDialog(
     title: String,
     posterUrl: String? = null,
+    runtimeMinutes: Int? = null,
+    mediaType: String = "MOVIE",
     resolveStreams: suspend () -> List<DownloadStreamOption>,
     onDismiss: () -> Unit,
     onStartDownload: (option: DownloadStreamOption, selectedLanguages: List<String>) -> Unit
@@ -321,22 +358,15 @@ fun MediaDownloadDialog(
 
                         val activeOption = options.getOrNull(selectedOptionIndex) ?: options.first()
 
-                        // Calculate dynamic size based on quality & selected audio tracks
-                        val baseSizeMb = when {
-                            activeOption.quality.contains("1080", true) -> 800
-                            activeOption.quality.contains("720", true) -> 450
-                            activeOption.quality.contains("480", true) -> 250
-                            activeOption.quality.contains("360", true) -> 140
-                            activeOption.quality.contains("240", true) -> 75
-                            else -> 150
-                        }
+                        // Calculate dynamic size based on quality, runtime duration & audio tracks
                         val audioTrackCount = selectedLanguages.size
-                        val totalMb = baseSizeMb + (audioTrackCount * 120)
-                        val formattedDynamicSize = if (totalMb >= 1000) {
-                            String.format("%.2f GB", totalMb / 1000.0)
-                        } else {
-                            "$totalMb MB"
-                        }
+                        val totalMb = calculateEstimatedSizeMb(
+                            quality = activeOption.quality,
+                            audioTrackCount = audioTrackCount,
+                            runtimeMinutes = runtimeMinutes,
+                            mediaType = mediaType
+                        )
+                        val formattedDynamicSize = formatEstimatedSize(totalMb)
 
                         Box(
                             modifier = Modifier
